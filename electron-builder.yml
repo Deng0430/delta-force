@@ -1,0 +1,33 @@
+appId: com.maptools.tactical
+productName: 三角洲战术地图
+directories:
+  output: release
+  buildResources: build
+files:
+  - electron/**/*
+  - package.json
+# dist 作为额外资源放在 asar 外（resources/dist），供内置服务器按文件路径读取
+extraResources:
+  - from: dist
+    to: dist
+  - from: build/icon.ico
+    to: app-icon-v1.ico
+asar: true
+# 纯前端应用，无原生模块，跳过 electron-rebuild（避免扫描缺失的可选依赖报错）
+npmRebuild: false
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: ${productName}-${version}-setup.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  include: build/installer.nsh
+  createDesktopShortcut: always
+  shortcutName: 三角洲战术地图
+  deleteAppDataOnUninstall: false
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/

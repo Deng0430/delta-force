@@ -1,0 +1,526 @@
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type DragEvent } from 'react'
+import { MapContainer, TileLayer, useMap } from 'react-leaflet'
+import * as L from 'leaflet'
+import type {
+  GameModeProfile,
+  ModeConfigStore,
+  ModeEditorSession,
+  ModeMapProp,
+  ModeMapOverride,
+  ModeObjectivePoint,
+  ModeSpawnPoint,
+  ModeZone,
+  ModeZoneRole,
+  Side,
+} from '../types'
+import { MAPS, MAP_BY_ID } from '../config/maps'
+import { STAGES_BY_MAP } from '../config/points'
+import { genUid, mapBounds } from '../utils/geo'
+import { downloadText } from '../utils/exportTactical'
+import {
+  MODE_CONFIG_STORAGE_KEY,
+  createModeProfile,
+  buildOfficialModeData,
+  emptyModeMapOverride,
+  loadModeConfigStore,
+  normalizeModeConfigStore,
+  publishModeConfigStore,
+  saveModeConfigStore,
+  syncModeMapFromAttackDefense,
+} from '../utils/modeConfigStorage'
+import ModeConfigEditor from './ModeConfigEditor'
+import ModeConfigLayer from './ModeConfigLayer'
+import ModeAssetPalette, { readModePaletteAsset } from './ModeAssetPalette'
+
+const MODE_HISTORY_LIMIT = 100
+
+type StoreUpdate = ModeConfigStore | ((current: ModeConfigStore) => ModeConfigStore)
+
+interface StoreHistory {
+  past: ModeConfigStore[]
+  present: ModeConfigStore
+  future: ModeConfigStore[]
+}
+
+type StoreHistoryAction =
+  | { type: 'commit'; update: StoreUpdate }
+  | { type: 'replace'; store: ModeConfigStore }
+  | { type: 'undo' }
+  | { type: 'redo' }
+
+function storeHistoryReducer(state: StoreHistory, action: StoreHistoryAction): StoreHistory {
+  if (action.type === 'replace') return { past: [], present: action.store, future: [] }
+  if (action.type === 'undo') {
+    const previous = state.past.at(-1)
+    if (!previous) return state
+    return {
+      past: state.past.slice(0, -1),
+      present: previous,
+      future: [state.present, ...state.future].slice(0, MODE_HISTORY_LIMIT),
+    }
+  }
+  if (action.type === 'redo') {
+    const next = state.future[0]
+    if (!next) return state
+    return {
+      past: [...state.past, state.present].slice(-MODE_HISTORY_LIMIT),
+      present: next,
+      future: state.future.slice(1),
+    }
+  }
+  const next = typeof action.update === 'function' ? action.update(state.present) : action.update
+  if (Object.is(next, state.present)) return state
+  return {
+    past: [...state.past, state.present].slice(-MODE_HISTORY_LIMIT),
+    present: next,
+    future: [],
+  }
+}
+
+function WorkbenchMapSync({ config, onReady }: { config: (typeof MAPS)[number]; onReady: (map: L.Map) => void }) {
+  const map = useMap()
+  useEffect(() => {
+    onReady(map)
+    map.setView(config.initCenter, config.initZoom, { animate: false })
+    map.setMaxBounds(mapBounds(config))
+  }, [config, map, onReady])
+  return null
+}
+
+export default function ModeConfigWorkbench() {
+  const mapRef = useRef<L.Map | null>(null)
+  const handleMapReady = useCallback((map: L.Map) => { mapRef.current = map }, [])
+  const initialStore = useMemo(loadModeConfigStore, [])
+  const [storeHistory, dispatchStoreHistory] = useReducer(storeHistoryReducer, {
+    past: [],
+    present: initialStore,
+    future: [],
+  })
+  const store = storeHistory.present
+  const setStore = useCallback((update: StoreUpdate) => {
+    dispatchStoreHistory({ type: 'commit', update })
+  }, [])
+  const [mapId, setMapId] = useState(MAPS[0]?.id ?? 'ascent')
+  const [view, setView] = useState<Side>('attack')
+  const [syncStatus, setSyncStatus] = useState('')
+  const [leftPaletteOpen, setLeftPaletteOpen] = useState(true)
+  const [rightEditorOpen, setRightEditorOpen] = useState(true)
+  const syncStatusTimerRef = useRef<number | null>(null)
+  const initialStages = STAGES_BY_MAP[mapId] ?? []
+  const [session, setSession] = useState<ModeEditorSession>(() => ({
+    open: true,
+    profileId: initialStore.profiles.find((profile) => profile.id === 'winner-takes-all')?.id
+      ?? initialStore.profiles[0]?.id
+      ?? null,
+    stageId: initialStages[0]?.id ?? 'S1',
+    tool: 'select',
+    zoneRole: 'custom',
+    selected: null,
+    zoneDraft: [],
+  }))
+
+  const config = MAP_BY_ID[mapId] ?? MAPS[0]
+  const attackStages = STAGES_BY_MAP[mapId] ?? []
+  const profile = store.profiles.find((item) => item.id === session.profileId) ?? store.profiles[0]
+  const mapConfig = profile?.maps[mapId] ?? emptyModeMapOverride(mapId)
+  const firstModeStageId = mapConfig.stages[0]?.id ?? 'S1'
+
+  useEffect(() => saveModeConfigStore(store), [store])
+
+  useEffect(() => () => {
+    if (syncStatusTimerRef.current != null) window.clearTimeout(syncStatusTimerRef.current)
+  }, [])
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== MODE_CONFIG_STORAGE_KEY || !event.newValue) return
+      try {
+        const normalized = normalizeModeConfigStore(JSON.parse(event.newValue))
+        if (normalized) dispatchStoreHistory({ type: 'replace', store: normalized })
+      } catch {
+        // 忽略其他窗口尚未完成或损坏的写入，保留当前可用配置。
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
+  useEffect(() => {
+    if (store.profiles.some((item) => item.id === session.profileId)) return
+    setSession((current) => ({
+      ...current,
+      profileId: store.profiles[0]?.id ?? null,
+      selected: null,
+      zoneDraft: [],
+    }))
+  }, [session.profileId, store.profiles])
+
+  const undo = useCallback(() => {
+    dispatchStoreHistory({ type: 'undo' })
+    setSession((current) => ({ ...current, selected: null, zoneDraft: [] }))
+  }, [])
+
+  const redo = useCallback(() => {
+    dispatchStoreHistory({ type: 'redo' })
+    setSession((current) => ({ ...current, selected: null, zoneDraft: [] }))
+  }, [])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return
+      const key = event.key.toLowerCase()
+      if (key === 'z' && event.shiftKey) {
+        event.preventDefault()
+        redo()
+      } else if (key === 'z') {
+        event.preventDefault()
+        undo()
+      } else if (key === 'y') {
+        event.preventDefault()
+        redo()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [redo, undo])
+
+  useEffect(() => {
+    setSession((current) => ({
+      ...current,
+      stageId: firstModeStageId,
+      tool: 'select',
+      selected: null,
+      zoneDraft: [],
+    }))
+  }, [firstModeStageId, mapId, session.profileId])
+
+  const updateSession = useCallback((patch: Partial<ModeEditorSession>) => {
+    setSession((current) => ({ ...current, ...patch }))
+  }, [])
+
+  const updateMapConfig = useCallback((update: ModeMapOverride | ((current: ModeMapOverride) => ModeMapOverride)) => {
+    if (!session.profileId) return
+    setStore((current) => ({
+      ...current,
+      profiles: current.profiles.map((item) => {
+        if (item.id !== session.profileId) return item
+        const previous = item.maps[mapId] ?? emptyModeMapOverride(mapId)
+        const next = typeof update === 'function' ? update(previous) : update
+        const now = Date.now()
+        return {
+          ...item,
+          maps: { ...item.maps, [mapId]: { ...next, mapId, updatedAt: now } },
+          updatedAt: now,
+        }
+      }),
+    }))
+  }, [mapId, session.profileId])
+
+  const addSpawn = useCallback((point: [number, number], side: Side = view) => {
+    const uid = genUid('mode_spawn')
+    const count = mapConfig.spawns.filter((spawn) => spawn.stageId === session.stageId).length
+    const spawn: ModeSpawnPoint = {
+      uid,
+      stageId: session.stageId,
+      name: `复活点 ${count + 1}`,
+      side,
+      lat: point[0],
+      lng: point[1],
+      vehicleDeploy: false,
+      vehicleCategories: [],
+      deployVehicles: [],
+      verification: 'draft',
+    }
+    updateMapConfig((current) => ({ ...current, spawns: [...current.spawns, spawn] }))
+    setSession((current) => ({ ...current, selected: { kind: 'spawn', uid } }))
+  }, [mapConfig.spawns, session.stageId, updateMapConfig, view])
+
+  const addObjective = useCallback((point: [number, number], icon = 'q_jd_a') => {
+    const uid = genUid('mode_objective')
+    const captureZoneUid = genUid('mode_capture_zone')
+    const count = mapConfig.objectives.filter((item) => item.stageId === session.stageId).length
+    const objective: ModeObjectivePoint = {
+      uid,
+      stageId: session.stageId,
+      name: `据点${String.fromCharCode(65 + Math.min(count, 25))}`,
+      note: '',
+      icon: count === 0 ? icon : `q_jd_${String.fromCharCode(97 + Math.min(count, 4))}`,
+      captureZoneUid,
+      lat: point[0],
+      lng: point[1],
+      verification: 'draft',
+    }
+    const radius = 3.2
+    const captureZone: ModeZone = {
+      uid: captureZoneUid,
+      stageId: session.stageId,
+      name: `${objective.name}占领区`,
+      kind: 'neutral',
+      role: 'capture',
+      objectiveUid: uid,
+      color: '#f4cf67',
+      points: [
+        [point[0] - radius, point[1] - radius],
+        [point[0] - radius, point[1] + radius],
+        [point[0] + radius, point[1] + radius],
+        [point[0] + radius, point[1] - radius],
+      ],
+      verification: 'draft',
+    }
+    updateMapConfig((current) => ({ ...current, objectives: [...current.objectives, objective], zones: [...current.zones, captureZone] }))
+    setSession((current) => ({ ...current, selected: { kind: 'objective', uid } }))
+  }, [mapConfig.objectives, session.stageId, updateMapConfig])
+
+  const addProp = useCallback((point: [number, number]) => {
+    const uid = genUid('mode_prop')
+    const prop: ModeMapProp = {
+      uid,
+      stageId: session.stageId,
+      name: '固定弹药箱',
+      icon: 'q_gddyx',
+      lat: point[0],
+      lng: point[1],
+      verification: 'draft',
+    }
+    updateMapConfig((current) => ({ ...current, props: [...current.props, prop] }))
+    setSession((current) => ({ ...current, selected: { kind: 'prop', uid } }))
+  }, [session.stageId, updateMapConfig])
+
+  const addPresetZone = useCallback((point: [number, number], role: ModeZoneRole) => {
+    const meta = {
+      'attack-base': { label: '进攻方活动区', kind: 'own' as const, color: '#01ff84' },
+      'defense-base': { label: '防守方活动区', kind: 'enemy' as const, color: '#e0453a' },
+      capture: { label: '据点占领区', kind: 'neutral' as const, color: '#f4cf67' },
+      frontline: { label: '阶段防线', kind: 'neutral' as const, color: '#f4cf67' },
+      custom: { label: '自定义区域', kind: 'neutral' as const, color: '#9a9b9b' },
+    }[role]
+    const uid = genUid('mode_zone')
+    const rx = 5
+    const ry = 3.5
+    const zone: ModeZone = {
+      uid,
+      stageId: session.stageId,
+      name: `${session.stageId} · ${meta.label}`,
+      kind: meta.kind,
+      role,
+      color: meta.color,
+      points: [[point[0] - ry, point[1] - rx], [point[0] - ry, point[1] + rx], [point[0] + ry, point[1] + rx], [point[0] + ry, point[1] - rx]],
+      verification: 'draft',
+    }
+    updateMapConfig((current) => ({ ...current, zones: [...current.zones, zone] }))
+    setSession((current) => ({ ...current, tool: 'select', selected: { kind: 'zone', uid } }))
+  }, [session.stageId, updateMapConfig])
+
+  const moveSpawn = useCallback((uid: string, point: [number, number]) => {
+    updateMapConfig((current) => ({
+      ...current,
+      spawns: current.spawns.map((spawn) => spawn.uid === uid && spawn.verification === 'draft' ? { ...spawn, lat: point[0], lng: point[1] } : spawn),
+    }))
+  }, [updateMapConfig])
+
+  const moveObjective = useCallback((uid: string, point: [number, number]) => {
+    updateMapConfig((current) => ({
+      ...current,
+      objectives: current.objectives.map((item) => item.uid === uid && item.verification === 'draft' ? { ...item, lat: point[0], lng: point[1] } : item),
+      zones: current.zones.map((zone) => {
+        const objective = current.objectives.find((item) => item.uid === uid)
+        if (!objective || objective.verification !== 'draft' || zone.uid !== objective.captureZoneUid || zone.verification !== 'draft') return zone
+        const deltaLat = point[0] - objective.lat
+        const deltaLng = point[1] - objective.lng
+        return { ...zone, points: zone.points.map(([lat, lng]) => [lat + deltaLat, lng + deltaLng] as [number, number]) }
+      }),
+    }))
+  }, [updateMapConfig])
+
+  const moveProp = useCallback((uid: string, point: [number, number]) => {
+    updateMapConfig((current) => ({
+      ...current,
+      props: current.props.map((item) => item.uid === uid && item.verification === 'draft' ? { ...item, lat: point[0], lng: point[1] } : item),
+    }))
+  }, [updateMapConfig])
+
+  const moveZoneVertex = useCallback((uid: string, index: number, point: [number, number]) => {
+    updateMapConfig((current) => ({
+      ...current,
+      zones: current.zones.map((zone) => zone.uid === uid && zone.verification === 'draft'
+        ? { ...zone, points: zone.points.map((vertex, vertexIndex) => vertexIndex === index ? point : vertex) }
+        : zone),
+    }))
+  }, [updateMapConfig])
+
+  const insertZoneVertex = useCallback((uid: string, index: number, point: [number, number]) => {
+    updateMapConfig((current) => ({
+      ...current,
+      zones: current.zones.map((zone) => zone.uid === uid && zone.verification === 'draft'
+        ? { ...zone, points: [...zone.points.slice(0, index), point, ...zone.points.slice(index)] }
+        : zone),
+    }))
+  }, [updateMapConfig])
+
+  const removeZoneVertex = useCallback((uid: string, index: number) => {
+    updateMapConfig((current) => ({
+      ...current,
+      zones: current.zones.map((zone) => zone.uid === uid && zone.verification === 'draft' && zone.points.length > 3
+        ? { ...zone, points: zone.points.filter((_, vertexIndex) => vertexIndex !== index) }
+        : zone),
+    }))
+  }, [updateMapConfig])
+
+  const handlePaletteDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    if ((event.target as HTMLElement).closest('.mode-config-editor, .mode-asset-palette')) return
+    const asset = readModePaletteAsset(event.dataTransfer)
+    const map = mapRef.current
+    if (!asset || !map) return
+    const rect = map.getContainer().getBoundingClientRect()
+    const latlng = map.containerPointToLatLng(L.point(event.clientX - rect.left, event.clientY - rect.top))
+    const point: [number, number] = [latlng.lat, latlng.lng]
+    if (asset.kind === 'spawn') addSpawn(point, asset.side)
+    else if (asset.kind === 'objective') addObjective(point, asset.icon)
+    else if (asset.kind === 'prop') {
+      const uid = genUid('mode_prop')
+      const prop: ModeMapProp = { uid, stageId: session.stageId, name: asset.name, icon: asset.icon, lat: point[0], lng: point[1], verification: 'draft' }
+      updateMapConfig((current) => ({ ...current, props: [...current.props, prop] }))
+      setSession((current) => ({ ...current, tool: 'select', selected: { kind: 'prop', uid } }))
+    } else addPresetZone(point, asset.role)
+  }, [addObjective, addPresetZone, addSpawn, session.stageId, updateMapConfig])
+
+  const syncToOfficial = useCallback(() => {
+    const nextStore = { ...store, activeModeId: profile.id }
+    setStore(nextStore)
+    publishModeConfigStore(nextStore)
+    const officialWindow = window.opener && !window.opener.closed
+      ? window.opener
+      : window.open('/', 'deltaforce-map-tools-official')
+    officialWindow?.focus()
+    setSyncStatus(`已同步并刷新正式版 · ${config.name} ${mapConfig.stages.length} 个阶段`)
+    if (syncStatusTimerRef.current != null) window.clearTimeout(syncStatusTimerRef.current)
+    syncStatusTimerRef.current = window.setTimeout(() => setSyncStatus(''), 3500)
+  }, [config.name, mapConfig.stages.length, profile.id, setStore, store])
+
+  if (!config || !profile) return null
+
+  return (
+    <main className={`mode-workbench${leftPaletteOpen ? '' : ' left-palette-collapsed'}`}>
+      <header className="mode-workbench-toolbar">
+        <img src="/nav_title.png" alt="三角洲行动" draggable={false} />
+        <div className="mode-workbench-title"><strong>模式配置器</strong><span>独立数据工作台</span></div>
+        <label><span>地图</span><select value={mapId} onChange={(event) => setMapId(event.target.value)}>{MAPS.map((map) => <option key={map.id} value={map.id}>{map.name}</option>)}</select></label>
+        <div className="mode-workbench-side">
+          <button className={view === 'attack' ? 'active' : ''} onClick={() => setView('attack')}>进攻方</button>
+          <button className={view === 'defense' ? 'active' : ''} onClick={() => setView('defense')}>防守方</button>
+        </div>
+        <div className="mode-workbench-history" aria-label="编辑历史">
+          <button disabled={storeHistory.past.length === 0} onClick={undo} title="撤回（Ctrl+Z）" aria-label="撤回">
+            <i className="fa-solid fa-rotate-left" />撤回
+          </button>
+          <button disabled={storeHistory.future.length === 0} onClick={redo} title="恢复（Ctrl+Y / Ctrl+Shift+Z）" aria-label="恢复">
+            <i className="fa-solid fa-rotate-right" />恢复
+          </button>
+        </div>
+        <button className="mode-workbench-close" onClick={() => window.close()}><i className="fa-solid fa-arrow-up-right-from-square" />关闭工具</button>
+      </header>
+
+      <div
+        className="mode-workbench-map-wrap"
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={handlePaletteDrop}
+        onContextMenuCapture={(event) => {
+          if ((event.target as HTMLElement).closest('.mode-config-vertex-wrap')) event.preventDefault()
+        }}
+      >
+        <ModeAssetPalette
+          collapsed={!leftPaletteOpen}
+          onToggleCollapsed={() => setLeftPaletteOpen((open) => !open)}
+        />
+        <MapContainer
+          key={config.id}
+          crs={L.CRS.Simple}
+          bounds={mapBounds(config)}
+          minZoom={config.minZoom}
+          maxZoom={config.maxZoom}
+          zoomControl
+          attributionControl={false}
+          className={`tactical-map mode-config-editing mode-config-tool-${session.tool}`}
+          style={{ width: '100%', height: '100%' }}
+        >
+          <TileLayer
+            url={config.tileUrl}
+            bounds={mapBounds(config)}
+            minZoom={config.minZoom}
+            maxZoom={config.maxZoom}
+            maxNativeZoom={config.maxNativeZoom}
+            tileSize={256}
+          />
+          <WorkbenchMapSync config={config} onReady={handleMapReady} />
+          <ModeConfigLayer
+            config={mapConfig}
+            stageId={session.stageId}
+            view={view}
+            editing
+            zonesVisible
+            spawnsVisible
+            objectivesVisible
+            propsVisible
+            tool={session.tool}
+            selected={session.selected}
+            zoneDraft={session.zoneDraft}
+            onSelect={(selected) => updateSession({ selected })}
+            onZoneDraftChange={(zoneDraft) => updateSession({ zoneDraft })}
+            onAddSpawn={addSpawn}
+            onAddObjective={addObjective}
+            onAddProp={addProp}
+            onMoveSpawn={moveSpawn}
+            onMoveObjective={moveObjective}
+            onMoveProp={moveProp}
+            onMoveZoneVertex={moveZoneVertex}
+            onInsertZoneVertex={insertZoneVertex}
+            onRemoveZoneVertex={removeZoneVertex}
+          />
+        </MapContainer>
+
+        <ModeConfigEditor
+          mapId={mapId}
+          mapName={config.name}
+          stageOptions={mapConfig.stages}
+          profiles={store.profiles}
+          profile={profile}
+          mapConfig={mapConfig}
+          session={session}
+          onSessionChange={updateSession}
+          onSelectProfile={(id) => setSession((current) => ({ ...current, profileId: id, selected: null, zoneDraft: [] }))}
+          onCreateProfile={(name) => {
+            const created = createModeProfile(name)
+            setStore((current) => ({ ...current, profiles: [...current.profiles, created] }))
+            setSession((current) => ({ ...current, profileId: created.id, selected: null, zoneDraft: [] }))
+          }}
+          onDeleteProfile={(id) => {
+            if (store.profiles.length <= 1) return
+            const profiles = store.profiles.filter((item) => item.id !== id)
+            setStore({ ...store, profiles, activeModeId: store.activeModeId === id ? 'attack-defense' : store.activeModeId })
+            setSession((current) => ({ ...current, profileId: profiles[0]?.id ?? null, selected: null, zoneDraft: [] }))
+          }}
+          onUpdateProfile={(id, patch: Partial<Pick<GameModeProfile, 'name' | 'description'>>) => setStore((current) => ({
+            ...current,
+            profiles: current.profiles.map((item) => item.id === id ? { ...item, ...patch, updatedAt: Date.now() } : item),
+          }))}
+          onMapConfigChange={updateMapConfig}
+          onSyncAttackDefense={() => updateMapConfig(syncModeMapFromAttackDefense(mapId, attackStages))}
+          onExport={() => downloadText(`deltaforce-mode-configs-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(store, null, 2))}
+          onExportOfficial={() => downloadText(`deltaforce-${profile.id}-official-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(buildOfficialModeData(profile), null, 2))}
+          onSyncOfficial={syncToOfficial}
+          syncStatus={syncStatus}
+          onImport={(value) => {
+            const normalized = normalizeModeConfigStore(value)
+            if (!normalized) return window.alert('配置文件格式无效。')
+            setStore(normalized)
+            setSession((current) => ({ ...current, profileId: normalized.profiles[0]?.id ?? null, selected: null, zoneDraft: [] }))
+          }}
+          collapsed={!rightEditorOpen}
+          onToggleCollapsed={() => setRightEditorOpen((open) => !open)}
+          onClose={() => window.close()}
+        />
+      </div>
+    </main>
+  )
+}

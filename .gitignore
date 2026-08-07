@@ -1,0 +1,55 @@
+# Dependencies
+/node_modules/
+
+# Build output and distributables
+/dist/
+/dist-ssr/
+/release/
+/out/
+*.exe
+*.msi
+*.blockmap
+*.zip
+*.7z
+
+# Recording/demo-only material
+/demo/
+
+# Logs and runtime files
+/logs/
+*.log
+*.pid
+*.seed
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Environment and local overrides
+.env
+.env.*
+!.env.example
+*.local
+
+# Tests and caches
+/coverage/
+/.vite/
+*.tsbuildinfo
+.eslintcache
+
+# Editors and local tooling
+/.vscode/
+/.idea/
+/.codex/
+/.cursor/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+Desktop.ini

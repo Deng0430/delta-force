@@ -1,0 +1,586 @@
+/** 攻防双方 */
+export type Side = 'attack' | 'defense'
+
+/** 画笔工具模式（问题4：新增橡皮擦；第九轮：新增普通画笔 pen；第十一轮：新增套索 lasso；第二十二轮：新增防线 defense；第十六轮：编辑能力常驻，删除独立编辑工具） */
+export type ToolMode = 'pan' | 'pen' | 'line' | 'arrow' | 'rect' | 'circle' | 'text' | 'eraser' | 'lasso' | 'defense'
+
+/** 画笔线型（问题4：实线/虚线/点线） */
+export type DashType = 'solid' | 'dashed' | 'dotted'
+
+/** 线条路径样式（第二十二轮：直线 / 曲线贝塞尔 / 手绘自由轨迹） */
+export type CurveStyle = 'straight' | 'smooth' | 'freehand'
+
+/** 橡皮擦模式：局部裁断笔迹 / 触碰即删除整个图形 */
+export type EraserMode = 'stroke' | 'shape'
+
+/** 箭头头部形状（第十六轮：新增 实心 solid / 空心 outline / 三角形 triangle；旧样式保留兼容） */
+export type ArrowHeadStyle = 'triangle' | 'classic' | 'chevron' | 'diamond' | 'solid' | 'outline'
+
+/** 画笔工具设置（问题4：颜色/线宽/线型；箭头：形状/大小；第二十二轮：路径样式） */
+export interface DrawSettings {
+  color: string
+  weight: number
+  dash: DashType
+  /** 箭头头部形状（默认实心三角） */
+  arrowStyle: ArrowHeadStyle
+  /** 箭头头部大小 px（6-20） */
+  arrowSize: number
+  /** 线条路径样式：直线 / 曲线（贝塞尔，绘制时拖控制点） / 手绘（按住自由画），作用于 line/arrow/defense */
+  curve: CurveStyle
+  /** 曲线曲度（0-100，越大越弯；仅 curve=smooth 时生效） */
+  curveAmount: number
+  /** 矩形/圆形填充色 */
+  fillColor: string
+  /** 矩形/圆形是否填充（默认 false） */
+  fillEnabled: boolean
+  /** 橡皮擦笔头直径 px */
+  eraserSize: number
+  /** 橡皮擦工作模式 */
+  eraserMode: EraserMode
+}
+
+/**
+ * 点位状态（按攻防推进阶段）：
+ * captured = 已攻下（进攻方占领）/ active = 当前争夺（中立）/ locked = 未激活（防守方控制）
+ */
+export type PointStatus = 'active' | 'captured' | 'locked'
+
+/** 攻防据点（坐标来自官网地图工具脚本，已换算为地图经纬度） */
+export interface CapturePoint {
+  name: string
+  lat: number
+  lng: number
+  /** 备注（如 滩头前线） */
+  note: string
+  /** 官网图标名（dzc_i 目录下，如 q_jd_a） */
+  icon: string
+  /** 据点可占领区域边界（官网据点对象 border 换算），实线边框渲染 */
+  capturable: [number, number][]
+}
+
+/** 区域多边形（官网 区域 border 数据） */
+export interface ZonePolygon {
+  name: string
+  latlngs: [number, number][]
+}
+
+/** 官网攻防载具模板（按阶段配置，位置为官方部署点） */
+export interface StageVehicle {
+  name: string
+  badge: string
+  category: VehicleCategory
+  /** 官网图标名（dzc_i 目录，如 q_cfz） */
+  icon: string
+  /** 官网激活条件（展示用） */
+  trigger: string
+  /** 官方初始部署位置 [lat, lng] */
+  pos: [number, number]
+  /** 该载具全部官方部署点 [lat, lng][] */
+  posList: [number, number][]
+}
+
+/** 地图道具（官网地图工具数据：固定防空炮/固定机枪/岸防炮/滑索/电梯/固定弹药箱/载具补给站） */
+export interface MapProp {
+  name: string
+  /** 官网图标名（dzc_i 目录，如 q_gdaap） */
+  icon: string
+  lat: number
+  lng: number
+  /** 阶段归属（如 攀升S1 / S1），可为空表示全局 */
+  stage: string
+}
+
+/** 攻防阶段配置（阶段顺序即攻防推进顺序） */
+export interface StageConfig {
+  id: string
+  label: string
+  points: CapturePoint[]
+  /** 防线区域（官网"区域"对象 border，虚线边框） */
+  zone: ZonePolygon | null
+  /** 进攻方复活点（本阶段全部进攻方基地，同级无优先级，问题2） */
+  attackSpawns: [number, number][]
+  /** 防守方复活点（本阶段全部防守方基地，同级无优先级） */
+  defenseSpawns: [number, number][]
+  /** 进攻方复活点基地名（与 attackSpawns 一一对应，如 "北边滩头"/"海上基地"；用于载具部署过滤） */
+  attackSpawnNames?: string[]
+  /** 防守方复活点基地名（与 defenseSpawns 一一对应） */
+  defenseSpawnNames?: string[]
+  /** 进攻方基地区域边界（攻方可活动区域） */
+  attackBaseZone: [number, number][]
+  /** 防守方基地区域边界（守方可活动区域） */
+  defenseBaseZone: [number, number][]
+  /** 本阶段攻方可部署载具（官网数据） */
+  attackVehicles: StageVehicle[]
+  /** 本阶段守方可部署载具（官网攻防模式无守方载具） */
+  defenseVehicles: StageVehicle[]
+}
+
+/** 地图配置（对齐官网 df.qq.com/cp/a20240729directory 数据） */
+export interface MapConfig {
+  id: string
+  name: string
+  enName: string
+  /** 腾讯 CDN 瓦片目录名，如 map_pc / map_ljd_pc */
+  layerName: string
+  /** 瓦片 URL 模板（含 {z}_{x}_{y} 占位） */
+  tileUrl: string
+  minZoom: number
+  initZoom: number
+  maxZoom: number
+  /** 瓦片原始最高缩放级，超出后由 Leaflet 放大 */
+  maxNativeZoom: number
+  /** 官网 mapScaleInfo.boundsW（负值） */
+  boundsW: number
+  /** 官网 mapScaleInfo.boundsH */
+  boundsH: number
+  /** 地图可视范围（CRS.Simple 坐标），对应官网 southWest / northEast */
+  southWest: [number, number]
+  northEast: [number, number]
+  /** 初始视角中心 */
+  initCenter: [number, number]
+}
+
+/** 自定义游戏模式配置的核验状态。 */
+export type ModeConfigVerification = 'draft' | 'confirmed'
+
+/** 自定义模式区域语义；颜色仍可单独调整。 */
+export type ModeZoneKind = 'own' | 'enemy' | 'neutral' | 'restricted'
+export type ModeZoneRole = 'attack-base' | 'defense-base' | 'capture' | 'frontline' | 'custom'
+
+export interface ModeZone {
+  uid: string
+  stageId: string
+  name: string
+  kind: ModeZoneKind
+  role: ModeZoneRole
+  /** role=capture 时绑定的据点 uid。 */
+  objectiveUid?: string
+  color: string
+  points: [number, number][]
+  verification: ModeConfigVerification
+}
+
+export interface ModeSpawnPoint {
+  uid: string
+  stageId: string
+  name: string
+  side: Side
+  lat: number
+  lng: number
+  vehicleDeploy: boolean
+  /** 旧版分类字段，保留用于导入兼容；新配置以 deployVehicles 为准。 */
+  vehicleCategories: VehicleCategory[]
+  deployVehicles: ModeDeployVehicle[]
+  verification: ModeConfigVerification
+}
+
+export interface ModeDeployVehicle {
+  name: string
+  icon: string
+  iconUrl: string
+  legendKey?: string
+  badge: string
+  category: VehicleCategory
+  cd: number
+  num: number
+  allowTeammate: boolean
+}
+
+/** 自定义模式据点标记，使用攻防模式相同的 q_jd_* 正式图标。 */
+export interface ModeObjectivePoint {
+  uid: string
+  stageId: string
+  name: string
+  note: string
+  icon: string
+  /** 与据点标识绑定的占领区 uid。 */
+  captureZoneUid: string
+  lat: number
+  lng: number
+  verification: ModeConfigVerification
+}
+
+/** 自定义模式地图道具；stageId='*' 表示所有阶段可见。 */
+export interface ModeMapProp {
+  uid: string
+  stageId: string
+  name: string
+  icon: string
+  lat: number
+  lng: number
+  verification: ModeConfigVerification
+}
+
+/** 模式地图自身的阶段定义；允许不同于攻防模式增删阶段。 */
+export interface ModeStageDefinition {
+  id: string
+  label: string
+}
+
+/** 某个模式在一张底图上的差异覆盖配置。 */
+export interface ModeMapOverride {
+  mapId: string
+  notes: string
+  stages: ModeStageDefinition[]
+  zones: ModeZone[]
+  spawns: ModeSpawnPoint[]
+  objectives: ModeObjectivePoint[]
+  props: ModeMapProp[]
+  updatedAt: number
+}
+
+/** 通用模式档案；每张地图只保存相对攻防模式不同的覆盖数据。 */
+export interface GameModeProfile {
+  id: string
+  name: string
+  description: string
+  maps: Record<string, ModeMapOverride>
+  createdAt: number
+  updatedAt: number
+}
+
+export interface ModeConfigStore {
+  version: 4
+  activeModeId: string
+  profiles: GameModeProfile[]
+}
+
+export type ModeEditorTool = 'select' | 'zone' | 'spawn' | 'objective' | 'prop'
+
+export type ModeEditorSelection =
+  | { kind: 'zone'; uid: string }
+  | { kind: 'spawn'; uid: string }
+  | { kind: 'objective'; uid: string }
+  | { kind: 'prop'; uid: string }
+  | null
+
+export interface ModeEditorSession {
+  open: boolean
+  profileId: string | null
+  stageId: string
+  tool: ModeEditorTool
+  zoneRole: ModeZoneRole
+  selected: ModeEditorSelection
+  zoneDraft: [number, number][]
+}
+
+/** 载具分类 */
+export type VehicleCategory = 'tank' | 'ifv' | 'apc' | 'recon' | 'helo' | 'water' | 'supply'
+
+/** 已放置的载具实例 */
+export interface VehicleItem {
+  uid: string
+  name: string
+  category: VehicleCategory
+  side: Side
+  /** 所属小队；旧存档载具在读取时自动归入 A 队 */
+  team: OperatorTeam
+  /** 卡片徽标（图标加载失败时兜底） */
+  badge: string
+  /** 官网图标 URL（dzc_i/q_*.png） */
+  iconUrl: string
+  lat: number
+  lng: number
+  /** 所属阶段（如 S1） */
+  stageId: string
+  /** 旋转角度（度，0-360，问题3：滚轮旋转，持久化） */
+  rotation: number
+  /** 是否为玩家自定义部署（非官方固定部署点，问题3） */
+  custom?: boolean
+  /** 本方/敌方部署（本方=绿底、敌方=红底；旧数据无此字段时按 side 兼容） */
+  own?: boolean
+}
+
+/** 文字标注（由画笔 GeoJSON 中的 Point 特征推导） */
+export interface TextAnnotation {
+  uid: string
+  text: string
+  lat: number
+  lng: number
+}
+
+/** 进行中的文字标注编辑会话（由地图图层发起，UI 面板消费） */
+export interface ActiveTextEdit {
+  uid: string
+  lat: number
+  lng: number
+  initialText: string
+  commit: (text: string) => void
+  cancel: () => void
+  /** 地图容器内的像素坐标（第十三轮：文字编辑器跟随标注位置显示） */
+  containerPoint?: { x: number; y: number }
+}
+
+/** 文字标注样式（第十五轮：编辑工具下可调字号/底色/边框/字体/字重/颜色/对齐） */
+export interface TextStyleProps {
+  /** 字号 px（8-72） */
+  fontSize?: number
+  /** 文字颜色 */
+  color?: string
+  /** 背景颜色；空/transparent = 透明背景 */
+  backgroundColor?: string
+  /** 边框颜色 */
+  borderColor?: string
+  /** 边框宽度 px（0 = 无边框） */
+  borderWidth?: number
+  /** 边框样式 */
+  borderStyle?: 'solid' | 'dashed' | 'dotted' | 'none'
+  /** 字体族（默认 / 微软雅黑 / Arial / 楷体 / 黑体 / 宋体） */
+  fontFamily?: string
+  /** 字重 */
+  fontWeight?: 'normal' | 'bold'
+  /** 斜体 */
+  fontStyle?: 'normal' | 'italic'
+  /** 对齐方式 */
+  textAlign?: 'left' | 'center' | 'right'
+  /** 文本框宽度 px */
+  width?: number
+  /** 顺时针旋转角度 */
+  rotation?: number
+}
+
+/** 单张地图的完整战术数据 */
+export interface MapState {
+  /** 载具按攻/守方分桶存储（与画笔绘制对称：切换视角只显示当前视角桶） */
+  vehicles: Record<Side, VehicleItem[]>
+  /** 每方独立画笔图层（GeoJSON FeatureCollection 字符串） */
+  drawings: Record<Side, string>
+  /** 兵棋推演干员（按攻/守分桶；每方默认 5 队×4 人 = 20 人） */
+  operators: Record<Side, OperatorUnit[]>
+  /** 兵棋推演协同关系（按攻/守视角分桶） */
+  connections: Record<Side, OperatorConnection[]>
+  /** 兵棋推演队标（按攻/守分桶，仅表达队伍归属） */
+  teams: Record<Side, TeamMarker[]>
+  /** 兵棋推演进攻路线（按视角分桶） */
+  routes: Record<Side, TacticalRoute[]>
+  /** 兵棋推演控制状态（回合数等） */
+  wargame: WargameState
+}
+
+/** 干员职业（三角洲行动四类定位） */
+export type OperatorClass = 'assault' | 'engineer' | 'medical' | 'recon'
+
+/** 干员生命状态（兵棋推演） */
+export type OperatorStatus = 'alive' | 'injured' | 'killed'
+
+/** 干员所属队伍（每方 A-E 五个队） */
+export type OperatorTeam = 'A' | 'B' | 'C' | 'D' | 'E'
+
+/** 兵棋推演：单个干员单位 */
+export interface OperatorUnit {
+  uid: string
+  /** 干员代号（如 A1/B3），同一方内唯一 */
+  name: string
+  side: Side
+  team: OperatorTeam
+  /** 具体干员档案 id（config/operatorProfiles.ts，如 红狼=10000/蜂医=10001） */
+  operatorId: string
+  /** 职业（随所选干员档案派生，存一份便于查询/兼容旧数据） */
+  cls: OperatorClass
+  status: OperatorStatus
+  /** 地图坐标；null = 未部署 */
+  lat: number | null
+  lng: number | null
+}
+
+/** 兵棋推演：干员间协同关系；仅表示双方协同，不表示移动。 */
+export interface OperatorConnection {
+  id: string
+  /** 所属视角（跟随干员所在方） */
+  side: Side
+  operatorAId: string
+  operatorBId: string
+  /** 创建关系的队伍；允许同阵营跨队协同。 */
+  team: OperatorTeam
+  /** 旧存档兼容字段；当前协同关系统一使用无方向点线。 */
+  style: 'solid' | 'dashed'
+  label?: string
+  createdAt: number
+}
+
+/** 旧存档兼容类型；队标界面不再区分步兵/载具职责。 */
+export type TeamRoleType = 'infantry' | 'vehicle'
+
+/**
+ * 兵棋推演：队标棋子（第二十三轮新增）。
+ * 一种简化部署单位——不需要逐个部署干员时，用队标表示一个小队：
+ * 样式与干员棋子相近（队伍色圆底 + 队伍字母 + 小队名），
+ * 大小与载具卡片相当（30px）。每个阵营的每支队伍部署一个。
+ */
+export interface TeamMarker {
+  uid: string
+  /** 所属阵营（攻/守） */
+  side: Side
+  /** 所属队伍（决定圆底颜色/字母） */
+  team: OperatorTeam
+  /** 旧存档兼容字段；不再影响队标外观或职责。 */
+  role: TeamRoleType
+  /** 小队名称（棋子上方，如 "A队1排"） */
+  name: string
+  /** 地图坐标；null = 未部署 */
+  lat: number | null
+  lng: number | null
+}
+
+/** 行动指令类型（路线 V2） */
+export type TacticalOrderType = 'move' | 'attack' | 'recon' | 'flank' | 'retreat' | 'escort' | 'resupply' | 'hold'
+
+/** 行动指令执行状态 */
+export type TacticalOrderStatus = 'planned' | 'pending' | 'executing' | 'completed' | 'cancelled'
+
+/** 路线线型 */
+export type TacticalRouteLineStyle = 'solid' | 'dashed' | 'dotted'
+
+/** 路线终点吸附目标 */
+export interface TacticalRouteTarget {
+  kind: 'point' | 'team' | 'operator' | 'vehicle'
+  uid: string
+  label: string
+}
+
+/** 兵棋推演：由队标发起的路线行动指令 */
+export interface TacticalRoute {
+  uid: string
+  /** 路线所属阵营与小队 */
+  side: Side
+  team: OperatorTeam
+  /** 发起路线的队标；用于队标移动时同步路线起点 */
+  teamMarkerUid: string
+  /** 起点锚定方式：队标 / 干员 / 载具 / 父路线节点 / 自由起点 */
+  anchorMode: 'team' | 'operator' | 'vehicle' | 'branch' | 'free'
+  /** 干员独立任务路线的起点锚定干员 */
+  anchorOperatorUid?: string
+  /** 载具任务路线或自由路线吸附后锚定的载具 */
+  anchorVehicleUid?: string
+  name: string
+  orderType: TacticalOrderType
+  status: TacticalOrderStatus
+  /** 自定义路线色；行动类型切换时会应用该类型默认色 */
+  color: string
+  lineStyle: TacticalRouteLineStyle
+  opacity: number
+  /** 地图坐标 [lat, lng]；首点始终锚定队标 */
+  waypoints: [number, number][]
+  /** 指令标签的自定义地图位置；未设置时自动放在路线首段中点。 */
+  labelPosition?: [number, number]
+  /** 创建路线时自动绑定的同队兵棋资源 */
+  operatorIds: string[]
+  vehicleIds: string[]
+  /** 终点吸附的兵棋/地图对象 */
+  target?: TacticalRouteTarget
+  /** 分支来源；分支首点锚定父路线节点，而不是队标 */
+  branchFromRouteUid?: string
+  branchFromWaypointIndex?: number
+  createdAt: number
+}
+
+/** 兵棋推演状态（回合制推进） */
+export interface WargameState {
+  /** 是否启用兵棋推演模式（控制干员/联线图层显示） */
+  enabled: boolean
+  /** 当前回合数 */
+  round: number
+  /** 联线是否显示（数据保留，可隐藏） */
+  showConnections: boolean
+  /** 是否处于协同关系编辑模式（依次点击两名干员建立关系） */
+  connectMode: boolean
+  /** 各小队作用描述（可编辑，键为队伍 id：A/B/C/D/E；缺省回退 TEAMS.desc） */
+  teamRoles: Record<string, string>
+}
+
+/** 撤回/恢复历史快照：双方载具 + 双方绘制（按 地图+视角 分栈） */
+export interface MapStateSnapshot {
+  vehicles: Record<Side, VehicleItem[]>
+  drawings: Record<Side, string>
+  /** 兵棋推演干员与联线（v9 新增，随快照入栈） */
+  operators: Record<Side, OperatorUnit[]>
+  connections: Record<Side, OperatorConnection[]>
+  /** 兵棋推演队标（v11 新增，随快照入栈） */
+  teams: Record<Side, TeamMarker[]>
+  routes: Record<Side, TacticalRoute[]>
+}
+
+/** 撤回/恢复历史条目 */
+export interface HistoryEntry {
+  before: MapStateSnapshot
+  after: MapStateSnapshot
+}
+
+/** 历史栈键：`${mapId}:${view}` */
+export type HistoryKey = string
+
+/** 所有地图的数据（以 mapId 为键） */
+export type MapsData = Record<string, MapState>
+
+/**
+ * 战术方案（第二十一轮：保存各阶段默认战术部署）：
+ * 记录某个 地图×阶段×视角 下的完整战术布置快照，可自定义名称后保存/应用。
+ */
+export interface TacticalPlan {
+  id: string
+  /** 自定义战术名称（如 "开局强攻 A 点"） */
+  name: string
+  mapId: string
+  stageId: string
+  view: Side
+  createdAt: number
+  /** 该视角载具桶（含本方/敌方载具） */
+  vehicles: VehicleItem[]
+  /** 该视角绘制 GeoJSON */
+  drawings: string
+  /** 该视角兵棋干员桶（含双方 40 人） */
+  operators: OperatorUnit[]
+  /** 该视角兵棋协同关系 */
+  connections: OperatorConnection[]
+  /** 该视角兵棋队标（第二十三轮） */
+  teams: TeamMarker[]
+  /** 该视角的队伍进攻路线 */
+  routes: TacticalRoute[]
+}
+
+/** 图层显示开关（问题1：地图道具等图层控制） */
+export interface LayerVisibility {
+  props: boolean
+  points: boolean
+  /** 据点标识（A点图标 + "据点A"字样），可与据点区域分离隐藏 */
+  pointsLabels: boolean
+  spawns: boolean
+  zones: boolean
+}
+
+/** 地图道具按类型显示开关（问题2：每个道具类型独立控制） */
+export type PropVisibility = Record<string, boolean>
+
+/** localStorage 持久化结构 */
+export interface PersistedAppState {
+  version: number
+  lastMapId: string
+  lastView: Side
+  maps: MapsData
+  /** 各地图当前激活阶段下标（点击据点直接切换，问题3） */
+  progress: Record<string, number>
+  /** 战术方案库（第二十一轮：按 地图×阶段×视角 保存的默认部署） */
+  plans: TacticalPlan[]
+  /** 界面折叠状态（左右工具栏收起/展开）+ 图层/道具开关 + 画笔设置 */
+  ui: {
+    paletteOpen: boolean
+    panelOpen: boolean
+    /** 左下角区域图例是否展开。 */
+    legendOpen: boolean
+    /** 左侧栏宽度：250px 最小，默认 300px，最大 440px。 */
+    leftPanelWidth: number
+    layers: LayerVisibility
+    propVis: PropVisibility
+    /** 画笔工具设置（问题4：颜色/线宽/线型） */
+    draw: DrawSettings
+    /** 左侧面板折叠区块展开状态（地图分层/道具子列表/自定义载具/兵棋推演），持久化避免收缩后重置 */
+    sections: {
+      layers: boolean
+      props: boolean
+      vehicles: boolean
+      wargame: boolean
+      /** 自定义载具内部分组（地面/空中/水上）展开状态，按组名存储 */
+      vehGroups: Record<string, boolean>
+    }
+  }
+}

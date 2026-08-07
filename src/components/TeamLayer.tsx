@@ -1,0 +1,194 @@
+import { useEffect, useMemo, useRef } from 'react'
+import { Marker } from 'react-leaflet'
+import * as L from 'leaflet'
+import type { Side, TeamMarker } from '../types'
+import { teamOf } from '../config/operators'
+
+interface TeamLayerProps {
+  view: Side
+  /** 当前视角桶内全部队标（含双方：side === view 为我方绿，敌方红） */
+  teams: TeamMarker[]
+  /** 小队名称表（wargame.teamRoles，队标名称与其同步；缺省回退队标自带 name） */
+  teamNames: Record<string, string>
+  /** 队标坐标注册表：uid → [lat, lng]，供套索框选/整体移动读取 */
+  posRef: React.MutableRefObject<Record<string, [number, number]>>
+  /** 是否允许拖拽（绘制工具激活时禁止） */
+  canDrag: boolean
+  interactive: boolean
+  onMove: (uid: string, lat: number, lng: number) => void
+  onDelete: (uid: string) => void
+  onStartRoute: (uid: string) => void
+}
+
+/** 阵营色：我方绿 / 敌方红（与干员棋子一致） */
+const SIDE_COLOR = {
+  own: { bright: '#01ff84', deep: '#067a4e' },
+  enemy: { bright: '#e0453a', deep: '#a02a22' },
+} as const
+
+/** 队伍色暗化（圆底渐变下端） */
+function darken(hex: string, f = 0.6): string {
+  const m = hex.replace('#', '')
+  const r = Math.round(parseInt(m.slice(0, 2), 16) * f)
+  const g = Math.round(parseInt(m.slice(2, 4), 16) * f)
+  const b = Math.round(parseInt(m.slice(4, 6), 16) * f)
+  return `rgb(${r},${g},${b})`
+}
+
+/**
+ * 构建队标 divIcon（第二十三轮）：
+ * - 主图标：队伍色渐变圆底 + 队伍字母（A/B/C…，与干员棋子的职业剪影位置一致）
+ * - 棋子上方：小队名称标签（同干员名字条风格，阵营色底）
+ * - 外圈：阵营色粗环 + 发光（我方=绿，敌方=红，与干员/载具一致）
+ * 大小 30px，与载具卡片相当。
+ */
+function buildTeamIcon(tm: TeamMarker, view: Side, teamName?: string): L.DivIcon {
+  const team = teamOf(tm.team)
+  const own = tm.side === view
+  const sc = own ? SIDE_COLOR.own : SIDE_COLOR.enemy
+  const name = teamName?.trim() || tm.name || `${tm.team}队`
+  return L.divIcon({
+    className: 'tm-wrap',
+    html: `
+      <div class="tm-marker" style="--tm-team:${team.color};--tm-team-dark:${darken(team.color)};--tm-side:${sc.bright};--tm-side-deep:${sc.deep}" title="${team.name}">
+        <span class="tm-side-ring"></span>
+        <span class="tm-team-bg"></span>
+        <span class="tm-letter">${team.id}</span>
+        <span class="tm-name">${name}</span>
+        <button class="tm-route" title="绘制${team.name}进攻路线" aria-label="绘制进攻路线" onclick="event.stopPropagation();event.preventDefault();window.__tmRoute('${tm.uid}')"><i class="fa-solid fa-route" aria-hidden="true"></i></button>
+      </div>`,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+  })
+}
+
+/** 单个队标标记 */
+function TeamMarkerItem({
+  tm,
+  view,
+  teamName,
+  canDrag,
+  interactive,
+  posRef,
+  onMove,
+  onDelete,
+  onStartRoute,
+}: {
+  tm: TeamMarker
+  view: Side
+  teamName?: string
+  canDrag: boolean
+  interactive: boolean
+  posRef: React.MutableRefObject<Record<string, [number, number]>>
+  onMove: (uid: string, lat: number, lng: number) => void
+  onDelete: (uid: string) => void
+  onStartRoute: (uid: string) => void
+}) {
+  const ref = useRef<L.Marker | null>(null)
+
+  // 位置注册表：套索框选/整体移动读取
+  useEffect(() => {
+    if (tm.lat == null || tm.lng == null) {
+      delete posRef.current[tm.uid]
+      return
+    }
+    posRef.current[tm.uid] = [tm.lat, tm.lng]
+    return () => {
+      delete posRef.current[tm.uid]
+    }
+  }, [tm.uid, tm.lat, tm.lng, posRef])
+
+  const icon = useMemo(
+    () => buildTeamIcon(tm, view, teamName),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tm.uid, tm.team, tm.name, tm.side, view, teamName],
+  )
+
+  // 右键删除队标（原生 contextmenu 绑定）
+  useEffect(() => {
+    const el = ref.current?.getElement()
+    if (!el) return
+    const onCtx = (e: MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      onDelete(tm.uid)
+    }
+    el.addEventListener('contextmenu', onCtx)
+    return () => el.removeEventListener('contextmenu', onCtx)
+  }, [tm.uid, onDelete, icon])
+
+  useEffect(() => {
+    const w = window as unknown as {
+      __tmRoute?: (uid: string) => void
+      __tmRouteHandlers?: Record<string, () => void>
+    }
+    if (!w.__tmRoute) w.__tmRoute = (uid: string) => w.__tmRouteHandlers?.[uid]?.()
+    if (!w.__tmRouteHandlers) w.__tmRouteHandlers = {}
+    w.__tmRouteHandlers[tm.uid] = () => onStartRoute(tm.uid)
+    return () => {
+      if (w.__tmRouteHandlers) delete w.__tmRouteHandlers[tm.uid]
+    }
+  }, [tm.uid, onStartRoute])
+
+  // 未部署（null 坐标）不渲染
+  if (tm.lat == null || tm.lng == null) return null
+
+  return (
+    <Marker
+      ref={ref}
+      position={[tm.lat, tm.lng]}
+      icon={icon}
+      draggable={canDrag}
+      zIndexOffset={800}
+      interactive={interactive}
+      eventHandlers={{
+        click: (e) => L.DomEvent.stopPropagation(e),
+        drag: (e) => {
+          const ll = (e.target as L.Marker).getLatLng()
+          onMove(tm.uid, ll.lat, ll.lng)
+        },
+        dragend: (e) => {
+          const ll = (e.target as L.Marker).getLatLng()
+          onMove(tm.uid, ll.lat, ll.lng)
+        },
+      }}
+    />
+  )
+}
+
+/**
+ * 队标图层（兵棋推演·简化部署，第二十三轮）：
+ * 以 Leaflet Marker + divIcon 渲染，队伍色圆底 + 队伍字母 + 小队名，
+ * 阵营外圈（我方绿/敌方红），大小 30px 与载具卡片相当。
+ * 视角桶内同时含双方队标；支持拖拽移动、右键删除；套索框选/整体移动由 LayerManager 统一处理。
+ */
+export default function TeamLayer({
+  view,
+  teams,
+  teamNames,
+  posRef,
+  canDrag,
+  interactive,
+  onMove,
+  onDelete,
+  onStartRoute,
+}: TeamLayerProps) {
+  return (
+    <>
+      {teams.map((tm) => (
+        <TeamMarkerItem
+          key={tm.uid}
+          tm={tm}
+          view={view}
+          teamName={teamNames[tm.team]}
+          canDrag={canDrag}
+          interactive={interactive}
+          posRef={posRef}
+          onMove={onMove}
+          onDelete={onDelete}
+          onStartRoute={onStartRoute}
+        />
+      ))}
+    </>
+  )
+}
