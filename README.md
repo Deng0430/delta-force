@@ -48,10 +48,10 @@
 
 Android 版本固定横屏运行，支持沉浸式全屏、挖孔屏和圆角屏。兵棋、路线和绘制工具均已针对触控操作调整。
 
-Android 仅提供中文 APK：
+Android 应用界面保持中文，发布 APK 统一使用英文文件名：
 
 ```text
-release/三角洲战术地图-0.0.1-android-debug.apk
+release/deltaforce-tactical-map-0.0.1-android-debug.apk
 ```
 
 ### 游戏数据
