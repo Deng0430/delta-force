@@ -21,7 +21,6 @@ interface ZoneRender {
   name: string
   latlngs: [number, number][]
   color: string
-  fillOpacity: number
   dash: string
 }
 
@@ -47,7 +46,6 @@ export default function ActivityZones({ stages, capturedStageIndex, view, visibl
         name: isOwn ? '进攻方可活动区域（己方）' : '进攻方区域 · 不可活动（敌方）',
         latlngs: attackZone,
         color: isOwn ? COLORS.own : COLORS.deny,
-        fillOpacity: isOwn ? 0.14 : 0.22,
         dash: isOwn ? '0' : '6 4',
       })
     }
@@ -60,7 +58,6 @@ export default function ActivityZones({ stages, capturedStageIndex, view, visibl
         name: isOwn ? '防守方可活动区域（己方）' : '防守方区域 · 不可活动（敌方）',
         latlngs: defZone,
         color: isOwn ? COLORS.own : COLORS.deny,
-        fillOpacity: isOwn ? 0.14 : 0.22,
         dash: isOwn ? '0' : '6 4',
       })
     }
@@ -81,7 +78,7 @@ export default function ActivityZones({ stages, capturedStageIndex, view, visibl
             opacity: 0.9,
             dashArray: z.dash,
             fillColor: z.color,
-            fillOpacity: z.fillOpacity,
+            fillOpacity: 0,
             // 第九轮：活动区纯视觉背景，永久禁用交互（无选中/高亮/提示）
             interactive: false,
           }}

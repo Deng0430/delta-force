@@ -494,7 +494,9 @@ export default function ModeConfigLayer({
               weight: active ? 4 : 2,
               opacity: 1,
               fillColor: zone.color,
-              fillOpacity: active ? 0.24 : 0.13,
+              fillOpacity: zone.role === 'attack-base' || zone.role === 'defense-base' || zone.role === 'frontline'
+                ? 0
+                : active ? 0.24 : 0.13,
               dashArray: zone.role === 'frontline' ? '10 7' : zone.verification === 'draft' ? '7 5' : undefined,
             }}
             interactive={selecting}

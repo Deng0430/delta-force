@@ -503,7 +503,7 @@ D.stages.forEach((st, idx) => {
   const color = status === 'captured' ? (D.view === 'attack' ? '#01ff84' : '#e0453a') : status === 'active' ? '#f4cf67' : (D.view === 'attack' ? '#e0453a' : '#01ff84');
   // 防线区域（仅当前激活阶段）
   if (status === 'active' && st.zone) {
-    L.polygon(st.zone.latlngs, { color, weight: 2.5, dashArray: '10 7', opacity: .9, fillColor: color, fillOpacity: .08, interactive: false }).addTo(staticLayer);
+    L.polygon(st.zone.latlngs, { color, weight: 2.5, dashArray: '10 7', opacity: .9, fillColor: color, fillOpacity: 0, interactive: false }).addTo(staticLayer);
   }
   // 据点可占领区域（已解锁阶段）
   if (status !== 'locked') {
@@ -527,7 +527,7 @@ if (curStage) {
     if (!points || points.length < 3) return;
     const color = own ? '#01ff84' : '#e0453a';
     L.polygon(points, { color, weight: 2, opacity: .9, dashArray: own ? undefined : '6 4',
-      fillColor: color, fillOpacity: own ? .14 : .22, interactive: false }).addTo(staticLayer);
+      fillColor: color, fillOpacity: 0, interactive: false }).addTo(staticLayer);
   };
   addActivityZone(curStage.attackBaseZone, D.view === 'attack');
   addActivityZone(curStage.defenseBaseZone, D.view === 'defense');

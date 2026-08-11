@@ -20,12 +20,13 @@ import { MAPS } from '../config/maps'
 import { STAGES_BY_MAP } from '../config/points'
 import { MAP_PROPS } from '../config/pointsStages'
 import { DEPLOY_BY_MAP, localDeployIconUrl, type DeployVehicleEntry, type StageDeploy } from '../config/deployVehicles'
+import winnerTakesAllOfficial from '../config/winnerTakesAllOfficial.json'
 
 /** 正式应用模式配置的本地存储键。 */
 export const MODE_CONFIG_STORAGE_KEY = 'deltaforce-mode-configs-v1'
 export const MODE_CONFIG_SYNC_CHANNEL = 'deltaforce-mode-config-sync-v1'
 export const MODE_CONFIG_SYNC_MESSAGE = 'deltaforce-mode-config-sync'
-const MODE_STORAGE_VERSION = 4 as const
+const MODE_STORAGE_VERSION = 6 as const
 
 const SIDES: Side[] = ['attack', 'defense']
 const VERIFICATIONS: ModeConfigVerification[] = ['draft', 'confirmed']
@@ -60,14 +61,134 @@ export function createModeProfile(name = '新模式', id?: string): GameModeProf
 
 function defaultStore(): ModeConfigStore {
   const winner = createModeProfile('胜者为王', 'winner-takes-all')
-  winner.description = '以攻防模式数据为初始底稿；在外置配置器中按实际游戏信息修改差异。'
+  winner.description = winnerTakesAllOfficial.mode.description
   winner.maps = Object.fromEntries(
-    MAPS.map((map) => [map.id, syncModeMapFromAttackDefense(map.id, STAGES_BY_MAP[map.id] ?? [])]),
+    MAPS.map((map) => {
+      const official = (winnerTakesAllOfficial.maps as unknown as Partial<Record<string, OfficialModeMapData>>)[map.id]
+      return [
+        map.id,
+        official
+          ? modeMapFromOfficial(map.id, official)
+          : syncModeMapFromAttackDefense(map.id, STAGES_BY_MAP[map.id] ?? []),
+      ]
+    }),
   )
   return {
     version: MODE_STORAGE_VERSION,
     activeModeId: 'attack-defense',
     profiles: [winner],
+  }
+}
+
+interface OfficialModeMapData {
+  stages: StageConfig[]
+  props: MapProp[]
+  deploy: Record<string, StageDeploy>
+}
+
+/** 将编辑器导出的正式版地图数据还原为可继续编辑、可持久化的模式地图。 */
+function modeMapFromOfficial(mapId: string, official: OfficialModeMapData): ModeMapOverride {
+  const zones: ModeZone[] = []
+  const spawns: ModeSpawnPoint[] = []
+  const objectives: ModeObjectivePoint[] = []
+
+  const addZone = (
+    uid: string,
+    stageId: string,
+    name: string,
+    kind: ModeZoneKind,
+    color: string,
+    points: [number, number][],
+    role: ModeZoneRole,
+    objectiveUid?: string,
+  ) => {
+    if (points.length < 3) return ''
+    zones.push({
+      uid,
+      stageId,
+      name,
+      kind,
+      role,
+      objectiveUid,
+      color,
+      points: points.map((point) => [...point] as [number, number]),
+      verification: 'confirmed',
+    })
+    return uid
+  }
+
+  for (const stage of official.stages) {
+    if (stage.zone) addZone(`builtin_wta_${mapId}_${stage.id}_front`, stage.id, stage.zone.name, 'neutral', '#f4cf67', stage.zone.latlngs, 'frontline')
+    addZone(`builtin_wta_${mapId}_${stage.id}_attack-base`, stage.id, `${stage.id} · 进攻方活动区`, 'own', '#01ff84', stage.attackBaseZone, 'attack-base')
+    addZone(`builtin_wta_${mapId}_${stage.id}_defense-base`, stage.id, `${stage.id} · 防守方活动区`, 'enemy', '#e0453a', stage.defenseBaseZone, 'defense-base')
+
+    stage.points.forEach((point, index) => {
+      const objectiveUid = `builtin_wta_${mapId}_${stage.id}_objective-${index}`
+      const captureZoneUid = addZone(
+        `builtin_wta_${mapId}_${stage.id}_capture-${index}`,
+        stage.id,
+        `${stage.id} · ${point.name}占领区`,
+        'neutral',
+        '#f4cf67',
+        point.capturable,
+        'capture',
+        objectiveUid,
+      )
+      objectives.push({
+        uid: objectiveUid,
+        stageId: stage.id,
+        name: point.name,
+        note: point.note,
+        icon: point.icon,
+        captureZoneUid,
+        lat: point.lat,
+        lng: point.lng,
+        verification: 'confirmed',
+      })
+    })
+
+    for (const side of SIDES) {
+      const points = side === 'attack' ? stage.attackSpawns : stage.defenseSpawns
+      const names = side === 'attack' ? stage.attackSpawnNames : stage.defenseSpawnNames
+      const deployments = official.deploy[stage.id]?.[side] ?? []
+      points.forEach((point, index) => {
+        const name = names?.[index] || `${stage.id} · ${side === 'attack' ? '进攻方' : '防守方'}复活点 ${index + 1}`
+        const deployVehicles = deployments
+          .filter((vehicle) => vehicle.note === name)
+          .map(({ note: _note, ...vehicle }) => vehicle)
+        spawns.push({
+          uid: `builtin_wta_${mapId}_${stage.id}_${side}-spawn-${index}`,
+          stageId: stage.id,
+          name,
+          side,
+          lat: point[0],
+          lng: point[1],
+          vehicleDeploy: deployVehicles.length > 0,
+          vehicleCategories: [...new Set(deployVehicles.map((vehicle) => vehicle.category))],
+          deployVehicles,
+          verification: 'confirmed',
+        })
+      })
+    }
+  }
+
+  return {
+    mapId,
+    notes: '内置数据：攀升 · 胜者为王（2026-08-11）。',
+    stages: official.stages.map((stage) => ({ id: stage.id, label: stage.label })),
+    zones,
+    spawns,
+    objectives,
+    props: official.props.map((prop, index) => ({
+      uid: `builtin_wta_${mapId}_prop-${index}`,
+      stageId: prop.stage.match(/S\d+/i)?.[0].toUpperCase() ?? '*',
+      name: prop.name,
+      icon: prop.icon,
+      lat: prop.lat,
+      lng: prop.lng,
+      verification: 'confirmed',
+    })),
+    updatedAt: Date.now(),
   }
 }
 
@@ -418,8 +539,18 @@ export function normalizeModeConfigStore(value: unknown): ModeConfigStore | null
   const winner = profiles.find((profile) => profile.id === 'winner-takes-all')
   if (winner) {
     for (const map of MAPS) {
-      // 版本升级时用完整攻防数据补齐正式据点、道具和载具部署表；之后保留用户修改。
-      if (sourceVersion < MODE_STORAGE_VERSION || !winner.maps[map.id]) {
+      // v5 首次固化“攀升·胜者为王”正式数据；迁移完成后继续保留用户后续修改。
+      if (map.id === 'ascent' && sourceVersion < 5) {
+        winner.maps.ascent = modeMapFromOfficial('ascent', winnerTakesAllOfficial.maps.ascent as unknown as OfficialModeMapData)
+        continue
+      }
+      // v6 首次固化“烬区·胜者为王”正式数据；不重复覆盖已固化的攀升。
+      if (map.id === 'ember' && sourceVersion < 6) {
+        winner.maps.ember = modeMapFromOfficial('ember', winnerTakesAllOfficial.maps.ember as unknown as OfficialModeMapData)
+        continue
+      }
+      // 更早的旧格式仍需补齐其他地图；已有数据在本轮只迁移对应新增地图。
+      if (sourceVersion < 4 || !winner.maps[map.id]) {
         winner.maps[map.id] = syncModeMapFromAttackDefense(map.id, STAGES_BY_MAP[map.id] ?? [])
       }
     }

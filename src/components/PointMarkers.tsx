@@ -93,7 +93,7 @@ export default function PointMarkers({
             dashArray: '10 7',
             opacity: 0.9,
             fillColor: pointOwnColor(activeStatus, view),
-            fillOpacity: 0.08,
+            fillOpacity: 0,
             // 绘制工具激活时禁用交互：否则多边形拦截鼠标事件，战斗区域内无法绘制
             interactive,
           }}
