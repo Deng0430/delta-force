@@ -4,6 +4,8 @@ import * as L from 'leaflet'
 import type {
   GameModeProfile,
   ModeConfigStore,
+  ModeEditorSelection,
+  ModeEditorSelectionItem,
   ModeEditorSession,
   ModeMapProp,
   ModeMapOverride,
@@ -31,8 +33,16 @@ import {
 import ModeConfigEditor from './ModeConfigEditor'
 import ModeConfigLayer from './ModeConfigLayer'
 import ModeAssetPalette, { readModePaletteAsset } from './ModeAssetPalette'
+import ShortcutHelp from './ShortcutHelp'
 
 const MODE_HISTORY_LIMIT = 100
+
+const selectionKey = (selection: ModeEditorSelectionItem) => `${selection.kind}:${selection.uid}`
+
+interface ModeClipboard {
+  items: ModeEditorSelectionItem[]
+  source: ModeMapOverride
+}
 
 type StoreUpdate = ModeConfigStore | ((current: ModeConfigStore) => ModeConfigStore)
 
@@ -105,6 +115,8 @@ export default function ModeConfigWorkbench() {
   const [syncStatus, setSyncStatus] = useState('')
   const [leftPaletteOpen, setLeftPaletteOpen] = useState(true)
   const [rightEditorOpen, setRightEditorOpen] = useState(true)
+  const [fullscreen, setFullscreen] = useState(Boolean(document.fullscreenElement))
+  const [elementVisibility, setElementVisibility] = useState({ zones: true, spawns: true, objectives: true, props: true })
   const syncStatusTimerRef = useRef<number | null>(null)
   const initialStages = STAGES_BY_MAP[mapId] ?? []
   const [session, setSession] = useState<ModeEditorSession>(() => ({
@@ -116,8 +128,11 @@ export default function ModeConfigWorkbench() {
     tool: 'select',
     zoneRole: 'custom',
     selected: null,
+    selectedItems: [],
     zoneDraft: [],
   }))
+  const selectionAnchorRef = useRef<ModeEditorSelectionItem | null>(null)
+  const modeClipboardRef = useRef<ModeClipboard | null>(null)
 
   const config = MAP_BY_ID[mapId] ?? MAPS[0]
   const attackStages = STAGES_BY_MAP[mapId] ?? []
@@ -151,51 +166,19 @@ export default function ModeConfigWorkbench() {
       ...current,
       profileId: store.profiles[0]?.id ?? null,
       selected: null,
+      selectedItems: [],
       zoneDraft: [],
     }))
   }, [session.profileId, store.profiles])
 
   const undo = useCallback(() => {
     dispatchStoreHistory({ type: 'undo' })
-    setSession((current) => ({ ...current, selected: null, zoneDraft: [] }))
+    setSession((current) => ({ ...current, selected: null, selectedItems: [], zoneDraft: [] }))
   }, [])
 
   const redo = useCallback(() => {
     dispatchStoreHistory({ type: 'redo' })
-    setSession((current) => ({ ...current, selected: null, zoneDraft: [] }))
-  }, [])
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.altKey) return
-      const key = event.key.toLowerCase()
-      if (key === 'z' && event.shiftKey) {
-        event.preventDefault()
-        redo()
-      } else if (key === 'z') {
-        event.preventDefault()
-        undo()
-      } else if (key === 'y') {
-        event.preventDefault()
-        redo()
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [redo, undo])
-
-  useEffect(() => {
-    setSession((current) => ({
-      ...current,
-      stageId: firstModeStageId,
-      tool: 'select',
-      selected: null,
-      zoneDraft: [],
-    }))
-  }, [firstModeStageId, mapId, session.profileId])
-
-  const updateSession = useCallback((patch: Partial<ModeEditorSession>) => {
-    setSession((current) => ({ ...current, ...patch }))
+    setSession((current) => ({ ...current, selected: null, selectedItems: [], zoneDraft: [] }))
   }, [])
 
   const updateMapConfig = useCallback((update: ModeMapOverride | ((current: ModeMapOverride) => ModeMapOverride)) => {
@@ -216,6 +199,168 @@ export default function ModeConfigWorkbench() {
     }))
   }, [mapId, session.profileId])
 
+  const selectEditorItem = useCallback((
+    selection: ModeEditorSelection,
+    options?: { additive?: boolean; range?: boolean; order?: ModeEditorSelectionItem[] },
+  ) => {
+    setSession((current) => {
+      if (!selection) {
+        selectionAnchorRef.current = null
+        return { ...current, selected: null, selectedItems: [] }
+      }
+      const previous = current.selectedItems.length > 0
+        ? current.selectedItems
+        : current.selected ? [current.selected] : []
+      let selectedItems: ModeEditorSelectionItem[]
+      if (options?.range && options.order?.length) {
+        const anchor = selectionAnchorRef.current ?? current.selected ?? selection
+        const start = options.order.findIndex((item) => selectionKey(item) === selectionKey(anchor))
+        const end = options.order.findIndex((item) => selectionKey(item) === selectionKey(selection))
+        selectedItems = start >= 0 && end >= 0
+          ? options.order.slice(Math.min(start, end), Math.max(start, end) + 1)
+          : [selection]
+      } else if (options?.additive) {
+        const key = selectionKey(selection)
+        selectedItems = previous.some((item) => selectionKey(item) === key)
+          ? previous.filter((item) => selectionKey(item) !== key)
+          : [...previous, selection]
+        selectionAnchorRef.current = selection
+      } else {
+        selectedItems = [selection]
+        selectionAnchorRef.current = selection
+      }
+      return {
+        ...current,
+        tool: 'select',
+        selected: selectedItems.some((item) => selectionKey(item) === selectionKey(selection))
+          ? selection
+          : selectedItems.at(-1) ?? null,
+        selectedItems,
+      }
+    })
+  }, [])
+
+  const copySelection = useCallback(() => {
+    const items = session.selectedItems.length > 0
+      ? session.selectedItems
+      : session.selected ? [session.selected] : []
+    if (items.length === 0) return
+    modeClipboardRef.current = {
+      items: items.map((item) => ({ ...item })),
+      source: structuredClone(mapConfig),
+    }
+  }, [mapConfig, session.selected, session.selectedItems])
+
+  const pasteSelection = useCallback(() => {
+    const clipboard = modeClipboardRef.current
+    if (!clipboard?.items.length) return
+    updateMapConfig((current) => {
+      const zones = [...current.zones]
+      const spawns = [...current.spawns]
+      const objectives = [...current.objectives]
+      const props = [...current.props]
+      const created: ModeEditorSelectionItem[] = []
+
+      for (const item of clipboard.items) {
+        if (item.kind === 'zone') {
+          const source = clipboard.source.zones.find((entry) => entry.uid === item.uid)
+          if (!source) continue
+          const uid = genUid('mode_zone')
+          zones.push({
+            ...source,
+            uid,
+            stageId: session.stageId,
+            name: `${source.name}（副本）`,
+            objectiveUid: undefined,
+            points: source.points.map(([lat, lng]) => [lat, lng]),
+            verification: 'draft',
+          })
+          created.push({ kind: 'zone', uid })
+        } else if (item.kind === 'spawn') {
+          const source = clipboard.source.spawns.find((entry) => entry.uid === item.uid)
+          if (!source) continue
+          const uid = genUid('mode_spawn')
+          spawns.push({ ...source, uid, stageId: session.stageId, name: `${source.name}（副本）`, lat: source.lat, lng: source.lng, deployVehicles: source.deployVehicles.map((entry) => ({ ...entry })), verification: 'draft' })
+          created.push({ kind: 'spawn', uid })
+        } else if (item.kind === 'objective') {
+          const source = clipboard.source.objectives.find((entry) => entry.uid === item.uid)
+          if (!source) continue
+          const uid = genUid('mode_objective')
+          const sourceZone = clipboard.source.zones.find((entry) => entry.uid === source.captureZoneUid)
+          const captureZoneUid = sourceZone ? genUid('mode_capture_zone') : ''
+          objectives.push({ ...source, uid, stageId: session.stageId, name: `${source.name}（副本）`, captureZoneUid, lat: source.lat, lng: source.lng, verification: 'draft' })
+          if (sourceZone) zones.push({ ...sourceZone, uid: captureZoneUid, stageId: session.stageId, name: `${sourceZone.name}（副本）`, objectiveUid: uid, points: sourceZone.points.map(([lat, lng]) => [lat, lng]), verification: 'draft' })
+          created.push({ kind: 'objective', uid })
+        } else {
+          const source = clipboard.source.props.find((entry) => entry.uid === item.uid)
+          if (!source) continue
+          const uid = genUid('mode_prop')
+          props.push({ ...source, uid, stageId: source.stageId === '*' ? '*' : session.stageId, lat: source.lat, lng: source.lng, verification: 'draft' })
+          created.push({ kind: 'prop', uid })
+        }
+      }
+      if (created.length === 0) return current
+      setSession((value) => ({ ...value, tool: 'select', selected: created.at(-1) ?? null, selectedItems: created }))
+      return { ...current, zones, spawns, objectives, props, updatedAt: Date.now() }
+    })
+  }, [session.stageId, updateMapConfig])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return
+      const key = event.key.toLowerCase()
+      const target = event.target as HTMLElement | null
+      const editingText = Boolean(target?.closest('input, textarea, select, [contenteditable="true"]'))
+      if (key === 'z' && event.shiftKey) {
+        event.preventDefault()
+        redo()
+      } else if (key === 'z') {
+        event.preventDefault()
+        undo()
+      } else if (key === 'y') {
+        event.preventDefault()
+        redo()
+      } else if (key === 'c' && !editingText) {
+        event.preventDefault()
+        copySelection()
+      } else if (key === 'v' && !editingText) {
+        event.preventDefault()
+        pasteSelection()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [copySelection, pasteSelection, redo, undo])
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setFullscreen(Boolean(document.fullscreenElement))
+      window.setTimeout(() => mapRef.current?.invalidateSize(), 0)
+    }
+    document.addEventListener('fullscreenchange', onFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange)
+  }, [])
+
+  const toggleFullscreen = useCallback(async () => {
+    if (document.fullscreenElement) await document.exitFullscreen()
+    else await document.documentElement.requestFullscreen()
+  }, [])
+
+  useEffect(() => {
+    setSession((current) => ({
+      ...current,
+      stageId: firstModeStageId,
+      tool: 'select',
+      selected: null,
+      selectedItems: [],
+      zoneDraft: [],
+    }))
+  }, [firstModeStageId, mapId, session.profileId])
+
+  const updateSession = useCallback((patch: Partial<ModeEditorSession>) => {
+    setSession((current) => ({ ...current, ...patch }))
+  }, [])
+
   const addSpawn = useCallback((point: [number, number], side: Side = view) => {
     const uid = genUid('mode_spawn')
     const count = mapConfig.spawns.filter((spawn) => spawn.stageId === session.stageId).length
@@ -232,7 +377,7 @@ export default function ModeConfigWorkbench() {
       verification: 'draft',
     }
     updateMapConfig((current) => ({ ...current, spawns: [...current.spawns, spawn] }))
-    setSession((current) => ({ ...current, selected: { kind: 'spawn', uid } }))
+    setSession((current) => ({ ...current, selected: { kind: 'spawn', uid }, selectedItems: [{ kind: 'spawn', uid }] }))
   }, [mapConfig.spawns, session.stageId, updateMapConfig, view])
 
   const addObjective = useCallback((point: [number, number], icon = 'q_jd_a') => {
@@ -268,7 +413,7 @@ export default function ModeConfigWorkbench() {
       verification: 'draft',
     }
     updateMapConfig((current) => ({ ...current, objectives: [...current.objectives, objective], zones: [...current.zones, captureZone] }))
-    setSession((current) => ({ ...current, selected: { kind: 'objective', uid } }))
+    setSession((current) => ({ ...current, selected: { kind: 'objective', uid }, selectedItems: [{ kind: 'objective', uid }] }))
   }, [mapConfig.objectives, session.stageId, updateMapConfig])
 
   const addProp = useCallback((point: [number, number]) => {
@@ -283,7 +428,7 @@ export default function ModeConfigWorkbench() {
       verification: 'draft',
     }
     updateMapConfig((current) => ({ ...current, props: [...current.props, prop] }))
-    setSession((current) => ({ ...current, selected: { kind: 'prop', uid } }))
+    setSession((current) => ({ ...current, selected: { kind: 'prop', uid }, selectedItems: [{ kind: 'prop', uid }] }))
   }, [session.stageId, updateMapConfig])
 
   const addPresetZone = useCallback((point: [number, number], role: ModeZoneRole) => {
@@ -308,7 +453,7 @@ export default function ModeConfigWorkbench() {
       verification: 'draft',
     }
     updateMapConfig((current) => ({ ...current, zones: [...current.zones, zone] }))
-    setSession((current) => ({ ...current, tool: 'select', selected: { kind: 'zone', uid } }))
+    setSession((current) => ({ ...current, tool: 'select', selected: { kind: 'zone', uid }, selectedItems: [{ kind: 'zone', uid }] }))
   }, [session.stageId, updateMapConfig])
 
   const moveSpawn = useCallback((uid: string, point: [number, number]) => {
@@ -336,6 +481,15 @@ export default function ModeConfigWorkbench() {
     updateMapConfig((current) => ({
       ...current,
       props: current.props.map((item) => item.uid === uid && item.verification === 'draft' ? { ...item, lat: point[0], lng: point[1] } : item),
+    }))
+  }, [updateMapConfig])
+
+  const moveZone = useCallback((uid: string, points: [number, number][]) => {
+    updateMapConfig((current) => ({
+      ...current,
+      zones: current.zones.map((zone) => zone.uid === uid && zone.verification === 'draft'
+        ? { ...zone, points }
+        : zone),
     }))
   }, [updateMapConfig])
 
@@ -381,7 +535,7 @@ export default function ModeConfigWorkbench() {
       const uid = genUid('mode_prop')
       const prop: ModeMapProp = { uid, stageId: session.stageId, name: asset.name, icon: asset.icon, lat: point[0], lng: point[1], verification: 'draft' }
       updateMapConfig((current) => ({ ...current, props: [...current.props, prop] }))
-      setSession((current) => ({ ...current, tool: 'select', selected: { kind: 'prop', uid } }))
+      setSession((current) => ({ ...current, tool: 'select', selected: { kind: 'prop', uid }, selectedItems: [{ kind: 'prop', uid }] }))
     } else addPresetZone(point, asset.role)
   }, [addObjective, addPresetZone, addSpawn, session.stageId, updateMapConfig])
 
@@ -418,6 +572,30 @@ export default function ModeConfigWorkbench() {
             <i className="fa-solid fa-rotate-right" />恢复
           </button>
         </div>
+        <details className="mode-workbench-layers">
+          <summary><i className="fa-solid fa-layer-group" />元素显示</summary>
+          <div>
+            {([
+              ['zones', '区域'],
+              ['spawns', '复活点'],
+              ['objectives', '据点'],
+              ['props', '地图道具'],
+            ] as const).map(([key, label]) => (
+              <button
+                type="button"
+                key={key}
+                className={elementVisibility[key] ? 'active' : ''}
+                onClick={() => setElementVisibility((current) => ({ ...current, [key]: !current[key] }))}
+              >
+                <i className={`fa-solid ${elementVisibility[key] ? 'fa-eye' : 'fa-eye-slash'}`} />{label}
+              </button>
+            ))}
+          </div>
+        </details>
+        <button className="mode-workbench-fullscreen" onClick={() => void toggleFullscreen()} title={fullscreen ? '退出全屏（Esc）' : '进入全屏'}>
+          <i className={`fa-solid ${fullscreen ? 'fa-compress' : 'fa-expand'}`} />{fullscreen ? '退出全屏' : '全屏'}
+        </button>
+        <ShortcutHelp />
         <button className="mode-workbench-close" onClick={() => window.close()}><i className="fa-solid fa-arrow-up-right-from-square" />关闭工具</button>
       </header>
 
@@ -458,14 +636,15 @@ export default function ModeConfigWorkbench() {
             stageId={session.stageId}
             view={view}
             editing
-            zonesVisible
-            spawnsVisible
-            objectivesVisible
-            propsVisible
+            zonesVisible={elementVisibility.zones}
+            spawnsVisible={elementVisibility.spawns}
+            objectivesVisible={elementVisibility.objectives}
+            propsVisible={elementVisibility.props}
             tool={session.tool}
             selected={session.selected}
+            selectedItems={session.selectedItems}
             zoneDraft={session.zoneDraft}
-            onSelect={(selected) => updateSession({ selected })}
+            onSelect={(selected, options) => selectEditorItem(selected, options)}
             onZoneDraftChange={(zoneDraft) => updateSession({ zoneDraft })}
             onAddSpawn={addSpawn}
             onAddObjective={addObjective}
@@ -473,6 +652,7 @@ export default function ModeConfigWorkbench() {
             onMoveSpawn={moveSpawn}
             onMoveObjective={moveObjective}
             onMoveProp={moveProp}
+            onMoveZone={moveZone}
             onMoveZoneVertex={moveZoneVertex}
             onInsertZoneVertex={insertZoneVertex}
             onRemoveZoneVertex={removeZoneVertex}
@@ -487,18 +667,19 @@ export default function ModeConfigWorkbench() {
           profile={profile}
           mapConfig={mapConfig}
           session={session}
+          onSelectItem={selectEditorItem}
           onSessionChange={updateSession}
-          onSelectProfile={(id) => setSession((current) => ({ ...current, profileId: id, selected: null, zoneDraft: [] }))}
+          onSelectProfile={(id) => setSession((current) => ({ ...current, profileId: id, selected: null, selectedItems: [], zoneDraft: [] }))}
           onCreateProfile={(name) => {
             const created = createModeProfile(name)
             setStore((current) => ({ ...current, profiles: [...current.profiles, created] }))
-            setSession((current) => ({ ...current, profileId: created.id, selected: null, zoneDraft: [] }))
+            setSession((current) => ({ ...current, profileId: created.id, selected: null, selectedItems: [], zoneDraft: [] }))
           }}
           onDeleteProfile={(id) => {
             if (store.profiles.length <= 1) return
             const profiles = store.profiles.filter((item) => item.id !== id)
             setStore({ ...store, profiles, activeModeId: store.activeModeId === id ? 'attack-defense' : store.activeModeId })
-            setSession((current) => ({ ...current, profileId: profiles[0]?.id ?? null, selected: null, zoneDraft: [] }))
+            setSession((current) => ({ ...current, profileId: profiles[0]?.id ?? null, selected: null, selectedItems: [], zoneDraft: [] }))
           }}
           onUpdateProfile={(id, patch: Partial<Pick<GameModeProfile, 'name' | 'description'>>) => setStore((current) => ({
             ...current,
@@ -514,7 +695,7 @@ export default function ModeConfigWorkbench() {
             const normalized = normalizeModeConfigStore(value)
             if (!normalized) return window.alert('配置文件格式无效。')
             setStore(normalized)
-            setSession((current) => ({ ...current, profileId: normalized.profiles[0]?.id ?? null, selected: null, zoneDraft: [] }))
+            setSession((current) => ({ ...current, profileId: normalized.profiles[0]?.id ?? null, selected: null, selectedItems: [], zoneDraft: [] }))
           }}
           collapsed={!rightEditorOpen}
           onToggleCollapsed={() => setRightEditorOpen((open) => !open)}

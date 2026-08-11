@@ -1,22 +1,25 @@
 import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import type { LayerVisibility, OperatorConnection, OperatorTeam, OperatorUnit, PropVisibility, Side, TeamMarker, VehicleItem, WargameState } from '../types'
+import type { BuildingUnit, BuildingUnitKind, LayerVisibility, OperatorConnection, OperatorTeam, OperatorUnit, PropVisibility, Side, TeamMarker, VehicleItem, WargameState } from '../types'
 import type { CustomVehicleTemplate } from '../config/customVehicles'
 import { Checkbox, IconChevronLeft, IconChevronRight } from './icons'
 import WargamePanel from './WargamePanel'
 
 const LAYER_ITEMS: { key: keyof LayerVisibility; label: string; parent?: keyof LayerVisibility }[] = [
-  { key: 'props', label: '地图道具总开关' },
-  { key: 'points', label: '据点与防线' },
-  { key: 'pointsLabels', label: '据点标识（图标+名称）', parent: 'points' },
   { key: 'spawns', label: '复活点' },
   { key: 'zones', label: '活动区域' },
+]
+
+const POINT_LAYER_ITEMS: { key: keyof LayerVisibility; label: string }[] = [
+  { key: 'pointsLabels', label: '据点标识' },
+  { key: 'pointsCapture', label: '据点占领区域' },
+  { key: 'pointsFrontline', label: '据点所在防线' },
 ]
 
 /** 道具类型清单（问题2：按类型独立开关，与 MAP_PROPS 名称一致） */
 const PROP_TYPES = ['载具补给站', '固定防空炮', '固定机枪', '岸防炮', '滑索', '电梯', '固定弹药箱']
 
 /** 左侧面板折叠区块 key（展开状态持久化，收缩侧栏不重置） */
-export type PanelSectionKey = 'layers' | 'props' | 'vehicles' | 'wargame' | 'vehGroups'
+export type PanelSectionKey = 'layers' | 'props' | 'points' | 'vehicles' | 'wargame' | 'vehGroups'
 
 const LEFT_PANEL_MIN_WIDTH = 250
 const LEFT_PANEL_DEFAULT_WIDTH = 300
@@ -42,6 +45,7 @@ interface LeftPanelProps {
   sections: {
     layers: boolean
     props: boolean
+    points: boolean
     vehicles: boolean
     wargame: boolean
     vehGroups: Record<string, boolean>
@@ -52,7 +56,7 @@ interface LeftPanelProps {
   customOwn: boolean
   onCustomOwnChange: (own: boolean) => void
   /** 问题3：玩家自定义部署载具（放到地图中心） */
-  onAddCustom: (tpl: CustomVehicleTemplate, own: boolean, team: OperatorTeam) => void
+  onAddCustom: (tpl: CustomVehicleTemplate, own: boolean, team?: OperatorTeam) => void
   // ---- 兵棋推演（透传 WargamePanel） ----
   view: Side
   operators: OperatorUnit[]
@@ -84,6 +88,8 @@ interface LeftPanelProps {
   onDeployTeamMarker: (side: Side, team: OperatorTeam, name?: string) => void
   onDeleteTeamMarker: (uid: string) => void
   vehicles: VehicleItem[]
+  buildings: BuildingUnit[]
+  onAddBuilding: (kind: BuildingUnitKind, own: boolean, team?: OperatorTeam) => void
 }
 
 /**
@@ -129,9 +135,17 @@ export default function LeftPanel({
   onDeployTeamMarker,
   onDeleteTeamMarker,
   vehicles,
+  buildings,
+  onAddBuilding,
 }: LeftPanelProps) {
   const [liveWidth, setLiveWidth] = useState(() => clampLeftPanelWidth(width))
   const [resizing, setResizing] = useState(false)
+  const propFlags = PROP_TYPES.map((name) => propVis[name] ?? true)
+  const propsAllVisible = layers.props && propFlags.every(Boolean)
+  const propsPartiallyVisible = layers.props && propFlags.some(Boolean) && !propsAllVisible
+  const pointFlags = POINT_LAYER_ITEMS.map((item) => layers[item.key])
+  const pointsAllVisible = layers.points && pointFlags.every(Boolean)
+  const pointsPartiallyVisible = layers.points && pointFlags.some(Boolean) && !pointsAllVisible
   const resizeSession = useRef<{
     pointerId: number
     startX: number
@@ -250,9 +264,10 @@ export default function LeftPanel({
             <div className="layer-group">
               <div className="layer-group-head">
                 <Checkbox
-                  checked={layers.props}
+                  checked={propsAllVisible}
+                  indeterminate={propsPartiallyVisible}
                   onChange={(v) => onLayerChange('props', v)}
-                  label="地图道具总开关"
+                  label="地图道具"
                 />
                 <button
                   type="button"
@@ -278,11 +293,43 @@ export default function LeftPanel({
                 </div>
               )}
             </div>
-            {LAYER_ITEMS.filter((it) => it.key !== 'props').map((it) => (
+            {/* 据点与防线：总开关 + 三个可独立控制的子图层。 */}
+            <div className="layer-group">
+              <div className="layer-group-head">
+                <Checkbox
+                  checked={pointsAllVisible}
+                  indeterminate={pointsPartiallyVisible}
+                  onChange={(v) => onLayerChange('points', v)}
+                  label="据点与防线"
+                />
+                <button
+                  type="button"
+                  className={`layer-group-toggle ${sections.points ? 'open' : ''}`}
+                  onClick={() => onSectionChange('points', !sections.points)}
+                  title={sections.points ? '收起据点与防线子图层' : '展开据点与防线子图层'}
+                  aria-expanded={sections.points}
+                >
+                  <span className="caret" aria-hidden="true" />
+                </button>
+              </div>
+              {sections.points && (
+                <div className="prop-type-list point-type-list">
+                  {POINT_LAYER_ITEMS.map((item) => (
+                    <Checkbox
+                      key={item.key}
+                      className="prop-type"
+                      checked={layers[item.key]}
+                      onChange={(v) => onLayerChange(item.key, v)}
+                      label={item.label}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+            {LAYER_ITEMS.map((it) => (
               <Checkbox
                 key={it.key}
                 checked={layers[it.key]}
-                // 父开关关闭时子项禁用（据点标识依赖据点与防线）
                 disabled={it.parent ? !layers[it.parent] : false}
                 onChange={(v) => onLayerChange(it.key, v)}
                 label={it.label}
@@ -335,6 +382,8 @@ export default function LeftPanel({
           vehicleGroups={sections.vehGroups}
           onVehicleGroupChange={(group, open) => onSectionChange('vehGroups', open, group)}
           vehicles={vehicles}
+          buildings={buildings}
+          onAddBuilding={onAddBuilding}
         />
       </details>
       </div>

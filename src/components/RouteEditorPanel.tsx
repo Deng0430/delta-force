@@ -31,7 +31,7 @@ export default function RouteEditorPanel({ route, view, availableOperators, bran
 
   const changeType = (orderType: TacticalOrderType) => {
     const meta = orderTypeOf(orderType)
-    onPatch({ orderType, color: meta.color, lineStyle: meta.lineStyle })
+    onPatch({ orderType, lineStyle: meta.lineStyle })
   }
 
   const anchoredOperator = route.anchorOperatorUid
@@ -94,58 +94,76 @@ export default function RouteEditorPanel({ route, view, availableOperators, bran
         />
       </label>
 
-      <div className="route-editor-choice">
-        <span>指令类型</span>
-        <div className="route-order-types">
-          {ORDER_TYPE_OPTIONS.map((item) => (
-            <button type="button" key={item.id} className={route.orderType === item.id ? 'active' : ''} style={{ '--route-choice-color': item.color } as CSSProperties} onClick={() => changeType(item.id)}>
-              <i className={`fa-solid ${item.icon}`} aria-hidden="true" /><b>{item.label}</b>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="route-editor-choice">
-        <span>执行状态</span>
-        <div className="route-order-statuses">
-          {ORDER_STATUS_OPTIONS.map((item) => (
-            <button type="button" key={item.id} className={`${route.status === item.id ? 'active' : ''} status-${item.id}`} onClick={() => onPatch({ status: item.id })}>
-              <i className={`fa-solid ${item.icon}`} aria-hidden="true" /><b>{item.label}</b>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="route-editor-style-row">
-        <label className="route-editor-field color">
-          <span>指令色</span>
-          <input type="color" value={route.color} onChange={(e) => onPatch({ color: e.target.value })} />
-        </label>
-        <label className="route-editor-field">
-          <span>线型</span>
-          <select value={route.lineStyle} onChange={(e) => onPatch({ lineStyle: e.target.value as TacticalRouteLineStyle })}>
-            {ROUTE_LINE_OPTIONS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+      <div className="route-editor-quick-controls">
+        <label>
+          <span>指令</span>
+          <select value={route.orderType} onChange={(e) => changeType(e.target.value as TacticalOrderType)}>
+            {ORDER_TYPE_OPTIONS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
           </select>
         </label>
-        <label className="route-editor-field opacity">
-          <span>透明度 <b>{opacity}%</b></span>
-          <input
-            type="range"
-            min={20}
-            max={100}
-            value={opacity}
-            onChange={(e) => setOpacity(Number(e.target.value))}
-            onPointerUp={() => onPatch({ opacity: opacity / 100 })}
-            onKeyUp={() => onPatch({ opacity: opacity / 100 })}
-            onBlur={() => onPatch({ opacity: opacity / 100 })}
-          />
+        <label>
+          <span>状态</span>
+          <select value={route.status} onChange={(e) => onPatch({ status: e.target.value as TacticalRoute['status'] })}>
+            {ORDER_STATUS_OPTIONS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+          </select>
         </label>
       </div>
 
-      <div className="route-editor-members">
-        <span>
+      <details className="route-editor-fold">
+        <summary>线条外观 <span>{ROUTE_LINE_OPTIONS.find((item) => item.id === route.lineStyle)?.label} · {opacity}%</span></summary>
+        <div className="route-editor-color-control">
+          <span>线条颜色</span>
+          <label title="选择线条颜色">
+            <input type="color" value={route.color} onChange={(e) => onPatch({ color: e.target.value })} />
+            <code>{route.color.toUpperCase()}</code>
+          </label>
+          <button
+            type="button"
+            className="route-editor-action-color"
+            style={{ '--route-action-color': orderTypeOf(route.orderType).color } as CSSProperties}
+            onClick={() => onPatch({ color: orderTypeOf(route.orderType).color })}
+            title={`改为${orderTypeOf(route.orderType).label}指令推荐色 ${orderTypeOf(route.orderType).color}`}
+          >
+            <i aria-hidden="true" />指令色
+          </button>
+          <button
+            type="button"
+            className="route-editor-team-color"
+            data-active={route.color.toLowerCase() === teamColor.toLowerCase() || undefined}
+            style={{ '--route-reset-color': teamColor } as CSSProperties}
+            onClick={() => onPatch({ color: teamColor })}
+            title={`恢复为${route.team}队颜色 ${teamColor}`}
+          >
+            <i aria-hidden="true" />恢复队色
+          </button>
+        </div>
+        <div className="route-editor-style-row">
+          <label className="route-editor-field">
+            <span>线型</span>
+            <select value={route.lineStyle} onChange={(e) => onPatch({ lineStyle: e.target.value as TacticalRouteLineStyle })}>
+              {ROUTE_LINE_OPTIONS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+            </select>
+          </label>
+          <label className="route-editor-field opacity">
+            <span>透明度 <b>{opacity}%</b></span>
+            <input
+              type="range"
+              min={20}
+              max={100}
+              value={opacity}
+              onChange={(e) => setOpacity(Number(e.target.value))}
+              onPointerUp={() => onPatch({ opacity: opacity / 100 })}
+              onKeyUp={() => onPatch({ opacity: opacity / 100 })}
+              onBlur={() => onPatch({ opacity: opacity / 100 })}
+            />
+          </label>
+        </div>
+      </details>
+
+      <details className="route-editor-fold route-editor-members">
+        <summary>
           执行干员 <b>{operatorSelectionLocked ? `${anchoredOperatorName}（绑定锁定）` : `${route.operatorIds.length}/${availableOperators.length}`}</b>
-        </span>
+        </summary>
         <div className="route-editor-member-list">
           {availableOperators.map((operator) => {
             const checked = route.operatorIds.includes(operator.uid)
@@ -171,7 +189,7 @@ export default function RouteEditorPanel({ route, view, availableOperators, bran
           })}
         </div>
         {operatorSelectionLocked && <small><i className="fa-solid fa-lock" /> 单兵路线仅由绑定干员执行，解绑后可改为小队协同。</small>}
-      </div>
+      </details>
 
       <div className="route-editor-actions">
         <button type="button" onClick={onCopy}><i className="fa-regular fa-copy" />复制</button>

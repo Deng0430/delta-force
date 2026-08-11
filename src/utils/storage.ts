@@ -1,4 +1,4 @@
-import type { MapState, OperatorConnection, OperatorTeam, OperatorUnit, PersistedAppState, Side, TacticalRoute, TeamMarker, VehicleItem, WargameState } from '../types'
+import type { BuildingUnit, MapState, OperatorConnection, OperatorTeam, OperatorUnit, PersistedAppState, Side, TacticalRoute, TeamMarker, VehicleItem, WargameState } from '../types'
 import { TEAMS } from '../config/operators'
 import { orderTypeOf } from '../config/routes'
 import { emptyGeoJson } from './geo'
@@ -30,7 +30,7 @@ export function emptyWargameState(): WargameState {
 function normalizeVehicles(vehicles: unknown): Record<Side, VehicleItem[]> {
   const normalizeList = (items: VehicleItem[]) => items.map((item) => ({
     ...item,
-    team: (['A', 'B', 'C', 'D', 'E'].includes(item.team) ? item.team : 'A') as OperatorTeam,
+    team: (['A', 'B', 'C', 'D', 'E'].includes(item.team ?? '') ? item.team : undefined) as OperatorTeam | undefined,
   }))
   // 新形状：Record<Side, VehicleItem[]>
   if (vehicles && typeof vehicles === 'object' && !Array.isArray(vehicles)) {
@@ -53,6 +53,21 @@ function normalizeVehicles(vehicles: unknown): Record<Side, VehicleItem[]> {
   return { attack: [], defense: [] }
 }
 
+function normalizeBuildings(buildings: unknown): Record<Side, BuildingUnit[]> {
+  if (!buildings || typeof buildings !== 'object' || Array.isArray(buildings)) return { attack: [], defense: [] }
+  const value = buildings as Record<string, unknown>
+  const normalizeList = (items: unknown): BuildingUnit[] => (Array.isArray(items) ? items : [])
+    .filter((item): item is BuildingUnit => Boolean(item && typeof item === 'object' && typeof (item as BuildingUnit).uid === 'string'))
+    .map((item) => ({
+      ...item,
+      kind: (['fixed-machine-gun', 'fixed-anti-air', 'coastal-gun'].includes(item.kind) ? item.kind : 'fixed-machine-gun') as BuildingUnit['kind'],
+      side: item.side === 'defense' ? 'defense' : 'attack',
+      team: (['A', 'B', 'C', 'D', 'E'].includes(item.team ?? '') ? item.team : undefined) as OperatorTeam | undefined,
+      rotation: typeof item.rotation === 'number' && Number.isFinite(item.rotation) ? ((item.rotation % 360) + 360) % 360 : 0,
+    }))
+  return { attack: normalizeList(value.attack), defense: normalizeList(value.defense) }
+}
+
 /** 防御性读取进攻路线分桶；损坏或旧数据缺失时返回空。 */
 export function normalizeTacticalRoute(route: TacticalRoute): TacticalRoute {
   const orderTypes = ['move', 'attack', 'recon', 'flank', 'retreat', 'escort', 'resupply', 'hold'] as const
@@ -60,12 +75,14 @@ export function normalizeTacticalRoute(route: TacticalRoute): TacticalRoute {
   const lineStyles = ['solid', 'dashed', 'dotted'] as const
   const orderType = orderTypes.includes(route.orderType) ? route.orderType : 'attack'
   const meta = orderTypeOf(orderType)
+  const team = (['A', 'B', 'C', 'D', 'E'].includes(route.team) ? route.team : 'A') as OperatorTeam
+  const teamColor = TEAMS.find((item) => item.id === team)?.color ?? TEAMS[0].color
   return {
     ...route,
-    team: (['A', 'B', 'C', 'D', 'E'].includes(route.team) ? route.team : 'A') as OperatorTeam,
+    team,
     orderType,
     status: statuses.includes(route.status) ? route.status : 'planned',
-    color: typeof route.color === 'string' && route.color ? route.color : meta.color,
+    color: typeof route.color === 'string' && route.color ? route.color : teamColor,
     lineStyle: lineStyles.includes(route.lineStyle) ? route.lineStyle : meta.lineStyle,
     opacity: typeof route.opacity === 'number' && Number.isFinite(route.opacity) ? Math.max(0.2, Math.min(1, route.opacity)) : 0.92,
     anchorMode: route.anchorMode === 'free' || route.anchorMode === 'branch' || route.anchorMode === 'operator' || route.anchorMode === 'vehicle'
@@ -132,11 +149,12 @@ export function loadState(): PersistedAppState | null {
     const parsed = JSON.parse(raw) as PersistedAppState
     // 兼容 v7（载具平铺数组）/ v8（载具分桶）：统一迁移为分桶形状，避免用户数据丢失
     const v = parsed?.version
-    if (parsed && typeof parsed === 'object' && parsed.maps && typeof v === 'number' && v >= 7 && v <= 14) {
+    if (parsed && typeof parsed === 'object' && parsed.maps && typeof v === 'number' && v >= 7 && v <= 16) {
       for (const id of Object.keys(parsed.maps)) {
         const m = parsed.maps[id]
         if (m) {
           m.vehicles = normalizeVehicles(m.vehicles)
+          m.buildings = normalizeBuildings(m.buildings)
           // v8→v9 迁移：补充兵棋推演字段（旧数据默认空 + 关闭）
           if (v === 8) {
             m.operators = { attack: [], defense: [] }
@@ -179,6 +197,7 @@ export function saveState(state: PersistedAppState): void {
 export function createEmptyMapState(): MapState {
   return {
     vehicles: { attack: [], defense: [] },
+    buildings: { attack: [], defense: [] },
     drawings: { attack: emptyGeoJson(), defense: emptyGeoJson() },
     operators: { attack: [], defense: [] },
     connections: { attack: [], defense: [] },
@@ -192,6 +211,11 @@ export function createEmptyMapState(): MapState {
 export function vehiclesBucketOf(s: MapState | undefined | null): Record<Side, VehicleItem[]> {
   if (!s) return { attack: [], defense: [] }
   return normalizeVehicles(s.vehicles)
+}
+
+export function buildingsBucketOf(s: MapState | undefined | null): Record<Side, BuildingUnit[]> {
+  if (!s) return { attack: [], defense: [] }
+  return normalizeBuildings(s.buildings)
 }
 
 /** 防御性读取某张地图的干员分桶 */

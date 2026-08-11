@@ -637,7 +637,13 @@ body {
   border-color: var(--gold);
 }
 
-.left-panel .cb-box.checked svg {
+.left-panel .cb-box.indeterminate {
+  background: var(--gold);
+  border-color: var(--gold);
+}
+
+.left-panel .cb-box.checked svg,
+.left-panel .cb-box.indeterminate svg {
   opacity: 1;
   transform: scale(1);
 }
@@ -1511,7 +1517,7 @@ body {
 /* 步兵 / 载具一级切换：信息与操作彻底分区。 */
 .left-panel .wg-unit-tabs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 5px;
 }
 
@@ -1519,7 +1525,7 @@ body {
   min-width: 0;
   min-height: 48px;
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
   gap: 6px;
   padding: 6px 7px;
@@ -1529,6 +1535,127 @@ body {
   border-bottom: 2px solid var(--line-0);
   text-align: left;
   cursor: pointer;
+}
+
+.left-panel .wg-unit-tabs em { grid-column: 1 / -1; justify-self: stretch; width: 100%; }
+
+.left-panel .wg-building-head {
+  display: block;
+  padding: 8px;
+  border: 1px solid var(--line-0);
+  background: rgba(7, 12, 14, .62);
+}
+.left-panel .wg-building-head > div:first-child { display: flex; flex-direction: column; gap: 3px; }
+.left-panel .wg-building-head b { color: var(--gold); font-size: 12px; }
+.left-panel .wg-building-head small { color: var(--tx-4); font-size: 8px; }
+.left-panel .wg-building-controls {
+  display: grid;
+  gap: 6px;
+  padding: 7px 8px 8px;
+  border: 1px solid var(--line-0);
+  border-top: 0;
+  background: rgba(7, 12, 14, .42);
+}
+.left-panel .wg-building-controls .veh-own-switch { width: 100%; margin: 0; }
+.left-panel .wg-building-controls .veh-own-opt { min-width: 0; white-space: nowrap; }
+.left-panel .wg-building-controls .wg-team-picker { padding: 0; }
+.left-panel .wg-building-list { display: grid; gap: 5px; }
+.left-panel .wg-building-list > button {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 6px 8px 6px 6px;
+  color: var(--tx-2);
+  background: var(--bg-2);
+  border: 1px solid var(--line-0);
+  border-left: 2px solid var(--building-card-accent);
+  text-align: left;
+  cursor: pointer;
+}
+.left-panel .wg-building-list > button:hover:not(:disabled) { color: #fff; border-color: var(--building-card-accent); background: color-mix(in srgb, var(--building-card-accent) 10%, var(--bg-2)); }
+.left-panel .wg-building-list > button:disabled { opacity: .35; cursor: not-allowed; }
+.left-panel .wg-building-preview {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--building-card-accent) 72%, #101719);
+  border: 1px solid color-mix(in srgb, var(--building-card-accent) 75%, #fff);
+  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--building-card-accent) 38%, transparent);
+}
+.left-panel .wg-building-preview img { width: 25px; height: 25px; object-fit: contain; filter: drop-shadow(0 1px 2px #000); }
+.left-panel .wg-building-list > button > span:not(.wg-building-preview) { display: flex; flex-direction: column; gap: 3px; }
+.left-panel .wg-building-list b { font-size: 10px; }
+.left-panel .wg-building-list small { color: var(--tx-4); font-size: 8px; }
+.left-panel .wg-building-list em { color: var(--green); font: 700 9px/1 sans-serif; }
+
+.building-unit-wrap { background: transparent; border: 0; overflow: visible !important; }
+.building-unit {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  --building-side: var(--green);
+  cursor: move;
+}
+.building-unit.enemy { --building-side: #e0453a; }
+.building-side-ring {
+  position: absolute;
+  inset: -2px;
+  background: transparent;
+  filter: drop-shadow(0 0 2px var(--building-side)) drop-shadow(0 0 5px var(--building-side));
+  pointer-events: none;
+  z-index: 0;
+}
+.building-side-ring::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--building-side);
+  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+}
+.building-side-ring::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  background: rgba(8, 13, 15, .94);
+  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+  box-shadow: inset 0 0 3px var(--building-side);
+}
+.building-core {
+  position: relative;
+  z-index: 1;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--building-fill);
+  border: 1px solid rgba(255, 255, 255, .76);
+  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, .72);
+}
+.building-core img { width: 23px; height: 23px; object-fit: contain; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .85)); }
+.building-name {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: -12px;
+  transform: translateX(-50%);
+  padding: 1px 4px;
+  color: #fff;
+  background: rgba(8, 13, 15, .9);
+  border: 1px solid var(--building-side);
+  border-radius: 2px;
+  font: 700 8px/1.2 sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .left-panel .wg-unit-tabs > button:hover {
@@ -1624,18 +1751,21 @@ body {
 
 .left-panel .wg-team-picker {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 4px;
   padding: 0 8px 7px;
 }
 
 .left-panel .wg-team-picker button {
+  min-width: 0;
   height: 24px;
   color: var(--tx-2);
   background: var(--bg-2);
   border: 1px solid var(--line-0);
   cursor: pointer;
 }
+
+.left-panel .wg-team-picker button.no-team { font-size: 9px; }
 
 .left-panel .wg-team-picker button:hover,
 .left-panel .wg-team-picker button.active {
@@ -2360,11 +2490,66 @@ body {
   box-shadow: 0 0 3px rgba(0, 0, 0, 0.6), 0 0 5px var(--green);
 }
 
-/* 干员当前行动角标（绑定路线后显示） */
-.op-marker .op-task {
+/* 左下角队伍字母：与主体队伍色保持一致，阵营仍由外圈表达。 */
+.op-marker .op-team-letter,
+.veh-marker .veh-team-letter,
+.building-unit .building-team-letter {
   position: absolute;
   left: -5px;
   bottom: -5px;
+  z-index: 7;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid #fff;
+  color: #fff;
+  font: 800 8px/1 sans-serif;
+  text-shadow: 0 1px 2px #000;
+  pointer-events: none;
+  box-shadow: 0 0 4px rgba(0, 0, 0, .85);
+}
+.op-marker .op-team-letter { background: var(--op-team); }
+.veh-marker .veh-team-letter { background: var(--veh-team); }
+.building-unit .building-team-letter { background: var(--building-fill); }
+.veh-marker button.veh-team-letter,
+.building-unit button.building-team-letter {
+  padding: 0;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.veh-marker button.veh-team-letter:hover,
+.building-unit button.building-team-letter:hover { transform: scale(1.14); }
+
+.building-unit .building-side {
+  display: none;
+  position: absolute;
+  top: -5px;
+  left: -5px;
+  z-index: 8;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: rgba(14, 17, 18, .96);
+  border: 1px solid var(--building-side);
+  border-radius: 50%;
+  box-shadow: 0 0 4px var(--building-side);
+  cursor: pointer;
+}
+.building-unit:hover .building-side,
+.building-unit:focus-within .building-side { display: inline-flex; }
+.building-unit .building-side:hover { color: #111; background: var(--building-side); }
+
+/* 干员当前行动角标（绑定路线后显示） */
+.op-marker .op-task {
+  position: absolute;
+  left: -11px;
+  bottom: 9px;
   z-index: 6;
   width: 13px;
   height: 13px;
@@ -3060,8 +3245,41 @@ body {
   gap: 4px;
 }
 
+.mode-workbench-layers { position: relative; }
+.mode-workbench-layers > summary {
+  height: 31px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  color: var(--tx-2);
+  background: var(--bg-btn);
+  border: 1px solid var(--line-0);
+  cursor: pointer;
+  list-style: none;
+  font-size: 11px;
+}
+.mode-workbench-layers > summary::-webkit-details-marker { display: none; }
+.mode-workbench-layers[open] > summary { color: var(--gold); border-color: var(--gold); }
+.mode-workbench-layers > div {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 150px;
+  display: grid;
+  gap: 4px;
+  padding: 7px;
+  background: rgba(10, 15, 17, .98);
+  border: 1px solid var(--gold);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .6);
+}
+.mode-workbench-layers button { height: 28px; color: var(--tx-4); background: var(--bg-2); border: 1px solid var(--line-0); text-align: left; cursor: pointer; }
+.mode-workbench-layers button i { width: 22px; text-align: center; }
+.mode-workbench-layers button.active { color: var(--green); border-color: color-mix(in srgb, var(--green) 50%, var(--line-0)); }
+
 .mode-workbench-side button,
 .mode-workbench-history button,
+.mode-workbench-fullscreen,
 .mode-workbench-close {
   height: 31px;
   padding: 0 12px;
@@ -3075,6 +3293,7 @@ body {
 .mode-workbench-side button:hover,
 .mode-workbench-side button.active,
 .mode-workbench-history button:hover:not(:disabled),
+.mode-workbench-fullscreen:hover,
 .mode-workbench-close:hover {
   border-color: var(--gold);
   color: var(--gold);
@@ -3101,6 +3320,12 @@ body {
   align-items: center;
   gap: 6px;
   margin-left: auto;
+}
+
+.mode-workbench-fullscreen {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .mode-workbench-map-wrap {
@@ -3830,6 +4055,13 @@ body {
   font: 9px/1 Consolas, monospace;
 }
 
+.mode-config-editor-foot > small {
+  flex: 1 0 100%;
+  color: var(--tx-4);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
 .mode-config-zone {
   cursor: default;
 }
@@ -3975,6 +4207,7 @@ body {
 .veh-marker-wrap {
   background: transparent;
   border: none;
+  overflow: visible !important;
 }
 
 .veh-marker {
@@ -3988,12 +4221,12 @@ body {
   user-select: none;
 }
 
-/* 彩色底衬（与地图道具 prop-bg 一致，本方绿/敌方红） */
+/* 队伍色底衬；敌我阵营由外圈独立表达，与步兵棋子的视觉语义一致。 */
 .veh-marker .veh-bg {
   position: absolute;
   inset: 1px;
-  border-radius: 50%;
-  background: var(--vc);
+  background: var(--veh-fill);
+  clip-path: polygon(29.3% 0, 70.7% 0, 100% 29.3%, 100% 70.7%, 70.7% 100%, 29.3% 100%, 0 70.7%, 0 29.3%);
   opacity: 0.9;
   box-shadow: 0 1px 5px rgba(0, 0, 0, 0.6);
 }
@@ -4002,12 +4235,26 @@ body {
 .veh-marker .veh-side-ring {
   position: absolute;
   inset: -4px;
-  border-radius: 50%;
-  border: 2px solid var(--vc);
-  box-shadow: 0 0 6px 1px var(--vc), inset 0 0 3px var(--vc);
+  background: transparent;
+  filter: drop-shadow(0 0 2px var(--vc)) drop-shadow(0 0 5px var(--vc));
   opacity: 1;
   pointer-events: none;
   z-index: 0;
+}
+.veh-marker .veh-side-ring::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--vc);
+  clip-path: polygon(29.3% 0, 70.7% 0, 100% 29.3%, 100% 70.7%, 70.7% 100%, 29.3% 100%, 0 70.7%, 0 29.3%);
+}
+.veh-marker .veh-side-ring::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  background: rgba(8, 13, 15, .94);
+  clip-path: polygon(29.3% 0, 70.7% 0, 100% 29.3%, 100% 70.7%, 70.7% 100%, 29.3% 100%, 0 70.7%, 0 29.3%);
+  box-shadow: inset 0 0 3px var(--vc);
 }
 
 /* 官网图标：绕中心旋转（问题3，角度由 JS 内联 transform 控制，无 transition 避免 0/360 边界补间） */
@@ -4044,30 +4291,6 @@ body {
   white-space: nowrap;
   pointer-events: none;
 }
-
-/* 载具左下角圆形队伍角标；颜色只表达 A-E 队，外圈继续表达敌我阵营。 */
-.veh-marker .veh-team {
-  position: absolute;
-  left: -5px;
-  bottom: -5px;
-  z-index: 7;
-  width: 15px;
-  height: 15px;
-  padding: 0;
-  border-radius: 50%;
-  border: 1px solid #fff;
-  background: var(--veh-team);
-  color: #fff;
-  font-size: 8px;
-  font-weight: 800;
-  line-height: 13px;
-  text-align: center;
-  text-shadow: 0 1px 2px #000;
-  cursor: pointer;
-  box-shadow: 0 0 4px rgba(0, 0, 0, 0.85);
-}
-
-.veh-marker .veh-team:hover { transform: scale(1.15); }
 
 .veh-marker .veh-route {
   display: none;
@@ -4128,41 +4351,25 @@ body {
 }
 .route-passive-node-wrap:active { cursor: grabbing; }
 .route-passive-node-wrap .route-passive-node {
-  width: 5px;
-  height: 5px;
+  width: 15px;
+  height: 15px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: var(--route-node-color);
-  border: 1px solid rgba(255, 255, 255, .72);
-  box-shadow: 0 0 0 1px rgba(4, 8, 10, .82);
-  opacity: .62;
-  color: transparent;
-  font-size: 0;
-  transition: width .1s ease, height .1s ease, opacity .1s ease;
-}
-.route-passive-node-wrap:hover .route-passive-node {
-  width: 11px;
-  height: 11px;
-  opacity: 1;
-  color: #fff;
   background: rgba(8, 13, 15, .95);
   border: 2px solid var(--route-node-color);
-  font: 800 7px/1 sans-serif;
+  box-shadow: 0 0 0 1px rgba(4, 8, 10, .82);
+  opacity: .92;
+  color: #fff;
+  font: 800 8px/1 sans-serif;
+  transition: transform .1s ease, opacity .1s ease;
 }
-.route-passive-node-wrap.end .route-passive-node {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  opacity: 0;
-  transform: scale(.65);
-}
-.route-passive-node-wrap.end:hover .route-passive-node {
-  width: 13px;
-  height: 13px;
+.route-passive-node-wrap:hover .route-passive-node {
+  width: 15px;
+  height: 15px;
   opacity: 1;
-  transform: scale(1);
+  transform: scale(1.12);
 }
 
 .route-order-label-wrap { background: transparent; border: none; cursor: grab; }
@@ -4225,6 +4432,10 @@ body {
   text-align: center;
   font: 800 8px/1 sans-serif;
   letter-spacing: -.3px;
+}
+.route-order-label .route-type-text i {
+  margin-right: 2px;
+  font-size: 7px;
 }
 .route-order-label .route-status-icon {
   width: 11px;
@@ -4306,23 +4517,6 @@ body {
 .route-arrow-wrap .route-arrow.type-move::before { left: 3px; }
 .route-arrow-wrap .route-arrow.type-retreat::before { left: 0; }
 .route-arrow-wrap .route-arrow.type-retreat::after { left: 6px; }
-.route-arrow-wrap .route-arrow.type-hold {
-  inset: 1px;
-  width: 16px;
-  height: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--route-color);
-  background: rgba(8, 13, 15, .96);
-  border: 1px solid currentColor;
-  border-radius: 2px;
-}
-.route-arrow-wrap .route-arrow.type-hold::before { content: none; }
-.route-arrow-wrap .route-arrow.type-hold i {
-  color: currentColor;
-  font-size: 9px;
-}
 
 /* 路线与行动指令 V2 属性面板 */
 .route-editor-panel {
@@ -4441,14 +4635,38 @@ body {
 .route-order-statuses button.status-executing.active { color: var(--green); border-color: var(--green); }
 .route-order-statuses button.status-completed.active { color: #9aa1a8; border-color: #9aa1a8; }
 .route-order-statuses button.status-cancelled.active { color: var(--danger); border-color: var(--danger); }
-.route-editor-style-row { position: relative; display: grid; grid-template-columns: 45px 74px minmax(0, 1fr); gap: 6px; margin-bottom: 3px; }
+.route-editor-style-row { position: relative; display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 8px; margin-bottom: 3px; }
 .route-editor-style-row .route-editor-field { margin-bottom: 0; }
 .route-editor-style-row .route-editor-field.opacity input { margin-top: 3px; }
+.route-editor-color-control { display:grid; grid-template-columns:auto minmax(0, 1fr) auto auto; align-items:center; gap:4px; margin:0 0 7px; }
+.route-editor-color-control > span { color:var(--tx-4); font-size:10px; }
+.route-editor-color-control > label { display:flex; align-items:center; min-width:0; height:27px; padding:2px 6px 2px 3px; background:var(--bg-2); border:1px solid var(--line-0); cursor:pointer; }
+.route-editor-color-control > label:focus-within { border-color:var(--gold); }
+.route-editor-color-control input[type='color'] { width:25px; height:21px; padding:0; border:0; background:transparent; cursor:pointer; }
+.route-editor-color-control code { min-width:0; margin-left:5px; color:var(--tx-2); font:9px/1 Consolas, monospace; }
+.route-editor-color-control > button { display:inline-flex; align-items:center; gap:4px; height:27px; padding:0 7px; color:var(--tx-2); background:var(--bg-2); border:1px solid var(--line-0); cursor:pointer; font-size:9px; white-space:nowrap; }
+.route-editor-color-control > button i { width:9px; height:9px; border-radius:50%; background:var(--route-reset-color); box-shadow:0 0 4px var(--route-reset-color); }
+.route-editor-color-control > button:hover,
+.route-editor-color-control > button[data-active] { color:#fff; border-color:var(--route-reset-color); }
+.route-editor-color-control > button.route-editor-action-color i { background:var(--route-action-color); box-shadow:0 0 4px var(--route-action-color); }
+.route-editor-color-control > button.route-editor-action-color:hover { color:#fff; border-color:var(--route-action-color); }
+.route-editor-quick-controls { position:relative; display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px; }
+.route-editor-quick-controls label { display:flex; align-items:center; gap:5px; min-width:0; color:var(--tx-4); font-size:10px; }
+.route-editor-quick-controls select { min-width:0; flex:1; height:26px; padding:0 5px; color:var(--tx-1); background:var(--bg-2); border:1px solid var(--line-0); outline:none; font-size:10px; }
+.route-editor-quick-controls select:focus { border-color:var(--gold); }
+.route-editor-fold { position:relative; margin:5px 0; border-top:1px dashed var(--line-0); }
+.route-editor-fold > summary { display:flex; align-items:center; justify-content:space-between; min-height:25px; color:var(--tx-3); cursor:pointer; font-size:10px; list-style:none; }
+.route-editor-fold > summary::-webkit-details-marker { display:none; }
+.route-editor-fold > summary::before { content:'›'; margin-right:5px; color:var(--gold); font-size:15px; transition:transform .14s ease; }
+.route-editor-fold[open] > summary::before { transform:rotate(90deg); }
+.route-editor-fold > summary span { margin-left:auto; color:var(--tx-4); font-size:9px; }
+.route-editor-fold > summary b { margin-left:auto; color:var(--gold); }
+.route-editor-fold .route-editor-style-row { margin:0 0 5px; }
 .route-editor-meta { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 2px 0 7px; }
 .route-editor-meta span { padding: 4px; color: var(--tx-3); background: var(--bg-2); border: 1px solid var(--line-1); text-align: center; font-size: 9px; }
 .route-editor-target { position: relative; display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px dashed var(--line-0); color: var(--tx-4); font-size: 10px; }
 .route-editor-target b { color: var(--green); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.route-editor-members { position: relative; padding: 5px 0; border-top: 1px dashed var(--line-0); }
+.route-editor-members { position: relative; padding: 0; }
 .route-editor-member-list { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; }
 .route-editor-member-list button { min-width: 0; padding: 5px 2px; color: var(--tx-3); background: var(--bg-2); border: 1px solid var(--line-0); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 8px; }
 .route-editor-member-list button i { margin-right: 3px; }
@@ -4468,37 +4686,6 @@ body {
 
 @media (max-width: 640px) {
   .route-editor-panel { right: 8px; top: 58px; width: 250px; }
-}
-
-.veh-marker .veh-del {
-  display: none;
-  position: absolute;
-  top: -7px;
-  right: -7px;
-  z-index: 6;
-  width: 16px;
-  height: 16px;
-  border: 1px solid var(--vc);
-  border-radius: 50%;
-  background: rgba(14, 17, 18, 0.95);
-  color: var(--danger);
-  cursor: pointer;
-  font-size: 12px;
-  line-height: 1;
-  padding: 0;
-  align-items: center;
-  justify-content: center;
-}
-
-/* 鼠标悬停卡片时显示删除叉（与点击展开显示规则并存） */
-.veh-marker:hover .veh-del,
-.veh-marker.expanded .veh-del {
-  display: inline-flex;
-}
-
-.veh-marker .veh-del:hover {
-  background: var(--danger);
-  color: #fff;
 }
 
 /* 快捷切换本方/敌方按钮（左上角，hover 显示，与删除叉对称） */
@@ -5940,4 +6127,101 @@ body {
 .deploy-card-btn:hover {
   background: var(--green);
   color: var(--on-accent);
+}
+.shortcut-help {
+  position: relative;
+  display: inline-flex;
+}
+
+.shortcut-help-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  color: #d9e2ef;
+  background: rgba(20, 27, 36, 0.92);
+  cursor: pointer;
+}
+
+.shortcut-help-trigger:hover,
+.shortcut-help-trigger[aria-expanded='true'] {
+  color: #fff;
+  border-color: rgba(244, 207, 103, 0.7);
+  background: rgba(52, 48, 34, 0.96);
+}
+
+.shortcut-help.compact .shortcut-help-trigger span {
+  display: none;
+}
+
+.shortcut-help.compact .shortcut-help-trigger {
+  width: 34px;
+  padding: 0;
+}
+
+.shortcut-help-popover {
+  position: absolute;
+  z-index: 5000;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 300px;
+  padding: 12px;
+  border: 1px solid rgba(244, 207, 103, 0.38);
+  border-radius: 6px;
+  color: #eef3f8;
+  background: rgba(12, 17, 24, 0.98);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.46);
+}
+
+.shortcut-help-popover header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 9px;
+}
+
+.shortcut-help-popover header button {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  color: #aeb8c4;
+  background: transparent;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.shortcut-help-popover dl,
+.shortcut-help-popover dd {
+  margin: 0;
+}
+
+.shortcut-help-popover dl > div {
+  display: grid;
+  grid-template-columns: 108px 1fr;
+  align-items: center;
+  gap: 10px;
+  min-height: 31px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.shortcut-help-popover dt {
+  color: #f4cf67;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+}
+
+.shortcut-help-popover dd,
+.shortcut-help-popover small {
+  color: #b9c3cf;
+  font-size: 12px;
+}
+
+.shortcut-help-popover small {
+  display: block;
+  margin-top: 9px;
 }

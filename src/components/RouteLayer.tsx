@@ -69,13 +69,13 @@ function waypointIcon(index: number, total: number, color: string, teamColor: st
   return icon
 }
 
-function passiveWaypointIcon(index: number, color: string, teamColor: string, terminal: boolean): L.DivIcon {
-  const key = `${index}|${color}|${teamColor}|${terminal}`
+function passiveWaypointIcon(index: number, color: string, teamColor: string): L.DivIcon {
+  const key = `${index}|${color}|${teamColor}`
   const cached = passiveWaypointIconCache.get(key)
   if (cached) return cached
   const icon = L.divIcon({
-    className: `route-passive-node-wrap${terminal ? ' end' : ''}`,
-    html: `<span class="route-passive-node" style="--route-node-color:${teamColor};--route-action-color:${color}">${terminal ? '终' : index}</span>`,
+    className: 'route-passive-node-wrap',
+    html: `<span class="route-passive-node" style="--route-node-color:${teamColor};--route-action-color:${color}">${index}</span>`,
     // The visible dot remains small, while the icon itself supplies a forgiving
     // hit area for hover, drag and context-menu actions.
     iconSize: [18, 18],
@@ -119,7 +119,7 @@ function routeLabelIcon(route: TacticalRoute, color: string, view: Side, operato
   const title = `${affiliation} · ${route.team}队 · ${executorTitle} · ${type.label} · ${status}`
   return L.divIcon({
     className: 'route-order-label-wrap',
-    html: `<span class="route-order-label status-${route.status}" title="${escapeHtml(title)}" style="--route-label-color:${color};--route-team-color:${teamColor};--route-side-color:${sideColor}"><span class="route-executor-badge ${executorClass}" title="${escapeHtml(executorTitle)}">${escapeHtml(executorText)}</span><span class="route-type-text" title="${escapeHtml(type.label)}">${escapeHtml(type.label)}</span><em class="route-status-icon" title="${escapeHtml(status)}"><i class="fa-solid ${statusIcon}" aria-hidden="true"></i></em></span>`,
+    html: `<span class="route-order-label status-${route.status}" title="${escapeHtml(title)}" style="--route-label-color:${color};--route-team-color:${teamColor};--route-side-color:${sideColor}"><span class="route-executor-badge ${executorClass}" title="${escapeHtml(executorTitle)}">${escapeHtml(executorText)}</span><span class="route-type-text" title="${escapeHtml(type.label)}">${route.orderType === 'hold' ? '<i class="fa-solid fa-shield" aria-hidden="true"></i>' : ''}${escapeHtml(type.label)}</span><em class="route-status-icon" title="${escapeHtml(status)}"><i class="fa-solid ${statusIcon}" aria-hidden="true"></i></em></span>`,
     iconSize: [76, 20],
     iconAnchor: [38, 10],
   })
@@ -145,14 +145,13 @@ function routeMoveIcon(color: string, teamColor: string): L.DivIcon {
   return icon
 }
 
-function routeArrowIcon(route: TacticalRoute, teamColor: string): L.DivIcon {
+function routeArrowIcon(route: TacticalRoute, color: string): L.DivIcon {
   const end = route.waypoints.at(-1) ?? [0, 0]
   const prev = route.waypoints.at(-2) ?? end
   const angle = Math.atan2(-(end[0] - prev[0]), end[1] - prev[1]) * 180 / Math.PI
-  const fixedHeading = route.orderType === 'hold'
   return L.divIcon({
     className: 'route-arrow-wrap',
-    html: `<span class="route-arrow type-${route.orderType}" style="--route-color:${teamColor};transform:rotate(${fixedHeading ? 0 : angle}deg)">${route.orderType === 'hold' ? '<i class="fa-solid fa-shield" aria-hidden="true"></i>' : ''}</span>`,
+    html: `<span class="route-arrow type-${route.orderType}" style="--route-color:${color};transform:rotate(${angle}deg)"></span>`,
     iconSize: [18, 18],
     iconAnchor: [9, 9],
   })
@@ -346,8 +345,8 @@ function SelectedRouteEditor({ route, interactive, snapTargets, branchPicking, o
 
   return (
     <>
-      <Polyline positions={renderedWaypoints} pathOptions={{ ...visual, color: teamColor, interactive: false }} />
-      <Marker position={renderedWaypoints.at(-1)!} icon={routeArrowIcon({ ...route, waypoints: renderedWaypoints }, teamColor)} interactive={false} zIndexOffset={950} />
+      <Polyline positions={renderedWaypoints} pathOptions={{ ...visual, interactive: false }} />
+      <Marker position={renderedWaypoints.at(-1)!} icon={routeArrowIcon({ ...route, waypoints: renderedWaypoints }, visual.color)} interactive={false} zIndexOffset={950} />
       {renderedWaypoints.map((point, index) => (
         <Marker
           key={`${route.uid}-${index}`}
@@ -521,7 +520,7 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, s
       name: draftContext.name,
       orderType: parent?.orderType ?? defaultType,
       status: 'planned',
-      color: parent?.color ?? meta.color,
+      color: teamOf(draftContext.team).color,
       lineStyle: parent?.lineStyle ?? meta.lineStyle,
       opacity: parent?.opacity ?? 0.92,
       waypoints: points,
@@ -592,20 +591,19 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, s
               </Tooltip>
             </Polyline>
             {!selected && (
-              <Polyline positions={renderedWaypoints} pathOptions={{ ...visual, color: teamColor, interactive: false }} />
+              <Polyline positions={renderedWaypoints} pathOptions={{ ...visual, interactive: false }} />
             )}
-            {!selected && <Marker position={renderedWaypoints.at(-1)!} icon={routeArrowIcon({ ...route, waypoints: renderedWaypoints }, teamColor)} interactive={false} zIndexOffset={700} />}
-            {!selected && route.waypoints.slice(1).map((point, offset) => {
+            {!selected && <Marker position={renderedWaypoints.at(-1)!} icon={routeArrowIcon({ ...route, waypoints: renderedWaypoints }, visual.color)} interactive={false} zIndexOffset={700} />}
+            {!selected && route.waypoints.slice(1, -1).map((point, offset) => {
               const index = offset + 1
-              const terminal = index === route.waypoints.length - 1
               return (
               <Marker
                 key={`${route.uid}-passive-${index}`}
                 position={renderedWaypoints[index] ?? point}
-                icon={passiveWaypointIcon(index, visual.color, teamColor, terminal)}
+                icon={passiveWaypointIcon(index, visual.color, teamColor)}
                 interactive={interactive}
                 draggable={interactive}
-                zIndexOffset={terminal ? 740 : 720}
+                zIndexOffset={720}
                 eventHandlers={{
                   click: (e) => {
                     L.DomEvent.stopPropagation(e)
@@ -616,7 +614,7 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, s
                     if (route.waypoints.length <= 2) return
                     onPatch(route.uid, {
                       waypoints: route.waypoints.filter((_, waypointIndex) => waypointIndex !== index),
-                      target: terminal ? undefined : route.target,
+                      target: route.target,
                     })
                   },
                   dragstart: () => {
@@ -633,18 +631,18 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, s
                   },
                   dragend: (e) => {
                     const ll = (e.target as L.Marker).getLatLng()
-                    const snapped = terminal ? snapPoint(map, [ll.lat, ll.lng], snapTargets) : { point: [ll.lat, ll.lng] as [number, number], target: route.target }
+                    const snapped = { point: [ll.lat, ll.lng] as [number, number], target: route.target }
                     const waypoints = route.waypoints.map((waypoint, waypointIndex) => (
                       waypointIndex === index ? snapped.point : waypoint
                     ))
-                    onPatch(route.uid, { waypoints, target: terminal ? snapped.target : route.target })
+                    onPatch(route.uid, { waypoints, target: route.target })
                     setPassiveDragPreview(null)
                     onSelect(route.uid)
                   },
                 }}
               >
                 <Tooltip direction="top" offset={[0, -9]} opacity={0.94}>
-                  {`${terminal ? '终点' : `途经点 ${index}`} · 拖动调整${route.waypoints.length > 2 ? ' · 右键删除' : ''}`}
+                  {`途经点 ${index} · 拖动调整 · 右键删除`}
                 </Tooltip>
               </Marker>
               )

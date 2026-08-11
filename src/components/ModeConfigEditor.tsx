@@ -1,9 +1,11 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import type {
   GameModeProfile,
   ModeConfigStore,
   ModeConfigVerification,
   ModeEditorSession,
+  ModeEditorSelection,
+  ModeEditorSelectionItem,
   ModeMapProp,
   ModeMapOverride,
   ModeObjectivePoint,
@@ -68,6 +70,41 @@ function PermissionControl({ value, onChange }: { value: ModeConfigVerification;
   )
 }
 
+function CommitTextInput({ value, onCommit, placeholder }: { value: string; onCommit: (value: string) => void; placeholder?: string }) {
+  const [draft, setDraft] = useState(value)
+  useEffect(() => setDraft(value), [value])
+  const commit = () => {
+    if (draft !== value) onCommit(draft)
+  }
+  return (
+    <input
+      value={draft}
+      placeholder={placeholder}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' && !event.nativeEvent.isComposing) event.currentTarget.blur()
+      }}
+    />
+  )
+}
+
+function CommitTextarea({ value, onCommit, placeholder, rows = 2 }: { value: string; onCommit: (value: string) => void; placeholder?: string; rows?: number }) {
+  const [draft, setDraft] = useState(value)
+  useEffect(() => setDraft(value), [value])
+  return (
+    <textarea
+      rows={rows}
+      value={draft}
+      placeholder={placeholder}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        if (draft !== value) onCommit(draft)
+      }}
+    />
+  )
+}
+
 interface ModeConfigEditorProps {
   mapId: string
   mapName: string
@@ -77,6 +114,10 @@ interface ModeConfigEditorProps {
   mapConfig: ModeMapOverride
   session: ModeEditorSession
   onSessionChange: (patch: Partial<ModeEditorSession>) => void
+  onSelectItem: (
+    selection: ModeEditorSelection,
+    options?: { additive?: boolean; range?: boolean; order?: ModeEditorSelectionItem[] },
+  ) => void
   onSelectProfile: (id: string) => void
   onCreateProfile: (name: string) => void
   onDeleteProfile: (id: string) => void
@@ -102,6 +143,7 @@ export default function ModeConfigEditor({
   mapConfig,
   session,
   onSessionChange,
+  onSelectItem,
   onSelectProfile,
   onCreateProfile,
   onDeleteProfile,
@@ -139,6 +181,37 @@ export default function ModeConfigEditor({
   const stageSpawns = mapConfig.spawns.filter((spawn) => spawn.stageId === session.stageId)
   const stageObjectives = mapConfig.objectives.filter((point) => point.stageId === session.stageId)
   const stageProps = mapConfig.props.filter((prop) => prop.stageId === '*' || prop.stageId === session.stageId)
+  const listSelectionOrder: ModeEditorSelectionItem[] = [
+    ...stageZones.map((item) => ({ kind: 'zone' as const, uid: item.uid })),
+    ...stageObjectives.map((item) => ({ kind: 'objective' as const, uid: item.uid })),
+    ...stageSpawns.map((item) => ({ kind: 'spawn' as const, uid: item.uid })),
+    ...stageProps.map((item) => ({ kind: 'prop' as const, uid: item.uid })),
+  ]
+  const selectedItemKeys = new Set((session.selectedItems.length > 0 ? session.selectedItems : session.selected ? [session.selected] : []).map((item) => `${item.kind}:${item.uid}`))
+  const selectListItem = (event: ReactMouseEvent<HTMLButtonElement>, selection: ModeEditorSelectionItem) => {
+    onSelectItem(selection, {
+      additive: event.ctrlKey || event.metaKey,
+      range: event.shiftKey,
+      order: listSelectionOrder,
+    })
+  }
+  const currentStageLabel = mapConfig.stages.find((stage) => stage.id === session.stageId)?.label ?? ''
+  const [stageLabelDraft, setStageLabelDraft] = useState(currentStageLabel)
+
+  // 阶段名称先在输入框内本地编辑，失焦时再提交到整份地图配置。
+  // 避免每个输入字符都重建历史、保存并重绘整张地图，尤其可防止中文输入法组合文本抖动。
+  useEffect(() => {
+    setStageLabelDraft(currentStageLabel)
+  }, [currentStageLabel, mapId, profile.id, session.stageId])
+
+  const commitStageLabel = useCallback(() => {
+    if (stageLabelDraft === currentStageLabel) return
+    onMapConfigChange({
+      ...mapConfig,
+      stages: mapConfig.stages.map((stage) => stage.id === session.stageId ? { ...stage, label: stageLabelDraft } : stage),
+      updatedAt: Date.now(),
+    })
+  }, [currentStageLabel, mapConfig, onMapConfigChange, session.stageId, stageLabelDraft])
 
   const replaceZone = (uid: string, patch: Partial<ModeZone>) => {
     onMapConfigChange({
@@ -186,47 +259,62 @@ export default function ModeConfigEditor({
       verification: 'draft',
     }
     onMapConfigChange({ ...mapConfig, zones: [...mapConfig.zones, zone], updatedAt: Date.now() })
-    onSessionChange({ tool: 'select', selected: { kind: 'zone', uid: zone.uid }, zoneDraft: [] })
+    onSessionChange({ tool: 'select', selected: { kind: 'zone', uid: zone.uid }, selectedItems: [{ kind: 'zone', uid: zone.uid }], zoneDraft: [] })
   }
 
   const deleteSelection = () => {
-    const selected = session.selected
-    if (!selected) return
-    if (selected.kind === 'zone') {
-      const zone = mapConfig.zones.find((item) => item.uid === selected.uid)
-      onMapConfigChange({
-        ...mapConfig,
-        zones: mapConfig.zones.filter((zone) => zone.uid !== selected.uid),
-        objectives: zone?.objectiveUid
-          ? mapConfig.objectives.map((point) => point.uid === zone.objectiveUid ? { ...point, captureZoneUid: '' } : point)
-          : mapConfig.objectives,
-        updatedAt: Date.now(),
-      })
-    } else if (selected.kind === 'spawn') {
-      onMapConfigChange({
-        ...mapConfig,
-        spawns: mapConfig.spawns.filter((spawn) => spawn.uid !== selected.uid),
-        updatedAt: Date.now(),
-      })
-    } else if (selected.kind === 'objective') {
-      const point = mapConfig.objectives.find((item) => item.uid === selected.uid)
-      onMapConfigChange({
-        ...mapConfig,
-        objectives: mapConfig.objectives.filter((point) => point.uid !== selected.uid),
-        zones: point?.captureZoneUid
-          ? mapConfig.zones.filter((zone) => zone.uid !== point.captureZoneUid)
-          : mapConfig.zones,
-        updatedAt: Date.now(),
-      })
-    } else {
-      onMapConfigChange({
-        ...mapConfig,
-        props: mapConfig.props.filter((prop) => prop.uid !== selected.uid),
-        updatedAt: Date.now(),
-      })
+    const selections = session.selectedItems.length > 0
+      ? session.selectedItems
+      : session.selected ? [session.selected] : []
+    if (selections.length === 0) return
+
+    const zoneIds = new Set(selections
+      .filter((item) => item.kind === 'zone' && mapConfig.zones.some((zone) => zone.uid === item.uid && zone.verification === 'draft'))
+      .map((item) => item.uid))
+    const spawnIds = new Set(selections
+      .filter((item) => item.kind === 'spawn' && mapConfig.spawns.some((spawn) => spawn.uid === item.uid && spawn.verification === 'draft'))
+      .map((item) => item.uid))
+    const objectiveIds = new Set(selections
+      .filter((item) => item.kind === 'objective' && mapConfig.objectives.some((point) => point.uid === item.uid && point.verification === 'draft'))
+      .map((item) => item.uid))
+    const propIds = new Set(selections
+      .filter((item) => item.kind === 'prop' && mapConfig.props.some((prop) => prop.uid === item.uid && prop.verification === 'draft'))
+      .map((item) => item.uid))
+
+    // Deleting an objective keeps the existing editor behavior: its draft capture zone is removed too.
+    for (const point of mapConfig.objectives) {
+      if (!objectiveIds.has(point.uid) || !point.captureZoneUid) continue
+      const captureZone = mapConfig.zones.find((zone) => zone.uid === point.captureZoneUid)
+      if (captureZone?.verification === 'draft') zoneIds.add(captureZone.uid)
     }
-    onSessionChange({ selected: null })
+    const deletedCount = zoneIds.size + spawnIds.size + objectiveIds.size + propIds.size
+    if (deletedCount === 0) return
+
+    onMapConfigChange({
+      ...mapConfig,
+      zones: mapConfig.zones.filter((zone) => !zoneIds.has(zone.uid)),
+      spawns: mapConfig.spawns.filter((spawn) => !spawnIds.has(spawn.uid)),
+      objectives: mapConfig.objectives
+        .filter((point) => !objectiveIds.has(point.uid))
+        .map((point) => zoneIds.has(point.captureZoneUid) ? { ...point, captureZoneUid: '' } : point),
+      props: mapConfig.props.filter((prop) => !propIds.has(prop.uid)),
+      updatedAt: Date.now(),
+    })
+    onSessionChange({ selected: null, selectedItems: [] })
   }
+
+  useEffect(() => {
+    const onBackspace = (event: KeyboardEvent) => {
+      if (event.key !== 'Backspace') return
+      const target = event.target as HTMLElement | null
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+      if (!session.selected && session.selectedItems.length === 0) return
+      event.preventDefault()
+      deleteSelection()
+    }
+    window.addEventListener('keydown', onBackspace)
+    return () => window.removeEventListener('keydown', onBackspace)
+  })
 
   const toggleDeployVehicle = (entry: DeployVehicleEntry) => {
     if (!selectedSpawn) return
@@ -310,6 +398,7 @@ export default function ModeConfigEditor({
       stageId: targetStageId,
       tool: 'select',
       selected: { kind: 'zone', uid },
+      selectedItems: [{ kind: 'zone', uid }],
       zoneDraft: [],
     })
   }, [mapConfig, onMapConfigChange, onSessionChange, selectedZone, stageOptions])
@@ -323,7 +412,7 @@ export default function ModeConfigEditor({
     const label = window.prompt('新阶段名称', `第${maxNumber + 1}阶段`)?.trim()
     if (!label) return
     onMapConfigChange({ ...mapConfig, stages: [...mapConfig.stages, { id, label }], updatedAt: Date.now() })
-    onSessionChange({ stageId: id, tool: 'select', selected: null, zoneDraft: [] })
+    onSessionChange({ stageId: id, tool: 'select', selected: null, selectedItems: [], zoneDraft: [] })
   }
 
   const deleteCurrentStage = () => {
@@ -340,7 +429,7 @@ export default function ModeConfigEditor({
       props: mapConfig.props.filter((prop) => prop.stageId === '*' || prop.stageId !== stage.id),
       updatedAt: Date.now(),
     })
-    onSessionChange({ stageId: nextStages[0]?.id ?? 'S1', tool: 'select', selected: null, zoneDraft: [] })
+    onSessionChange({ stageId: nextStages[0]?.id ?? 'S1', tool: 'select', selected: null, selectedItems: [], zoneDraft: [] })
   }
 
   return (
@@ -387,15 +476,14 @@ export default function ModeConfigEditor({
 
       <label className="mode-config-field">
         <span>模式名称</span>
-        <input value={profile.name} onChange={(event) => onUpdateProfile(profile.id, { name: event.target.value })} />
+        <CommitTextInput value={profile.name} onCommit={(name) => onUpdateProfile(profile.id, { name })} />
       </label>
       <label className="mode-config-field">
         <span>模式说明</span>
-        <textarea
-          rows={2}
+        <CommitTextarea
           value={profile.description}
           placeholder="记录规则、数据来源或待核对内容"
-          onChange={(event) => onUpdateProfile(profile.id, { description: event.target.value })}
+          onCommit={(description) => onUpdateProfile(profile.id, { description })}
         />
       </label>
 
@@ -406,19 +494,11 @@ export default function ModeConfigEditor({
         ><i className="fa-solid fa-mouse-pointer" />选择</button>
         <button
           className={session.tool === 'zone' ? 'active' : ''}
-          onClick={() => onSessionChange({ tool: 'zone', selected: null, zoneDraft: [] })}
+          onClick={() => onSessionChange({ tool: 'zone', selected: null, selectedItems: [], zoneDraft: [] })}
         ><i className="fa-solid fa-draw-polygon" />绘制区域</button>
         <button
-          className={session.tool === 'spawn' ? 'active' : ''}
-          onClick={() => onSessionChange({ tool: 'spawn', selected: null, zoneDraft: [] })}
-        ><i className="fa-solid fa-location-dot" />复活点</button>
-        <button
-          className={session.tool === 'objective' ? 'active' : ''}
-          onClick={() => onSessionChange({ tool: 'objective', selected: null, zoneDraft: [] })}
-        ><i className="fa-solid fa-flag" />据点</button>
-        <button
           className={session.tool === 'prop' ? 'active' : ''}
-          onClick={() => onSessionChange({ tool: 'prop', selected: null, zoneDraft: [] })}
+          onClick={() => onSessionChange({ tool: 'prop', selected: null, selectedItems: [], zoneDraft: [] })}
         ><i className="fa-solid fa-toolbox" />地图道具</button>
       </div>
 
@@ -439,7 +519,7 @@ export default function ModeConfigEditor({
           <span>配置阶段</span>
           <select
             value={session.stageId}
-            onChange={(event) => onSessionChange({ stageId: event.target.value, selected: null, zoneDraft: [] })}
+            onChange={(event) => onSessionChange({ stageId: event.target.value, selected: null, selectedItems: [], zoneDraft: [] })}
           >
             {stageOptions.map((stage) => <option key={stage.id} value={stage.id}>{stage.id} · {stage.label}</option>)}
           </select>
@@ -454,12 +534,12 @@ export default function ModeConfigEditor({
         <label>
           <span>阶段名称</span>
           <input
-            value={mapConfig.stages.find((stage) => stage.id === session.stageId)?.label ?? ''}
-            onChange={(event) => onMapConfigChange({
-              ...mapConfig,
-              stages: mapConfig.stages.map((stage) => stage.id === session.stageId ? { ...stage, label: event.target.value } : stage),
-              updatedAt: Date.now(),
-            })}
+            value={stageLabelDraft}
+            onChange={(event) => setStageLabelDraft(event.target.value)}
+            onBlur={commitStageLabel}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.nativeEvent.isComposing) event.currentTarget.blur()
+            }}
           />
         </label>
         <button onClick={addStage} title="新增阶段"><i className="fa-solid fa-plus" />新增阶段</button>
@@ -485,28 +565,28 @@ export default function ModeConfigEditor({
         <div className="mode-config-list-title">当前地图对象</div>
         <details open><summary>区域 <b>{stageZones.length}</b></summary>
           {stageZones.map((zone) => (
-            <button key={zone.uid} className={session.selected?.kind === 'zone' && session.selected.uid === zone.uid ? 'active' : ''} onClick={() => onSessionChange({ tool: 'select', selected: { kind: 'zone', uid: zone.uid } })}>
+            <button key={zone.uid} className={selectedItemKeys.has(`zone:${zone.uid}`) ? 'active' : ''} onClick={(event) => selectListItem(event, { kind: 'zone', uid: zone.uid })}>
               <i className="fa-solid fa-draw-polygon" style={{ color: zone.color }} /><span>{zone.name}</span><em>{zone.verification === 'confirmed' ? '锁定' : `${zone.points.length} 点`}</em>
             </button>
           ))}
         </details>
         <details open><summary>据点 <b>{stageObjectives.length}</b></summary>
           {stageObjectives.map((point) => (
-            <button key={point.uid} className={session.selected?.kind === 'objective' && session.selected.uid === point.uid ? 'active' : ''} onClick={() => onSessionChange({ tool: 'select', selected: { kind: 'objective', uid: point.uid } })}>
+            <button key={point.uid} className={selectedItemKeys.has(`objective:${point.uid}`) ? 'active' : ''} onClick={(event) => selectListItem(event, { kind: 'objective', uid: point.uid })}>
               <img className="mode-config-list-icon" src={`${POINT_ICON_BASE}/${point.icon}.png`} alt="" /><span>{point.name}</span><em>{point.captureZoneUid ? '已绑定' : '未绑定'}</em>
             </button>
           ))}
         </details>
         <details open><summary>复活点 <b>{stageSpawns.length}</b></summary>
           {stageSpawns.map((spawn) => (
-            <button key={spawn.uid} className={session.selected?.kind === 'spawn' && session.selected.uid === spawn.uid ? 'active' : ''} onClick={() => onSessionChange({ tool: 'select', selected: { kind: 'spawn', uid: spawn.uid } })}>
+            <button key={spawn.uid} className={selectedItemKeys.has(`spawn:${spawn.uid}`) ? 'active' : ''} onClick={(event) => selectListItem(event, { kind: 'spawn', uid: spawn.uid })}>
               <i className="fa-solid fa-location-dot" /><span>{spawn.name}</span><em>{spawn.side === 'attack' ? '攻' : '守'}{spawn.vehicleDeploy ? ` · ${spawn.deployVehicles.length}载具` : ''}</em>
             </button>
           ))}
         </details>
         <details><summary>地图道具 <b>{stageProps.length}</b></summary>
           {stageProps.map((prop) => (
-            <button key={prop.uid} className={session.selected?.kind === 'prop' && session.selected.uid === prop.uid ? 'active' : ''} onClick={() => onSessionChange({ tool: 'select', selected: { kind: 'prop', uid: prop.uid } })}>
+            <button key={prop.uid} className={selectedItemKeys.has(`prop:${prop.uid}`) ? 'active' : ''} onClick={(event) => selectListItem(event, { kind: 'prop', uid: prop.uid })}>
               <img className="mode-config-list-icon" src={`${POINT_ICON_BASE}/${prop.icon}.png`} alt="" /><span>{prop.name}</span><em>{prop.stageId === '*' ? '全阶段' : prop.stageId}</em>
             </button>
           ))}
@@ -533,7 +613,7 @@ export default function ModeConfigEditor({
             <small>副本自动设为草稿；据点绑定不会跨阶段复制</small>
           </div>
           <fieldset disabled={selectedZone.verification === 'confirmed'}>
-            <label className="mode-config-field"><span>名称</span><input value={selectedZone.name} onChange={(event) => replaceZone(selectedZone.uid, { name: event.target.value })} /></label>
+            <label className="mode-config-field"><span>名称</span><CommitTextInput value={selectedZone.name} onCommit={(name) => replaceZone(selectedZone.uid, { name })} /></label>
             <label className="mode-config-field"><span>区域用途</span>
               <select value={selectedZone.role} onChange={(event) => changeZoneRole(selectedZone, event.target.value as ModeZoneRole)}>{ZONE_ROLE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
             </label>
@@ -552,7 +632,7 @@ export default function ModeConfigEditor({
           <div className="mode-config-properties-title">复活点属性</div>
           <PermissionControl value={selectedSpawn.verification} onChange={(verification) => replaceSpawn(selectedSpawn.uid, { verification })} />
           <fieldset disabled={selectedSpawn.verification === 'confirmed'}>
-            <label className="mode-config-field"><span>名称/备注</span><input value={selectedSpawn.name} onChange={(event) => replaceSpawn(selectedSpawn.uid, { name: event.target.value })} /></label>
+            <label className="mode-config-field"><span>名称/备注</span><CommitTextInput value={selectedSpawn.name} onCommit={(name) => replaceSpawn(selectedSpawn.uid, { name })} /></label>
             <label className="mode-config-field"><span>阵营</span><select value={selectedSpawn.side} onChange={(event) => replaceSpawn(selectedSpawn.uid, { side: event.target.value as ModeSpawnPoint['side'] })}><option value="attack">进攻方</option><option value="defense">防守方</option></select></label>
             <label className="mode-config-check"><input type="checkbox" checked={selectedSpawn.vehicleDeploy} onChange={(event) => replaceSpawn(selectedSpawn.uid, { vehicleDeploy: event.target.checked })} />允许部署载具</label>
             {selectedSpawn.vehicleDeploy ? (
@@ -583,8 +663,8 @@ export default function ModeConfigEditor({
           <div className="mode-config-properties-title">据点属性</div>
           <PermissionControl value={selectedObjective.verification} onChange={(verification) => replaceObjective(selectedObjective.uid, { verification })} />
           <fieldset disabled={selectedObjective.verification === 'confirmed'}>
-            <label className="mode-config-field"><span>名称</span><input value={selectedObjective.name} onChange={(event) => replaceObjective(selectedObjective.uid, { name: event.target.value })} /></label>
-            <label className="mode-config-field"><span>备注</span><input value={selectedObjective.note} onChange={(event) => replaceObjective(selectedObjective.uid, { note: event.target.value })} /></label>
+            <label className="mode-config-field"><span>名称</span><CommitTextInput value={selectedObjective.name} onCommit={(name) => replaceObjective(selectedObjective.uid, { name })} /></label>
+            <label className="mode-config-field"><span>备注</span><CommitTextInput value={selectedObjective.note} onCommit={(note) => replaceObjective(selectedObjective.uid, { note })} /></label>
             <label className="mode-config-field"><span>正式图标</span><select value={selectedObjective.icon} onChange={(event) => replaceObjective(selectedObjective.uid, { icon: event.target.value })}>{OBJECTIVE_ICON_OPTIONS.map((icon) => <option key={icon} value={icon}>{icon.replace('q_jd_', '').toUpperCase()}</option>)}</select></label>
             <label className="mode-config-field"><span>占领区</span><select value={selectedObjective.captureZoneUid} onChange={(event) => bindCaptureZone(event.target.value, selectedObjective.uid)}><option value="">未绑定</option>{stageZones.filter((zone) => zone.role === 'capture').map((zone) => <option key={zone.uid} value={zone.uid}>{zone.name}</option>)}</select></label>
             <div className="mode-config-coords">{selectedObjective.lat.toFixed(3)}, {selectedObjective.lng.toFixed(3)}</div>
@@ -608,7 +688,7 @@ export default function ModeConfigEditor({
 
       <label className="mode-config-field">
         <span>{mapName}备注</span>
-        <textarea rows={2} value={mapConfig.notes} onChange={(event) => onMapConfigChange({ ...mapConfig, notes: event.target.value, updatedAt: Date.now() })} />
+        <CommitTextarea value={mapConfig.notes} onCommit={(notes) => onMapConfigChange({ ...mapConfig, notes, updatedAt: Date.now() })} />
       </label>
 
       <footer className="mode-config-editor-foot">
@@ -629,6 +709,7 @@ export default function ModeConfigEditor({
           }}
         />
         <span>{syncStatus || mapId}</span>
+        <small>自动保存仅限当前浏览器；发布到 GitHub 前请导出正式数据并写入项目配置。选中对象后按 Ctrl+V 可复制。</small>
       </footer>
     </section>
   )

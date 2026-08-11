@@ -254,6 +254,8 @@ export type ModeEditorSelection =
   | { kind: 'prop'; uid: string }
   | null
 
+export type ModeEditorSelectionItem = Exclude<ModeEditorSelection, null>
+
 export interface ModeEditorSession {
   open: boolean
   profileId: string | null
@@ -261,6 +263,8 @@ export interface ModeEditorSession {
   tool: ModeEditorTool
   zoneRole: ModeZoneRole
   selected: ModeEditorSelection
+  /** 多选集合；selected 始终指向最后操作的主选项，供属性面板和顶点编辑使用。 */
+  selectedItems: ModeEditorSelectionItem[]
   zoneDraft: [number, number][]
 }
 
@@ -274,7 +278,7 @@ export interface VehicleItem {
   category: VehicleCategory
   side: Side
   /** 所属小队；旧存档载具在读取时自动归入 A 队 */
-  team: OperatorTeam
+  team?: OperatorTeam
   /** 卡片徽标（图标加载失败时兜底） */
   badge: string
   /** 官网图标 URL（dzc_i/q_*.png） */
@@ -289,6 +293,21 @@ export interface VehicleItem {
   custom?: boolean
   /** 本方/敌方部署（本方=绿底、敌方=红底；旧数据无此字段时按 side 兼容） */
   own?: boolean
+}
+
+/** 兵棋推演中的固定建筑单位；仅区分阵营，不隶属于任何小队。 */
+export type BuildingUnitKind = 'fixed-machine-gun' | 'fixed-anti-air' | 'coastal-gun'
+
+export interface BuildingUnit {
+  uid: string
+  kind: BuildingUnitKind
+  name: string
+  side: Side
+  team?: OperatorTeam
+  lat: number
+  lng: number
+  stageId: string
+  rotation: number
 }
 
 /** 文字标注（由画笔 GeoJSON 中的 Point 特征推导） */
@@ -343,6 +362,8 @@ export interface TextStyleProps {
 export interface MapState {
   /** 载具按攻/守方分桶存储（与画笔绘制对称：切换视角只显示当前视角桶） */
   vehicles: Record<Side, VehicleItem[]>
+  /** 兵棋推演建筑单位，按当前攻/守视角分档保存；单位本身只有阵营属性。 */
+  buildings: Record<Side, BuildingUnit[]>
   /** 每方独立画笔图层（GeoJSON FeatureCollection 字符串） */
   drawings: Record<Side, string>
   /** 兵棋推演干员（按攻/守分桶；每方默认 5 队×4 人 = 20 人） */
@@ -491,6 +512,7 @@ export interface WargameState {
 /** 撤回/恢复历史快照：双方载具 + 双方绘制（按 地图+视角 分栈） */
 export interface MapStateSnapshot {
   vehicles: Record<Side, VehicleItem[]>
+  buildings?: Record<Side, BuildingUnit[]>
   drawings: Record<Side, string>
   /** 兵棋推演干员与联线（v9 新增，随快照入栈） */
   operators: Record<Side, OperatorUnit[]>
@@ -541,9 +563,14 @@ export interface TacticalPlan {
 /** 图层显示开关（问题1：地图道具等图层控制） */
 export interface LayerVisibility {
   props: boolean
+  /** “据点与防线”总开关。 */
   points: boolean
   /** 据点标识（A点图标 + "据点A"字样），可与据点区域分离隐藏 */
   pointsLabels: boolean
+  /** 据点自身的可占领区域。 */
+  pointsCapture: boolean
+  /** 据点当前所在阶段的防线区域。 */
+  pointsFrontline: boolean
   spawns: boolean
   zones: boolean
 }
@@ -577,6 +604,7 @@ export interface PersistedAppState {
     sections: {
       layers: boolean
       props: boolean
+      points: boolean
       vehicles: boolean
       wargame: boolean
       /** 自定义载具内部分组（地面/空中/水上）展开状态，按组名存储 */

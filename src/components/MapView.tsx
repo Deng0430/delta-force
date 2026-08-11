@@ -4,6 +4,7 @@ import { MapContainer, TileLayer, useMap } from 'react-leaflet'
 import * as L from 'leaflet'
 import type {
   ActiveTextEdit,
+  BuildingUnit,
   CapturePoint,
   DrawSettings,
   MapConfig,
@@ -23,6 +24,7 @@ import type {
 import { genUid, mapBounds } from '../utils/geo'
 import LayerManager from './LayerManager'
 import VehicleLayer from './VehicleLayer'
+import BuildingLayer from './BuildingLayer'
 import OperatorLayer from './OperatorLayer'
 import TeamLayer from './TeamLayer'
 import RouteLayer from './RouteLayer'
@@ -77,7 +79,13 @@ interface MapViewProps {
   onDeleteVehicle: (uid: string) => void
   /** 快捷切换载具阵营（攻↔守） */
   onToggleVehicleSide: (uid: string) => void
-  onChangeVehicleTeam: (uid: string, team: import('../types').OperatorTeam) => void
+  onChangeVehicleTeam: (uid: string, team?: import('../types').OperatorTeam) => void
+  buildings: BuildingUnit[]
+  onMoveBuilding: (uid: string, lat: number, lng: number) => void
+  onRotateBuilding: (uid: string, rotation: number) => void
+  onToggleBuildingSide: (uid: string) => void
+  onChangeBuildingTeam: (uid: string, team?: import('../types').OperatorTeam) => void
+  onDeleteBuilding: (uid: string) => void
   onDrawSaved: (side: Side, geoJson: string) => void
   onSelectPoint: (point: CapturePoint, stageId: string) => void
   onCloseDetail: () => void
@@ -195,6 +203,12 @@ export default function MapView({
   onDeleteVehicle,
   onToggleVehicleSide,
   onChangeVehicleTeam,
+  buildings,
+  onMoveBuilding,
+  onRotateBuilding,
+  onToggleBuildingSide,
+  onChangeBuildingTeam,
+  onDeleteBuilding,
   onDrawSaved,
   onSelectPoint,
   onCloseDetail,
@@ -492,6 +506,8 @@ export default function MapView({
           selectedName={selectedPoint?.point.name ?? null}
           visible={layers.points}
           labelsVisible={layers.pointsLabels}
+          captureVisible={layers.pointsCapture}
+          frontlineVisible={layers.pointsFrontline}
           interactive={interactive}
           onSelect={onSelectPoint}
         />
@@ -528,6 +544,18 @@ export default function MapView({
           }}
           posRef={vehiclePosRef}
         />
+        {wargame.enabled && (
+          <BuildingLayer
+            buildings={buildings}
+            view={view}
+            interactive={interactive}
+            onMove={onMoveBuilding}
+            onRotate={onRotateBuilding}
+            onToggleSide={onToggleBuildingSide}
+            onChangeTeam={onChangeBuildingTeam}
+            onDelete={onDeleteBuilding}
+          />
+        )}
         {/* 兵棋推演：干员标记层（视角桶内含双方 40 人；我方绿圈可交互，敌方红圈亦可部署/连线对抗） */}
         {wargame.enabled && (
           <OperatorLayer

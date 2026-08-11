@@ -36,6 +36,10 @@ interface PointMarkersProps {
   visible: boolean
   /** 是否显示据点标识（A点图标 + "据点A"字样）；false 时仅隐藏标识，区域多边形保留 */
   labelsVisible: boolean
+  /** 是否显示据点可占领区域。 */
+  captureVisible: boolean
+  /** 是否显示据点所在阶段防线。 */
+  frontlineVisible: boolean
   /** 绘制工具激活时禁用点击属性（不弹出详情/不聚焦） */
   interactive: boolean
   onSelect: (point: CapturePoint, stageId: string) => void
@@ -49,6 +53,8 @@ export default function PointMarkers({
   selectedName,
   visible,
   labelsVisible,
+  captureVisible,
+  frontlineVisible,
   interactive,
   onSelect,
 }: PointMarkersProps) {
@@ -77,7 +83,7 @@ export default function PointMarkers({
   return (
     <>
       {/* 防线区域（官网"区域"对象，虚线边框）：仅当前激活阶段 */}
-      {activeStage.zone ? (
+      {frontlineVisible && activeStage.zone ? (
         <Polygon
           key={`zone-${activeStage.id}`}
           positions={activeStage.zone.latlngs}
@@ -95,7 +101,7 @@ export default function PointMarkers({
       ) : null}
 
       {/* 据点可占领区域（官网据点对象 border，实线边框）：仅当前阶段 */}
-      {activeStage.points.map((point) => {
+      {captureVisible && activeStage.points.map((point) => {
           if (!point.capturable || point.capturable.length < 3) return null
           return (
             <Polygon

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import * as L from 'leaflet'
 import type {
   CapturePoint,
+  BuildingUnit,
+  BuildingUnitKind,
   HistoryEntry,
   HistoryKey,
   LayerVisibility,
@@ -21,12 +23,13 @@ import type {
 import { MAP_BY_ID } from './config/maps'
 import { STAGES_BY_MAP, stageCount } from './config/points'
 import { MAP_PROPS } from './config/pointsStages'
-import { createEmptyMapState, loadState, saveState, vehiclesBucketOf, operatorsBucketOf, connectionsBucketOf, teamsBucketOf, routesBucketOf, wargameOf } from './utils/storage'
+import { buildingsBucketOf, createEmptyMapState, loadState, saveState, vehiclesBucketOf, operatorsBucketOf, connectionsBucketOf, teamsBucketOf, routesBucketOf, wargameOf } from './utils/storage'
 import { emptyGeoJson, genUid } from './utils/geo'
 import { buildTacticalHtml, downloadText } from './utils/exportTactical'
 import type { CustomVehicleTemplate } from './config/customVehicles'
 import type { DeployVehicleEntry } from './config/deployVehicles'
 import { buildDefaultOperators } from './config/operators'
+import { buildingUnitOf } from './config/buildingUnits'
 import { defaultProfileForTeam, profileOf } from './config/operatorProfiles'
 import type { OperatorConnection, OperatorTeam, OperatorUnit } from './types'
 import type { DeployTarget } from './components/DeployBar'
@@ -130,6 +133,7 @@ export default function App() {
             ...createEmptyMapState(),
             ...saved,
             vehicles: vehiclesBucketOf(saved),
+            buildings: buildingsBucketOf(saved),
             operators: operatorsBucketOf(saved),
             connections: connectionsBucketOf(saved),
             teams: teamsBucketOf(saved),
@@ -162,6 +166,15 @@ export default function App() {
               }
             }
           }
+        }
+      }
+    }
+    // 无存档、存档不可用或某张新地图尚无兵棋数据时，也必须创建完整的单兵编制。
+    // 每个视角桶都包含当前视角的本方与敌方，各 5 队 × 4 人，共 40 名干员。
+    for (const id of DEFAULT_MAP_IDS) {
+      for (const side of ['attack', 'defense'] as const) {
+        if (base[id].operators[side].length === 0) {
+          base[id].operators[side] = buildDefaultOperators(side)
         }
       }
     }
@@ -202,6 +215,8 @@ export default function App() {
       props: persisted?.ui?.layers?.props ?? true,
       points: persisted?.ui?.layers?.points ?? true,
       pointsLabels: persisted?.ui?.layers?.pointsLabels ?? true,
+      pointsCapture: persisted?.ui?.layers?.pointsCapture ?? true,
+      pointsFrontline: persisted?.ui?.layers?.pointsFrontline ?? true,
       spawns: persisted?.ui?.layers?.spawns ?? true,
       zones: persisted?.ui?.layers?.zones ?? true,
     } as LayerVisibility,
@@ -226,6 +241,7 @@ export default function App() {
     sections: {
       layers: persisted?.ui?.sections?.layers ?? true,
       props: persisted?.ui?.sections?.props ?? true,
+      points: persisted?.ui?.sections?.points ?? true,
       vehicles: persisted?.ui?.sections?.vehicles ?? true,
       wargame: persisted?.ui?.sections?.wargame ?? true,
       vehGroups: persisted?.ui?.sections?.vehGroups ?? {},
@@ -304,10 +320,12 @@ export default function App() {
   const [histVersion, setHistVersion] = useState(0)
   // 载具旋转会话（滚轮连续滚动时合并为一条历史，300ms 停止后提交）
   const rotateSessionRef = useRef<Record<string, { before: MapStateSnapshot; timer: number }>>({})
+  const buildingRotateSessionRef = useRef<Record<string, { before: MapStateSnapshot; timer: number }>>({})
 
   /** 深拷贝当前地图状态为历史快照 */
   const cloneState = useCallback((s: MapState): MapStateSnapshot => {
     const bucket = vehiclesBucketOf(s)
+    const buildings = buildingsBucketOf(s)
     const ops = operatorsBucketOf(s)
     const conns = connectionsBucketOf(s)
     const tm = teamsBucketOf(s)
@@ -316,6 +334,10 @@ export default function App() {
       vehicles: {
         attack: bucket.attack.map((v) => ({ ...v })),
         defense: bucket.defense.map((v) => ({ ...v })),
+      },
+      buildings: {
+        attack: buildings.attack.map((item) => ({ ...item })),
+        defense: buildings.defense.map((item) => ({ ...item })),
       },
       drawings: { attack: s.drawings.attack, defense: s.drawings.defense },
       operators: {
@@ -375,8 +397,11 @@ export default function App() {
       return true
     }
     const sameRoutes = (xs: TacticalRoute[], ys: TacticalRoute[]) => JSON.stringify(xs) === JSON.stringify(ys)
+    const sameBuildings = (xs: BuildingUnit[] = [], ys: BuildingUnit[] = []) => JSON.stringify(xs) === JSON.stringify(ys)
     if (!sameBucket(a.vehicles.attack, b.vehicles.attack)) return false
     if (!sameBucket(a.vehicles.defense, b.vehicles.defense)) return false
+    if (!sameBuildings(a.buildings?.attack, b.buildings?.attack)) return false
+    if (!sameBuildings(a.buildings?.defense, b.buildings?.defense)) return false
     if (!sameOps(a.operators.attack, b.operators.attack)) return false
     if (!sameOps(a.operators.defense, b.operators.defense)) return false
     if (!sameConns(a.connections.attack, b.connections.attack)) return false
@@ -469,14 +494,46 @@ export default function App() {
     setHistVersion((v) => v + 1)
   }, [mapId, view])
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return
+      const target = event.target as HTMLElement | null
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+      const key = event.key.toLowerCase()
+      if (key === 'z') {
+        event.preventDefault()
+        if (event.shiftKey) handleRedo()
+        else handleUndo()
+      } else if (key === 'y') {
+        event.preventDefault()
+        handleRedo()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [handleRedo, handleUndo])
+
   // 删除选中（第十二轮：套索圈选后工具栏按钮删除；信号 + 是否有选中上报）
   const [deleteSelectedTick, setDeleteSelectedTick] = useState(0)
   const [deleteSelCount, setDeleteSelCount] = useState(0)
   const handleDeleteSelected = useCallback(() => setDeleteSelectedTick((t) => t + 1), [])
 
+  useEffect(() => {
+    const onBackspace = (event: KeyboardEvent) => {
+      if (event.key !== 'Backspace') return
+      const target = event.target as HTMLElement | null
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+      if (deleteSelCount <= 0) return
+      event.preventDefault()
+      handleDeleteSelected()
+    }
+    document.addEventListener('keydown', onBackspace)
+    return () => document.removeEventListener('keydown', onBackspace)
+  }, [deleteSelCount, handleDeleteSelected])
+
   // 自动持久化（v14：载具队伍 + 行动指令 V2 + 干员独立任务；旧版本由 storage 统一迁移）
   useEffect(() => {
-    saveState({ version: 14, lastMapId: mapId, lastView: view, maps, progress, plans, ui })
+    saveState({ version: 16, lastMapId: mapId, lastView: view, maps, progress, plans, ui })
   }, [maps, mapId, view, progress, plans, ui])
 
   useEffect(() => {
@@ -553,13 +610,30 @@ export default function App() {
         }
         next.propVis = nextPropVis
       }
+      // “据点与防线”总开关联动三个子图层。
+      if (key === 'points') {
+        next.layers.pointsLabels = value
+        next.layers.pointsCapture = value
+        next.layers.pointsFrontline = value
+      }
+      // 父项关闭后仍允许直接开启任一子项；开启子项时同步恢复父图层。
+      if (
+        value &&
+        (key === 'pointsLabels' || key === 'pointsCapture' || key === 'pointsFrontline')
+      ) {
+        next.layers.points = true
+      }
       return next
     })
   }, [])
 
   /** 问题2：道具按类型显示/屏蔽 */
   const handlePropVisChange = useCallback((name: string, value: boolean) => {
-    setUi((u) => ({ ...u, propVis: { ...u.propVis, [name]: value } }))
+    setUi((u) => ({
+      ...u,
+      layers: value ? { ...u.layers, props: true } : u.layers,
+      propVis: { ...u.propVis, [name]: value },
+    }))
   }, [])
 
   /** 问题3：载具旋转（重构：旋转会话合并为一条历史，滚轮停止 300ms 后提交） */
@@ -612,12 +686,12 @@ export default function App() {
 
   /** 载具队伍角标点击后循环切换所属队伍。 */
   const handleVehicleTeamChange = useCallback(
-    (uid: string, team: OperatorTeam) => {
+    (uid: string, team?: OperatorTeam) => {
       const cur = mapsRef.current[mapId] ?? createEmptyMapState()
       const before = cloneState(cur)
       const nextVehicles = vehiclesBucketOf(cur)[view].map((vehicle) => vehicle.uid === uid ? { ...vehicle, team } : vehicle)
       const nextRoutes = routesBucketOf(cur)[view].map((route) =>
-        route.anchorMode === 'vehicle' && route.anchorVehicleUid === uid ? { ...route, team } : route,
+        route.anchorMode === 'vehicle' && route.anchorVehicleUid === uid && team ? { ...route, team } : route,
       )
       updateMap(mapId, (state) => ({
         ...state,
@@ -630,7 +704,7 @@ export default function App() {
   )
 
   const handleAddCustomVehicle = useCallback(
-    (tpl: CustomVehicleTemplate, own: boolean, team: OperatorTeam) => {
+    (tpl: CustomVehicleTemplate, own: boolean, team?: OperatorTeam) => {
       const center = mapRef.current?.getCenter() ?? { lat: 0, lng: 0 }
       const stageId = stages[capturedStageIndex]?.id ?? ''
       const vehicle: VehicleItem = {
@@ -655,6 +729,81 @@ export default function App() {
     },
     [commitVehicleChange, view, stages, capturedStageIndex],
   )
+
+  const handleAddBuilding = useCallback((kind: BuildingUnitKind, own: boolean, team?: OperatorTeam) => {
+    const center = mapRef.current?.getCenter() ?? { lat: 0, lng: 0 }
+    const buildingConfig = buildingUnitOf(kind)
+    const building: BuildingUnit = {
+      uid: genUid('building'),
+      kind,
+      name: `${buildingConfig.name}碉堡`,
+      side: own ? view : (view === 'attack' ? 'defense' : 'attack'),
+      team,
+      lat: center.lat,
+      lng: center.lng,
+      stageId: stages[capturedStageIndex]?.id ?? '',
+      rotation: 0,
+    }
+    const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+    const before = cloneState(cur)
+    const nextBuildings = [...buildingsBucketOf(cur)[view], building]
+    updateMap(mapId, (state) => ({ ...state, buildings: { ...buildingsBucketOf(state), [view]: nextBuildings } }))
+    pushEntry(before, { ...before, buildings: { ...(before.buildings ?? { attack: [], defense: [] }), [view]: nextBuildings } })
+    setTool('pan')
+  }, [capturedStageIndex, cloneState, mapId, pushEntry, stages, updateMap, view])
+
+  const handleMoveBuilding = useCallback((uid: string, lat: number, lng: number) => {
+    const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+    const before = cloneState(cur)
+    const nextBuildings = buildingsBucketOf(cur)[view].map((item) => item.uid === uid ? { ...item, lat, lng } : item)
+    updateMap(mapId, (state) => ({ ...state, buildings: { ...buildingsBucketOf(state), [view]: nextBuildings } }))
+    pushEntry(before, { ...before, buildings: { ...(before.buildings ?? { attack: [], defense: [] }), [view]: nextBuildings } })
+  }, [cloneState, mapId, pushEntry, updateMap, view])
+
+  const handleRotateBuilding = useCallback((uid: string, rotation: number) => {
+    const session = buildingRotateSessionRef.current[uid]
+    if (!session) {
+      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      buildingRotateSessionRef.current[uid] = { before: cloneState(cur), timer: 0 }
+    }
+    updateMap(mapId, (state) => {
+      const bucket = buildingsBucketOf(state)
+      return { ...state, buildings: { ...bucket, [view]: bucket[view].map((item) => item.uid === uid ? { ...item, rotation } : item) } }
+    })
+    const active = buildingRotateSessionRef.current[uid]
+    clearTimeout(active.timer)
+    active.timer = window.setTimeout(() => {
+      const current = mapsRef.current[mapId] ?? createEmptyMapState()
+      pushEntry(active.before, cloneState(current))
+      delete buildingRotateSessionRef.current[uid]
+    }, 300)
+  }, [cloneState, mapId, pushEntry, updateMap, view])
+
+  const handleToggleBuildingSide = useCallback((uid: string) => {
+    const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+    const before = cloneState(cur)
+    const nextBuildings = buildingsBucketOf(cur)[view].map((item) => item.uid === uid
+      ? { ...item, side: (item.side === 'attack' ? 'defense' : 'attack') as Side }
+      : item)
+    updateMap(mapId, (state) => ({ ...state, buildings: { ...buildingsBucketOf(state), [view]: nextBuildings } }))
+    pushEntry(before, { ...before, buildings: { ...(before.buildings ?? { attack: [], defense: [] }), [view]: nextBuildings } })
+  }, [cloneState, mapId, pushEntry, updateMap, view])
+
+  const handleBuildingTeamChange = useCallback((uid: string, team?: OperatorTeam) => {
+    const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+    const before = cloneState(cur)
+    const nextBuildings = buildingsBucketOf(cur)[view].map((item) => item.uid === uid ? { ...item, team } : item)
+    updateMap(mapId, (state) => ({ ...state, buildings: { ...buildingsBucketOf(state), [view]: nextBuildings } }))
+    pushEntry(before, { ...before, buildings: { ...(before.buildings ?? { attack: [], defense: [] }), [view]: nextBuildings } })
+  }, [cloneState, mapId, pushEntry, updateMap, view])
+
+  const handleDeleteBuilding = useCallback((uid: string) => {
+    const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+    const before = cloneState(cur)
+    const nextBuildings = buildingsBucketOf(cur)[view].filter((item) => item.uid !== uid)
+    updateMap(mapId, (state) => ({ ...state, buildings: { ...buildingsBucketOf(state), [view]: nextBuildings } }))
+    pushEntry(before, { ...before, buildings: { ...(before.buildings ?? { attack: [], defense: [] }), [view]: nextBuildings } })
+  }, [cloneState, mapId, pushEntry, updateMap, view])
 
   const handleMoveVehicle = useCallback(
     (uid: string, lat: number, lng: number) => {
@@ -700,7 +849,6 @@ export default function App() {
             name: entry.name,
             category: entry.category,
             side: target.side,
-            team: 'A',
             badge: entry.badge,
             iconUrl: entry.iconUrl,
             lat: target.pos[0] + i * 2.4,
@@ -860,10 +1008,12 @@ export default function App() {
       // 队标直接清空（队标即部署状态，无"未部署的配置形态"；保留会导致左侧按钮无法恢复未部署态）
       teams: { attack: [], defense: [] },
       routes: { attack: [], defense: [] },
+      buildings: { attack: [], defense: [] },
     }
     pushEntry(before, after)
     updateMap(mapId, (s) => ({
       vehicles: { attack: [], defense: [] },
+      buildings: { attack: [], defense: [] },
       drawings: { attack: emptyGeoJson(), defense: emptyGeoJson() },
       operators: {
         attack: (operatorsBucketOf(s).attack ?? []).map((o) => ({ ...o, lat: null, lng: null })),
@@ -1264,7 +1414,7 @@ export default function App() {
     (plan: TacticalPlan) => {
       const cur = mapsRef.current[mapId] ?? createEmptyMapState()
       const before = cloneState(cur)
-      const veh = (plan.vehicles ?? []).map((v) => ({ ...v, team: v.team ?? 'A' as OperatorTeam }))
+      const veh = (plan.vehicles ?? []).map((v) => ({ ...v }))
       const ops = (plan.operators ?? []).map((o) => ({ ...o }))
       const conns = (plan.connections ?? []).map((c) => ({ ...c }))
       const tm = (plan.teams ?? []).map((t) => ({ ...t }))
@@ -1383,6 +1533,7 @@ export default function App() {
   const teams = teamsBucketOf(state)[view]
   const routes = routesBucketOf(state)[view]
   const vehicles = vehiclesBucketOf(state)[view]
+  const buildings = buildingsBucketOf(state)[view]
 
   /** 路线操作统一入历史栈；路线作为兵棋数据独立于普通绘制。 */
   const commitRouteChange = useCallback(
@@ -1753,6 +1904,8 @@ export default function App() {
           onDeployTeamMarker={handleDeployTeamMarker}
           onDeleteTeamMarker={handleDeleteTeamMarker}
           vehicles={vehicles}
+          buildings={buildings}
+          onAddBuilding={handleAddBuilding}
         />
         <MapView
           key={mapId}
@@ -1782,6 +1935,12 @@ export default function App() {
           onDeleteVehicle={handleDeleteVehicle}
           onToggleVehicleSide={handleToggleVehicleSide}
           onChangeVehicleTeam={handleVehicleTeamChange}
+          buildings={buildings}
+          onMoveBuilding={handleMoveBuilding}
+          onRotateBuilding={handleRotateBuilding}
+          onToggleBuildingSide={handleToggleBuildingSide}
+          onChangeBuildingTeam={handleBuildingTeamChange}
+          onDeleteBuilding={handleDeleteBuilding}
           onMoveVehicles={handleMoveVehicles}
           onDeleteVehicles={handleDeleteVehicles}
           onMoveOperators={handleMoveOperators}

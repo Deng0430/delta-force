@@ -90,6 +90,7 @@ function buildOperatorIcon(op: OperatorUnit, view: Side, connectMode: boolean, p
         <span class="op-side-ring"></span>
         <span class="op-team-bg"></span>
         <img class="op-cls-main" src="${clsConf.iconUrl}" alt="${clsConf.name}" draggable="false" />
+        <span class="op-team-letter" title="${team.name}">${team.id}</span>
         <span class="op-code" title="点击编辑昵称">${op.name}</span>
         <span class="op-name">${profile.name}</span>
         <span class="op-status-dot" style="background:${op.status === 'alive' ? 'var(--green)' : op.status === 'injured' ? '#f4cf67' : '#7a8185'}"></span>

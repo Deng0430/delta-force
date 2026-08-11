@@ -97,6 +97,7 @@ export function IconRotate({ size, className }: IconProps) {
 
 interface CheckboxProps {
   checked: boolean
+  indeterminate?: boolean
   onChange: (v: boolean) => void
   label?: string
   className?: string
@@ -108,22 +109,29 @@ interface CheckboxProps {
  * 内部保留原生 <input type="checkbox">（交互/键盘/焦点行为与原生完全一致），
  * 外观使用 SVG 绘制的勾选框（隐藏原生控件，显示自定义方块 + SVG 对勾），与官网暗色风格统一。
  */
-export function Checkbox({ checked, onChange, label, className, disabled }: CheckboxProps) {
+export function Checkbox({ checked, indeterminate = false, onChange, label, className, disabled }: CheckboxProps) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (inputRef.current) inputRef.current.indeterminate = indeterminate
+  }, [indeterminate])
   return (
     <label className={`layer-item ${disabled ? 'disabled' : ''} ${className ?? ''}`}>
       <input
         type="checkbox"
         className="cb-native"
+        ref={inputRef}
         checked={checked}
+        aria-checked={indeterminate ? 'mixed' : checked}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
       />
-      <span className={`cb-box ${checked ? 'checked' : ''}`} aria-hidden="true">
+      <span className={`cb-box ${checked ? 'checked' : ''} ${indeterminate ? 'indeterminate' : ''}`} aria-hidden="true">
         <svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M2 6.5 4.8 9 10 3.6" />
+          {checked ? <path d="M2 6.5 4.8 9 10 3.6" /> : indeterminate ? <path d="M2.5 6h7" /> : null}
         </svg>
       </span>
       {label && <span className="layer-label">{label}</span>}
     </label>
   )
 }
+import { useEffect, useRef } from 'react'

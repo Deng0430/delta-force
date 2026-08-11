@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { DrawSettings, Side, ToolMode } from '../types'
 import DrawBar from './DrawBar'
 import { IconFullscreen } from './icons'
+import ShortcutHelp from './ShortcutHelp'
 
 type ToolbarMenu = 'map' | 'mode' | 'device'
 
@@ -278,6 +279,7 @@ export default function Toolbar({
         <button className="fullscreen-btn" onClick={toggleFullscreen} title="全屏 / 退出全屏">
           <IconFullscreen size={16} />
         </button>
+        <ShortcutHelp compact />
         <button className="tactical-btn" onClick={onOpenTactical} title="战术板：导出 / 保存阶段战术">
           <span className="tactical-label-long">战术板</span>
           <span className="tactical-label-short" aria-hidden="true">板</span>

@@ -23,6 +23,14 @@ const DRAW_PANE_SELECTOR = '.leaflet-draw-pane'
 const HIT_PADDING_PX = 10
 const CLICK_DRAG_THRESHOLD_PX = 5
 
+function offsetGeoCoordinates(value: unknown, dLng: number, dLat: number): unknown {
+  if (!Array.isArray(value)) return value
+  if (value.length >= 2 && typeof value[0] === 'number' && typeof value[1] === 'number') {
+    return [value[0] + dLng, value[1] + dLat, ...value.slice(2)]
+  }
+  return value.map((item) => offsetGeoCoordinates(item, dLng, dLat))
+}
+
 /** 绘制拖拽期间让已有图形/命中层完全穿透鼠标，保证跨图形轨迹不中断。 */
 function setDrawingGestureActive(map: L.Map, active: boolean) {
   map.getContainer().classList.toggle('drawing-gesture-active', active)
@@ -185,12 +193,8 @@ const ARROW_STYLE_PATHS: Record<ArrowHeadStyle, { d: string; stroke?: boolean }>
   diamond: { d: 'M 5 0 L 10 5 L 5 10 L 0 5 z' },
   // 第十六轮：实心箭头（内凹实心，同经典）/ 空心箭头（内凹描边）/ 三角形箭头（实心三角）
   solid: { d: 'M 0 0 L 10 5 L 0 10 L 3.5 5 z' },
-  outline: { d: 'M 0 0 L 10 5 L 0 10 L 3.5 5 z', stroke: true },
-}
-
-/** marker 尺寸缩放系数（viewBox 10 → 实际 px） */
-function arrowScale(size: number): number {
-  return size / 10
+  // 空心箭头使用开放式 V 形轮廓；旧版闭合路径会额外画出尾部封口线。
+  outline: { d: 'M 0 0 L 10 5 L 0 10', stroke: true },
 }
 
 /** 箭头 marker id（按形状+大小区分，如 draw-arrow-triangle-12） */
@@ -239,8 +243,8 @@ function ensureArrowMarkerDef(map: L.Map, style: ArrowHeadStyle, size: number) {
   path.setAttribute('fill', spec.stroke ? 'none' : 'context-stroke')
   if (spec.stroke) {
     path.setAttribute('stroke', 'context-stroke')
-    // 描边宽度随大小缩放（viewBox 10 基准 2.2）
-    path.setAttribute('stroke-width', String(2.2 * arrowScale(size)))
+    // viewBox 会随 marker 尺寸整体缩放，描边无需再乘一次尺寸系数。
+    path.setAttribute('stroke-width', '1.6')
     path.setAttribute('stroke-linecap', 'round')
     path.setAttribute('stroke-linejoin', 'round')
   }
@@ -486,6 +490,7 @@ export default function LayerManager({
   }>({})
   // 套索包围矩形（第十五轮：圈中图形后显示矩形区域，区域内按住可整体移动）
   const lassoBoxRef = useRef<L.Rectangle | null>(null)
+  const drawClipboardRef = useRef<Feature[]>([])
 
   const save = useCallback(() => {
     const g = fgRef.current
@@ -901,6 +906,55 @@ export default function LayerManager({
     updateLassoBoxRef.current()
     notifySelection()
   }, [highlight, notifySelection])
+
+  // 正式版绘制对象复制/粘贴：复制当前多选集合，粘贴时生成全新 uid/group 并轻微偏移。
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return
+      const target = event.target as HTMLElement | null
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+      const key = event.key.toLowerCase()
+      if (key === 'c') {
+        if (selectedRef.current.size === 0) return
+        const current = JSON.parse(snapshotNow()) as FeatureCollection
+        drawClipboardRef.current = current.features
+          .filter((feature) => selectedRef.current.has(String((feature.properties as Record<string, unknown> | null)?.uid ?? '')))
+          .map((feature) => structuredClone(feature))
+        if (drawClipboardRef.current.length > 0) event.preventDefault()
+      } else if (key === 'v') {
+        if (drawClipboardRef.current.length === 0) return
+        event.preventDefault()
+        const before = snapshotNow()
+        const current = JSON.parse(before) as FeatureCollection
+        const groupIds = new Map<string, string>()
+        const pasted = drawClipboardRef.current.map((source) => {
+          const feature = structuredClone(source)
+          const properties = { ...(feature.properties as Record<string, unknown> | null) }
+          properties.uid = genUid('copy')
+          const oldGroup = String(properties.group ?? '')
+          if (oldGroup) {
+            if (!groupIds.has(oldGroup)) groupIds.set(oldGroup, genUid('copy_group'))
+            properties.group = groupIds.get(oldGroup)
+          }
+          feature.properties = properties
+          if ('coordinates' in feature.geometry) {
+            feature.geometry = {
+              ...feature.geometry,
+              coordinates: offsetGeoCoordinates(feature.geometry.coordinates, 2, 2),
+            } as Feature['geometry']
+          }
+          return feature
+        })
+        selectedRef.current.clear()
+        for (const feature of pasted) selectedRef.current.add(String((feature.properties as Record<string, unknown>)?.uid ?? ''))
+        const after = JSON.stringify({ ...current, features: [...current.features, ...pasted] })
+        onCommitDrawRef.current(before, after)
+        notifySelection()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [notifySelection, snapshotNow])
 
   // ---- 整体移动启动（第十二轮：统一绑定到所有画笔图层，拖拽选中的图形组） ----
   const dragStartRef = useRef<(e: L.LeafletMouseEvent) => void>(() => {})

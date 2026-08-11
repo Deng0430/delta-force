@@ -15,6 +15,9 @@
 # Recording/demo-only material
 /demo/
 
+# Local map source assets
+/map_source/
+
 # Logs and runtime files
 /logs/
 *.log

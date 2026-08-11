@@ -137,7 +137,7 @@ export default function TacticalBoardModal({
               </div>
             </div>
             <div className="tb-tip">
-              导出为自包含 HTML 战术板：包含当前{viewLabel}视角的全部绘制、载具、兵棋部署及地图静态层（据点/区域/复活点/道具）。文件打开后可自由缩放平移查看细节，图片已内嵌。
+              导出为单个 HTML 战术板：包含当前{viewLabel}视角的全部绘制、载具、兵棋部署及地图静态层（据点/区域/复活点/道具）。文件内可缩放、全屏、打印并一键适应地图；图标已内嵌，底图与地图引擎仍需联网加载。
             </div>
             <button className="tb-primary" onClick={() => void handleExport()} disabled={exporting}>
               {exporting ? '生成中…' : '导出 HTML 战术板'}

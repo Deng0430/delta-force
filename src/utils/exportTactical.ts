@@ -182,6 +182,10 @@ export async function buildTacticalHtml(p: ExportParams): Promise<string> {
     background: rgba(14,17,18,.92); border: 1px solid #2b3135; border-radius: 4px; color: #eaebeb;
     font-size: 12px; padding: 6px 14px; display: flex; gap: 14px; align-items: center; box-shadow: 0 2px 10px rgba(0,0,0,.5); }
   .board-head b { color: #01ff84; }
+  .board-actions { display: flex; gap: 5px; margin-left: 2px; }
+  .board-actions button { height: 25px; padding: 0 8px; border: 1px solid #3b454b; border-radius: 3px;
+    color: #d8dcde; background: #171d20; cursor: pointer; font: inherit; }
+  .board-actions button:hover { color: #01ff84; border-color: #01ff84; }
   .board-legend { position: fixed; bottom: 14px; left: 14px; z-index: 1000; background: rgba(14,17,18,.88);
     border: 1px solid #2b3135; border-radius: 4px; color: #c9ced1; font-size: 11px; padding: 8px 10px; line-height: 1.8; }
   .board-legend .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
@@ -204,12 +208,16 @@ export async function buildTacticalHtml(p: ExportParams): Promise<string> {
     color: var(--op-team); text-shadow: 0 1px 1px rgba(0,0,0,.95), 1px 0 1px rgba(0,0,0,.9), -1px 0 1px rgba(0,0,0,.9), 0 -1px 1px rgba(0,0,0,.9);
     background: var(--op-side-deep); border: 1px solid var(--op-side); border-radius: 2px; padding: 0 3px; line-height: 1.3; white-space: nowrap; }
   .op-marker .op-status-dot { position: absolute; right: -1px; bottom: -1px; width: 8px; height: 8px; border-radius: 50%;
-    border: 2px solid var(--bg0, #0e1112); box-shadow: 0 0 3px rgba(0,0,0,.6), 0 0 5px var(--st, #01ff84); }
+    background: var(--st, #01ff84); border: 2px solid var(--bg0, #0e1112); box-shadow: 0 0 3px rgba(0,0,0,.6), 0 0 5px var(--st, #01ff84); }
   /* ---------- 载具卡片（精简版） ---------- */
   .veh-marker { position: relative; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; }
-  .veh-marker .veh-side-ring { position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--vc);
-    box-shadow: 0 0 6px 1px var(--vc), inset 0 0 3px var(--vc); pointer-events: none; z-index: 0; }
-  .veh-marker .veh-bg { position: absolute; inset: 1px; border-radius: 50%; background: var(--vc); opacity: .9;
+  .veh-marker .veh-side-ring { position: absolute; inset: -4px; background: transparent;
+    filter: drop-shadow(0 0 2px var(--vc)) drop-shadow(0 0 5px var(--vc)); pointer-events: none; z-index: 0; }
+  .veh-marker .veh-side-ring::before { content: ''; position: absolute; inset: 0; background: var(--vc);
+    clip-path: polygon(29.3% 0,70.7% 0,100% 29.3%,100% 70.7%,70.7% 100%,29.3% 100%,0 70.7%,0 29.3%); }
+  .veh-marker .veh-side-ring::after { content: ''; position: absolute; inset: 2px; background: rgba(8,13,15,.94);
+    clip-path: polygon(29.3% 0,70.7% 0,100% 29.3%,100% 70.7%,70.7% 100%,29.3% 100%,0 70.7%,0 29.3%); box-shadow: inset 0 0 4px var(--vc); }
+  .veh-marker .veh-bg { position: absolute; inset: 1px; background: var(--vf); clip-path: polygon(29.3% 0,70.7% 0,100% 29.3%,100% 70.7%,70.7% 100%,29.3% 100%,0 70.7%,0 29.3%); opacity: .9;
     box-shadow: 0 1px 5px rgba(0,0,0,.6); }
   .veh-marker .veh-icon { position: relative; z-index: 1; width: 72%; height: 72%; object-fit: contain;
     filter: drop-shadow(0 1px 2px rgba(0,0,0,.7)); }
@@ -249,6 +257,16 @@ export async function buildTacticalHtml(p: ExportParams): Promise<string> {
     line-height: 1.3; white-space: pre-wrap; overflow-wrap: anywhere; pointer-events: none; }
   /* ---------- 箭头 marker ---------- */
   .arrow-head { pointer-events: none; }
+  .route-order-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 5px; color: var(--rc);
+    background: rgba(8,13,15,.92); border: 1px solid var(--rc); border-radius: 2px; font: 700 9px/1.2 sans-serif;
+    box-shadow: 0 1px 5px rgba(0,0,0,.6); white-space: nowrap; }
+  .route-waypoint { display:flex; align-items:center; justify-content:center; width:15px; height:15px; box-sizing:border-box;
+    color:#fff; background:rgba(8,13,15,.94); border:1px solid var(--rwc); border-radius:50%; box-shadow:0 0 0 1px rgba(0,0,0,.8);
+    font:800 8px/1 sans-serif; text-shadow:0 1px 1px #000; }
+  .route-waypoint.origin { border-radius:2px; color:var(--rwa); }
+  .route-waypoint.end { border-radius:2px; color:var(--rwa); }
+  @media (max-width: 860px) { .board-head { left: 10px; right: 10px; transform: none; flex-wrap: wrap; } .board-head > span:nth-of-type(3) { display:none; } }
+  @media print { .board-actions, .board-hint, .leaflet-control-container { display:none !important; } }
 </style>
 </head>
 <body>
@@ -257,6 +275,11 @@ export async function buildTacticalHtml(p: ExportParams): Promise<string> {
   <span>视角：${viewLabel}</span>
   <span>范围：${rangeLabel}</span>
   <span>导出时间：${new Date().toLocaleString('zh-CN')}</span>
+  <div class="board-actions">
+    <button type="button" onclick="map.fitBounds(bounds)">适应地图</button>
+    <button type="button" onclick="document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()">全屏</button>
+    <button type="button" onclick="window.print()">打印</button>
+  </div>
 </div>
 <div class="board-legend">
   <div><span class="dot" style="background:#01ff84"></span>本方（${viewLabel === '攻方' ? '攻方' : '守方'}）</div>
@@ -264,17 +287,63 @@ export async function buildTacticalHtml(p: ExportParams): Promise<string> {
   <div><span class="dot" style="background:#f4cf67"></span>中立 / 待争夺</div>
   <div><span class="dot" style="background:#2f6fed"></span>画笔 / 阵线</div>
 </div>
-<div class="board-hint">滚轮缩放 · 拖拽平移 · Ctrl+P 打印</div>
+<div class="board-hint">滚轮缩放 · 拖拽平移 · 底图与 Leaflet 资源需要联网加载</div>
 <div id="map"></div>
 <script>
 const D = ${data};
 const cfg = D.config;
-const map = L.map('map', { crs: L.CRS.Simple, minZoom: cfg.minZoom, maxZoom: cfg.maxZoom, zoomControl: true });
+const map = L.map('map', { crs: L.CRS.Simple, minZoom: cfg.minZoom, maxZoom: cfg.maxZoom, zoomControl: true, attributionControl: false });
 const bounds = L.latLngBounds(cfg.southWest, cfg.northEast);
 L.tileLayer(cfg.tileUrl, { bounds, minZoom: cfg.minZoom, maxZoom: cfg.maxZoom, maxNativeZoom: cfg.maxNativeZoom, tileSize: 256, noWrap: true }).addTo(map);
 map.fitBounds(bounds);
 map.setMaxBounds(bounds);
 const img = (u) => D.imgs[u] || u;
+
+/* ---------- 绘制箭头：与正式版一致，使用 SVG marker-end 直接挂在线段末端 ---------- */
+const exportArrowMarkerCache = new Set();
+const exportArrowSpec = (style) => {
+  if (style === 'outline' || style === 'chevron') return { d: 'M 0 0 L 10 5 L 0 10', fill: 'none', stroke: true };
+  if (style === 'triangle') return { d: 'M 0 0 L 10 5 L 0 10 z', fill: 'currentColor', stroke: false };
+  if (style === 'diamond') return { d: 'M 5 0 L 10 5 L 5 10 L 0 5 z', fill: 'currentColor', stroke: false };
+  return { d: 'M 0 0 L 10 5 L 0 10 L 3.5 5 z', fill: 'currentColor', stroke: false };
+};
+const exportArrowMarkerId = (style, size, color) => 'board-arrow-' + String(style).replace(/[^a-z0-9_-]/gi, '') + '-' + size + '-' + String(color).replace(/[^a-z0-9]/gi, '');
+const attachExportArrow = (line, props) => {
+  const path = line.getElement();
+  const svg = path && path.ownerSVGElement;
+  if (!path || !svg) return;
+  const style = String(props.arrowStyle || 'triangle');
+  const size = Number(props.arrowSize || 12);
+  const color = String(props.color || '#ffd54a');
+  const id = exportArrowMarkerId(style, size, color);
+  if (!exportArrowMarkerCache.has(id)) {
+    const NS = 'http://www.w3.org/2000/svg';
+    const defs = svg.querySelector('defs') || (() => { const d = document.createElementNS(NS, 'defs'); svg.appendChild(d); return d; })();
+    const marker = document.createElementNS(NS, 'marker');
+    marker.id = id;
+    marker.setAttribute('viewBox', '0 0 10 10');
+    marker.setAttribute('refX', '9');
+    marker.setAttribute('refY', '5');
+    marker.setAttribute('markerWidth', String(size));
+    marker.setAttribute('markerHeight', String(size));
+    marker.setAttribute('markerUnits', 'userSpaceOnUse');
+    marker.setAttribute('orient', 'auto');
+    const spec = exportArrowSpec(style);
+    const head = document.createElementNS(NS, 'path');
+    head.setAttribute('d', spec.d);
+    head.setAttribute('fill', spec.stroke ? 'none' : color);
+    if (spec.stroke) {
+      head.setAttribute('stroke', color);
+      head.setAttribute('stroke-width', '1.6');
+      head.setAttribute('stroke-linecap', 'round');
+      head.setAttribute('stroke-linejoin', 'round');
+    }
+    marker.appendChild(head);
+    defs.appendChild(marker);
+    exportArrowMarkerCache.add(id);
+  }
+  path.setAttribute('marker-end', 'url(#' + id + ')');
+};
 
 /* ---------- 绘制图层 ---------- */
 try {
@@ -326,19 +395,8 @@ try {
       // 防线三角：实心填充（战略地图风格）
       L.polygon(latlngs, styleOf(props, true)).addTo(drawLayer);
     } else if (props.type === 'arrow' && g.type === 'LineString' && latlngs.length >= 2) {
-      L.polyline(latlngs, styleOf(props, false)).addTo(drawLayer);
-      // 箭头头部（第十六轮：实心/空心/三角形按 SVG 渲染）
-      const a = latlngs[latlngs.length - 2], b = latlngs[latlngs.length - 1];
-      const deg = Math.atan2(b[0] - a[0], b[1] - a[1]) * 180 / Math.PI;
-      const size = Number(props.arrowSize || 12);
-      const color = props.color || '#ffd54a';
-      const as = String(props.arrowStyle || 'triangle');
-      let d, fill, stroke;
-      if (as === 'outline') { d = 'M 0 0 L 10 5 L 0 10 L 3.5 5 z'; fill = 'none'; stroke = color; }
-      else if (as === 'triangle') { d = 'M 0 0 L 10 5 L 0 10 z'; fill = color; stroke = 'none'; }
-      else { d = 'M 0 0 L 10 5 L 0 10 L 3.5 5 z'; fill = color; stroke = 'none'; }
-      const svg = '<svg width="' + size + '" height="' + size + '" viewBox="0 0 10 10" style="transform:rotate(' + (deg - 90) + 'deg);transform-origin:50% 50%;overflow:visible"><path d="' + d + '" fill="' + fill + '" stroke="' + stroke + '" stroke-width="1.4" stroke-linejoin="round"/></svg>';
-      L.marker(b, { icon: L.divIcon({ className: 'arrow-head-wrap', html: svg, iconSize: [size, size], iconAnchor: [size / 2, size / 2] }), interactive: false }).addTo(drawLayer);
+      const line = L.polyline(latlngs, styleOf(props, false)).addTo(drawLayer);
+      attachExportArrow(line, props);
     } else {
       L.polyline(latlngs, styleOf(props, false)).addTo(drawLayer);
     }
@@ -354,7 +412,22 @@ const routeTeamColor = ${JSON.stringify(Object.fromEntries(TEAMS.map((t) => [t.i
   const statusOpacity = route.status === 'cancelled' ? .35 : route.status === 'completed' ? .58 : route.status === 'planned' ? .72 : 1;
   L.polyline(route.waypoints, { color, weight: route.status === 'executing' ? 5 : 4, opacity: (route.opacity || .92) * statusOpacity, dashArray: dash, interactive: false }).addTo(map);
   const end = route.waypoints[route.waypoints.length - 1];
-  L.marker(end, { icon: L.divIcon({ className: '', html: '<span style="display:block;color:' + color + ';font-size:20px;text-shadow:0 0 3px #000">▶</span>', iconSize: [20, 20], iconAnchor: [10, 10] }), interactive: false }).addTo(map);
+  const prev = route.waypoints[route.waypoints.length - 2];
+  if (route.orderType !== 'hold') {
+    const deg = Math.atan2(-(end[0] - prev[0]), end[1] - prev[1]) * 180 / Math.PI;
+    const arrow = '<span style="display:block;color:' + color + ';font-size:20px;line-height:20px;text-shadow:0 0 3px #000;transform:rotate(' + deg + 'deg)">▶</span>';
+    L.marker(end, { icon: L.divIcon({ className: '', html: arrow, iconSize: [20, 20], iconAnchor: [10, 10] }), interactive: false, zIndexOffset: 720 }).addTo(map);
+  }
+  // 仅标出途经点；起点由部署单位表达，终点由路线箭头表达。
+  route.waypoints.slice(1, -1).forEach((point, offset) => {
+    const label = String(offset + 1);
+    const html = '<span class="route-waypoint" style="--rwc:' + (routeTeamColor[route.team] || color) + ';--rwa:' + color + '">' + label + '</span>';
+    L.marker(point, { icon: L.divIcon({ className: '', html, iconSize: [15, 15], iconAnchor: [7.5, 7.5] }), interactive: false, zIndexOffset: 710 }).addTo(map);
+  });
+  const labelPos = route.labelPosition || [(route.waypoints[0][0] + route.waypoints[1][0]) / 2, (route.waypoints[0][1] + route.waypoints[1][1]) / 2];
+  const typeLabel = ({ move:'机动', attack:'进攻', recon:'侦察', flank:'迂回', retreat:'撤退', escort:'护送', resupply:'补给', hold:'防御' })[route.orderType] || route.orderType;
+  const label = '<span class="route-order-badge" style="--rc:' + color + '">' + (route.orderType === 'hold' ? '◆ ' : '') + esc(route.team + '队 · ' + typeLabel) + '</span>';
+  L.marker(labelPos, { icon: L.divIcon({ className: '', html: label, iconSize: [80, 18], iconAnchor: [40, 9] }), interactive: false }).addTo(map);
 });
 
 /* ---------- 兵棋协同关系 + 干员 ---------- */
@@ -386,7 +459,7 @@ if (D.operators && D.operators.length) {
       + '<img class="op-cls-main" src="' + img(clsImg[op.cls] || clsImg.assault) + '" draggable="false" />'
       + '<span class="op-code">' + esc(op.name) + '</span>'
       + '<span class="op-name">' + esc(op.name) + '</span>'
-      + '<span class="op-status-dot"></span></div>';
+      + '<span class="op-status-dot" style="background:' + statusColor + '"></span></div>';
     L.marker([op.lat, op.lng], { icon: L.divIcon({ className: 'op-marker-wrap', html, iconSize: [22, 22], iconAnchor: [11, 11] }), interactive: false }).addTo(opLayer);
   });
   /* 兵棋通用队标：只表达队伍字母与归属。 */
@@ -412,11 +485,12 @@ if (D.vehicles && D.vehicles.length) {
     const legend = v.iconUrl && String(v.iconUrl).startsWith('data:');
     const cls = 'veh-marker' + (legend ? '' : ' no-legend');
     const rot = v.rotation ? 'transform:rotate(' + v.rotation + 'deg)' : '';
-    const tc = routeTeamColor[v.team || 'A'] || routeTeamColor.A;
-    const html = '<div class="' + cls + '" style="--vc:' + color + '">'
+    const tc = v.team ? (routeTeamColor[v.team] || color) : color;
+    const teamBadge = v.team ? '<span style="position:absolute;left:-5px;bottom:-5px;z-index:4;width:14px;height:14px;border-radius:50%;background:' + tc + ';border:1px solid #fff;color:#fff;font:800 8px/14px sans-serif;text-align:center">' + esc(v.team) + '</span>' : '';
+    const html = '<div class="' + cls + '" style="--vc:' + color + ';--vf:' + tc + '">'
       + '<span class="veh-side-ring"></span><span class="veh-bg"></span>'
       + '<img class="veh-icon" src="' + img(v.iconUrl) + '" style="' + rot + '" draggable="false" />'
-      + '<span style="position:absolute;left:-5px;bottom:-5px;z-index:4;width:14px;height:14px;border-radius:50%;background:' + tc + ';border:1px solid #fff;color:#fff;font:800 8px/14px sans-serif;text-align:center">' + esc(v.team || 'A') + '</span>'
+      + teamBadge
       + '<span class="veh-name">' + esc(v.name) + '</span></div>';
     L.marker([v.lat, v.lng], { icon: L.divIcon({ className: 'veh-marker-wrap', html, iconSize: [30, 30], iconAnchor: [15, 15] }), interactive: false }).addTo(vehLayer);
   });
@@ -448,6 +522,16 @@ D.stages.forEach((st, idx) => {
 // 复活点（当前激活阶段）
 const curStage = D.stages[D.capturedStageIndex];
 if (curStage) {
+  // 当前阶段攻/守活动区：与正式版 ActivityZones 的阵营配色保持一致。
+  const addActivityZone = (points, own) => {
+    if (!points || points.length < 3) return;
+    const color = own ? '#01ff84' : '#e0453a';
+    L.polygon(points, { color, weight: 2, opacity: .9, dashArray: own ? undefined : '6 4',
+      fillColor: color, fillOpacity: own ? .14 : .22, interactive: false }).addTo(staticLayer);
+  };
+  addActivityZone(curStage.attackBaseZone, D.view === 'attack');
+  addActivityZone(curStage.defenseBaseZone, D.view === 'defense');
+
   const ownAtk = D.view === 'attack';
   const spawnOwn = { icon: ownAtk ? 'g_jdbsd_g' : 'f_jdbsd_g', color: '#01ff84' };
   const spawnEnemy = { icon: ownAtk ? 'f_jdbsd_r' : 'g_jdbsd_r', color: '#e0453a' };
@@ -487,7 +571,8 @@ function darken(hex, f) { f = f || .6; const m = String(hex).replace('#',''); if
 
 /** 触发浏览器下载 */
 export function downloadText(filename: string, text: string): void {
-  const blob = new Blob([text], { type: 'text/html;charset=utf-8' })
+  const mime = filename.toLowerCase().endsWith('.json') ? 'application/json' : 'text/html'
+  const blob = new Blob([text], { type: `${mime};charset=utf-8` })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url

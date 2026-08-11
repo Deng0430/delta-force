@@ -3,6 +3,7 @@ import { Marker, Pane, Polygon, Polyline, Tooltip, useMap, useMapEvents } from '
 import * as L from 'leaflet'
 import type {
   ModeEditorSelection,
+  ModeEditorSelectionItem,
   ModeEditorTool,
   ModeMapProp,
   ModeMapOverride,
@@ -25,8 +26,9 @@ interface ModeConfigLayerProps {
   propsVisible: boolean
   tool: ModeEditorTool
   selected: ModeEditorSelection
+  selectedItems: ModeEditorSelectionItem[]
   zoneDraft: [number, number][]
-  onSelect: (selection: ModeEditorSelection) => void
+  onSelect: (selection: ModeEditorSelection, options?: { additive?: boolean }) => void
   onZoneDraftChange: (points: [number, number][]) => void
   onAddSpawn: (point: [number, number]) => void
   onAddObjective: (point: [number, number]) => void
@@ -34,6 +36,7 @@ interface ModeConfigLayerProps {
   onMoveSpawn: (uid: string, point: [number, number]) => void
   onMoveObjective: (uid: string, point: [number, number]) => void
   onMoveProp: (uid: string, point: [number, number]) => void
+  onMoveZone: (uid: string, points: [number, number][]) => void
   onMoveZoneVertex: (uid: string, index: number, point: [number, number]) => void
   onInsertZoneVertex: (uid: string, index: number, point: [number, number]) => void
   onRemoveZoneVertex: (uid: string, index: number) => void
@@ -288,6 +291,7 @@ export default function ModeConfigLayer({
   propsVisible,
   tool,
   selected,
+  selectedItems,
   zoneDraft,
   onSelect,
   onZoneDraftChange,
@@ -297,21 +301,37 @@ export default function ModeConfigLayer({
   onMoveSpawn,
   onMoveObjective,
   onMoveProp,
+  onMoveZone,
   onMoveZoneVertex,
   onInsertZoneVertex,
   onRemoveZoneVertex,
 }: ModeConfigLayerProps) {
   const map = useMap()
+  const zoneDragRef = useRef<{
+    uid: string
+    start: L.LatLng
+    points: [number, number][]
+    restoreMapDragging: boolean
+  } | null>(null)
+  const selectedKeys = useMemo(
+    () => new Set((selectedItems.length > 0 ? selectedItems : selected ? [selected] : []).map((item) => `${item.kind}:${item.uid}`)),
+    [selected, selectedItems],
+  )
+  const isSelected = useCallback((kind: ModeEditorSelectionItem['kind'], uid: string) => selectedKeys.has(`${kind}:${uid}`), [selectedKeys])
+  const selectFromMouse = useCallback((selection: ModeEditorSelectionItem, event: L.LeafletMouseEvent) => {
+    const source = event.originalEvent as MouseEvent
+    onSelect(selection, { additive: source.ctrlKey || source.metaKey })
+  }, [onSelect])
   const zoneLayerRefs = useRef(new Map<string, L.Polygon>())
   const spawnIcons = useMemo(
     () =>
       new Map(
         config.spawns.filter((spawn) => spawn.stageId === stageId).map((spawn) => [
           spawn.uid,
-          spawnIcon(spawn, selected?.kind === 'spawn' && selected.uid === spawn.uid, spawn.side === view),
+          spawnIcon(spawn, isSelected('spawn', spawn.uid), spawn.side === view),
         ]),
       ),
-    [config.spawns, selected, stageId, view],
+    [config.spawns, isSelected, stageId, view],
   )
 
   const selectedObjective = selected?.kind === 'objective'
@@ -338,6 +358,47 @@ export default function ModeConfigLayer({
     if (layer) zoneLayerRefs.current.set(uid, layer)
     else zoneLayerRefs.current.delete(uid)
   }, [])
+
+  const beginZoneDrag = useCallback((zone: ModeZone, event: L.LeafletMouseEvent) => {
+    if (!selecting || zone.verification !== 'draft' || !isSelected('zone', zone.uid)) return
+    L.DomEvent.stop(event.originalEvent)
+    const restoreMapDragging = map.dragging.enabled()
+    if (restoreMapDragging) map.dragging.disable()
+    zoneDragRef.current = {
+      uid: zone.uid,
+      start: event.latlng,
+      points: zone.points.map(([lat, lng]) => [lat, lng]),
+      restoreMapDragging,
+    }
+  }, [isSelected, map, selecting])
+
+  useEffect(() => {
+    const preview = (event: L.LeafletMouseEvent) => {
+      const drag = zoneDragRef.current
+      if (!drag) return
+      const dLat = event.latlng.lat - drag.start.lat
+      const dLng = event.latlng.lng - drag.start.lng
+      zoneLayerRefs.current.get(drag.uid)?.setLatLngs(drag.points.map(([lat, lng]) => [lat + dLat, lng + dLng]))
+    }
+    const finish = (event: L.LeafletMouseEvent) => {
+      const drag = zoneDragRef.current
+      if (!drag) return
+      zoneDragRef.current = null
+      const dLat = event.latlng.lat - drag.start.lat
+      const dLng = event.latlng.lng - drag.start.lng
+      if (drag.restoreMapDragging) map.dragging.enable()
+      if (Math.abs(dLat) < 1e-7 && Math.abs(dLng) < 1e-7) return
+      onMoveZone(drag.uid, drag.points.map(([lat, lng]) => [lat + dLat, lng + dLng]))
+    }
+    map.on('mousemove', preview)
+    map.on('mouseup', finish)
+    return () => {
+      map.off('mousemove', preview)
+      map.off('mouseup', finish)
+      if (zoneDragRef.current?.restoreMapDragging) map.dragging.enable()
+      zoneDragRef.current = null
+    }
+  }, [map, onMoveZone])
 
   const previewZoneVertex = useCallback((uid: string, index: number, point: [number, number]) => {
     const zone = config.zones.find((item) => item.uid === uid)
@@ -404,9 +465,12 @@ export default function ModeConfigLayer({
             interactive
             bubblingMouseEvents={false}
             eventHandlers={{
+              mousedown(event) {
+                beginZoneDrag(zone, event)
+              },
               click(event) {
                 L.DomEvent.stopPropagation(event.originalEvent)
-                onSelect({ kind: 'zone', uid: zone.uid })
+                selectFromMouse({ kind: 'zone', uid: zone.uid }, event)
               },
               dblclick(event) {
                 insertZoneVertexAtEdge(zone, event)
@@ -416,7 +480,7 @@ export default function ModeConfigLayer({
         )) : null}
 
       {zonesVisible ? stageZones.map((zone: ModeZone) => {
-        const active = (selected?.kind === 'zone' && selected.uid === zone.uid)
+        const active = isSelected('zone', zone.uid)
           || selectedObjective?.captureZoneUid === zone.uid
         const editable = selecting && zone.verification === 'draft'
         return (
@@ -436,10 +500,13 @@ export default function ModeConfigLayer({
             interactive={selecting}
             bubblingMouseEvents={false}
             eventHandlers={{
+              mousedown(event) {
+                beginZoneDrag(zone, event)
+              },
               click(event) {
                 if (!selecting) return
                 L.DomEvent.stopPropagation(event.originalEvent)
-                onSelect({ kind: 'zone', uid: zone.uid })
+                selectFromMouse({ kind: 'zone', uid: zone.uid }, event)
               },
               dblclick(event) {
                 insertZoneVertexAtEdge(zone, event)
@@ -468,19 +535,22 @@ export default function ModeConfigLayer({
         </>
       ) : null}
 
+    </Pane>
+    <Pane name="mode-config-markers" className="mode-config-markers-pane" style={{ zIndex: 580 }}>
+
       {spawnsVisible ? stageSpawns.map((spawn) => (
         <Marker
           key={spawn.uid}
           position={[spawn.lat, spawn.lng]}
           icon={spawnIcons.get(spawn.uid)!}
-          draggable={selecting && spawn.verification === 'draft'}
+          draggable={selecting && isSelected('spawn', spawn.uid) && spawn.verification === 'draft'}
           interactive={selecting}
           bubblingMouseEvents={false}
           eventHandlers={{
             click(event) {
               if (!selecting) return
               L.DomEvent.stopPropagation(event.originalEvent)
-              onSelect({ kind: 'spawn', uid: spawn.uid })
+              selectFromMouse({ kind: 'spawn', uid: spawn.uid }, event)
             },
             dragend(event) {
               const latlng = event.target.getLatLng() as L.LatLng
@@ -494,8 +564,8 @@ export default function ModeConfigLayer({
         <Marker
           key={point.uid}
           position={[point.lat, point.lng]}
-          icon={objectiveIcon(point, selected?.kind === 'objective' && selected.uid === point.uid)}
-          draggable={selecting && point.verification === 'draft' && captureZones.get(point.captureZoneUid)?.verification === 'draft'}
+          icon={objectiveIcon(point, isSelected('objective', point.uid))}
+          draggable={selecting && isSelected('objective', point.uid) && point.verification === 'draft' && captureZones.get(point.captureZoneUid)?.verification === 'draft'}
           interactive={selecting}
           bubblingMouseEvents={false}
           zIndexOffset={580}
@@ -503,7 +573,7 @@ export default function ModeConfigLayer({
             click(event) {
               if (!selecting) return
               L.DomEvent.stopPropagation(event.originalEvent)
-              onSelect({ kind: 'objective', uid: point.uid })
+              selectFromMouse({ kind: 'objective', uid: point.uid }, event)
             },
             dragend(event) {
               const latlng = event.target.getLatLng() as L.LatLng
@@ -517,8 +587,8 @@ export default function ModeConfigLayer({
         <Marker
           key={prop.uid}
           position={[prop.lat, prop.lng]}
-          icon={propIcon(prop, selected?.kind === 'prop' && selected.uid === prop.uid)}
-          draggable={selecting && prop.verification === 'draft'}
+          icon={propIcon(prop, isSelected('prop', prop.uid))}
+          draggable={selecting && isSelected('prop', prop.uid) && prop.verification === 'draft'}
           interactive={selecting}
           bubblingMouseEvents={false}
           zIndexOffset={520}
@@ -526,7 +596,7 @@ export default function ModeConfigLayer({
             click(event) {
               if (!selecting) return
               L.DomEvent.stopPropagation(event.originalEvent)
-              onSelect({ kind: 'prop', uid: prop.uid })
+              selectFromMouse({ kind: 'prop', uid: prop.uid }, event)
             },
             dragend(event) {
               const latlng = event.target.getLatLng() as L.LatLng
@@ -558,9 +628,12 @@ export default function ModeConfigLayer({
             interactive
             bubblingMouseEvents={false}
             eventHandlers={{
+              mousedown(event) {
+                beginZoneDrag(selectedEditableZone, event)
+              },
               click(event) {
                 L.DomEvent.stopPropagation(event.originalEvent)
-                onSelect({ kind: 'zone', uid: selectedEditableZone.uid })
+                selectFromMouse({ kind: 'zone', uid: selectedEditableZone.uid }, event)
               },
               dblclick(event) {
                 insertZoneVertexAtEdge(selectedEditableZone, event)

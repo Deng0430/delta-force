@@ -1,8 +1,9 @@
 import { useState, type CSSProperties } from 'react'
-import type { OperatorConnection, OperatorTeam, OperatorUnit, Side, TeamMarker, VehicleItem, WargameState } from '../types'
+import type { BuildingUnit, BuildingUnitKind, OperatorConnection, OperatorTeam, OperatorUnit, Side, TeamMarker, VehicleItem, WargameState } from '../types'
 import { TEAMS } from '../config/operators'
 import { profileOf } from '../config/operatorProfiles'
 import { vehiclesForMap, type CustomVehicleTemplate } from '../config/customVehicles'
+import { BUILDING_UNIT_OPTIONS } from '../config/buildingUnits'
 import { OperatorSelectGrouped } from './OperatorEditPopup'
 import { Checkbox, IconChevronRight } from './icons'
 
@@ -49,10 +50,12 @@ interface WargamePanelProps {
   /** 载具现在作为兵棋资源在推演面板内统一部署 */
   customOwn: boolean
   onCustomOwnChange: (own: boolean) => void
-  onAddCustom: (tpl: CustomVehicleTemplate, own: boolean, team: OperatorTeam) => void
+  onAddCustom: (tpl: CustomVehicleTemplate, own: boolean, team?: OperatorTeam) => void
   vehicleGroups: Record<string, boolean>
   onVehicleGroupChange: (group: string, open: boolean) => void
   vehicles: VehicleItem[]
+  buildings: BuildingUnit[]
+  onAddBuilding: (kind: BuildingUnitKind, own: boolean, team?: OperatorTeam) => void
 }
 
 const STATUS_OPTIONS: { value: OperatorUnit['status']; label: string }[] = [
@@ -305,12 +308,15 @@ export default function WargamePanel({
   vehicleGroups,
   onVehicleGroupChange,
   vehicles,
+  buildings,
+  onAddBuilding,
 }: WargamePanelProps) {
   const sideLabel = view === 'attack' ? '攻方' : '守方'
   const enemySide: Side = view === 'attack' ? 'defense' : 'attack'
-  const [vehicleTeam, setVehicleTeam] = useState<OperatorTeam>('A')
+  const [vehicleTeam, setVehicleTeam] = useState<OperatorTeam | undefined>('A')
+  const [buildingTeam, setBuildingTeam] = useState<OperatorTeam | undefined>(undefined)
   const [vehicleOpen, setVehicleOpen] = useState(true)
-  const [activeUnit, setActiveUnit] = useState<'infantry' | 'vehicle'>('infantry')
+  const [activeUnit, setActiveUnit] = useState<'infantry' | 'vehicle' | 'building'>('infantry')
   const availableVehicles = vehiclesForMap(mapId)
   const deployedInfantry = operators.filter((operator) => operator.lat != null && operator.lng != null).length
   const deployedTeams = teams.filter((marker) => marker.lat != null && marker.lng != null).length
@@ -351,6 +357,11 @@ export default function WargamePanel({
           <i className="fa-solid fa-truck-monster" aria-hidden="true" />
           <span><b>载具单位</b><small>部署 · 编队 · 路线</small></span>
           <em>{vehicles.length}</em>
+        </button>
+        <button type="button" role="tab" aria-selected={activeUnit === 'building'} className={activeUnit === 'building' ? 'active' : ''} onClick={() => setActiveUnit('building')}>
+          <i className="fa-solid fa-building-shield" aria-hidden="true" />
+          <span><b>建筑单位</b><small>碉堡 · 固定火力</small></span>
+          <em>{buildings.length}</em>
         </button>
       </div>
 
@@ -416,7 +427,7 @@ export default function WargamePanel({
             onDeleteTeamMarker={onDeleteTeamMarker}
           />
         </section>
-      ) : (
+      ) : activeUnit === 'vehicle' ? (
         <section className="wg-unit-pane vehicle" role="tabpanel">
           <details
             className="wg-vehicles"
@@ -439,6 +450,9 @@ export default function WargamePanel({
                 </button>
               </div>
               <div className="wg-team-picker" aria-label="载具所属队伍">
+                <button type="button" className={`no-team ${vehicleTeam == null ? 'active' : ''}`} style={{ '--wg-team-color': customOwn ? '#01ff84' : '#e0453a' } as CSSProperties} onClick={() => setVehicleTeam(undefined)} title="不设置队伍，棋子使用阵营色">
+                  无
+                </button>
                 {TEAMS.map((team) => (
                   <button type="button" key={team.id} className={vehicleTeam === team.id ? 'active' : ''} style={{ '--wg-team-color': team.color } as CSSProperties} onClick={() => setVehicleTeam(team.id)} title={`${team.name} · ${wargame.teamRoles?.[team.id] ?? team.desc}`}>
                     {team.id}
@@ -460,7 +474,7 @@ export default function WargamePanel({
                       <button type="button" key={vehicle.iconKey} className="tpl" disabled={!wargame.enabled} onClick={() => onAddCustom(vehicle, customOwn, vehicleTeam)}>
                         <img className="tpl-icon" src={vehicle.iconUrl} alt="" draggable={false} />
                         <span className="tpl-info"><span className="tpl-name">{vehicle.name}</span></span>
-                        <span className="tpl-add">部署 · {vehicleTeam}</span>
+                        <span className="tpl-add">部署 · {vehicleTeam ?? '无队伍'}</span>
                       </button>
                     ))}
                   </details>
@@ -468,6 +482,37 @@ export default function WargamePanel({
               })}
             </div>
           </details>
+        </section>
+      ) : (
+        <section className="wg-unit-pane building" role="tabpanel">
+          <div className="wg-building-head">
+            <div>
+              <b>碉堡</b>
+              <small>可选择阵营与队伍；无队伍时使用阵营色</small>
+            </div>
+          </div>
+          <div className="wg-building-controls">
+            <div className="veh-own-switch" role="radiogroup" aria-label="碉堡阵营">
+              <button type="button" className={`veh-own-opt own ${customOwn ? 'active' : ''}`} onClick={() => onCustomOwnChange(true)} role="radio" aria-checked={customOwn}><span className="own-dot own" />本方</button>
+              <button type="button" className={`veh-own-opt enemy ${!customOwn ? 'active' : ''}`} onClick={() => onCustomOwnChange(false)} role="radio" aria-checked={!customOwn}><span className="own-dot enemy" />敌方</button>
+            </div>
+            <div className="wg-team-picker" aria-label="建筑所属队伍">
+              <button type="button" className={`no-team ${buildingTeam == null ? 'active' : ''}`} style={{ '--wg-team-color': customOwn ? '#01ff84' : '#e0453a' } as CSSProperties} onClick={() => setBuildingTeam(undefined)} title="不设置队伍，棋子使用阵营色">无</button>
+              {TEAMS.map((team) => (
+                <button type="button" key={team.id} className={buildingTeam === team.id ? 'active' : ''} style={{ '--wg-team-color': team.color } as CSSProperties} onClick={() => setBuildingTeam(team.id)} title={`${team.name} · ${wargame.teamRoles?.[team.id] ?? team.desc}`}>{team.id}</button>
+              ))}
+            </div>
+          </div>
+          <div className="wg-building-list">
+            {BUILDING_UNIT_OPTIONS.map((item) => (
+              <button type="button" key={item.kind} style={{ '--building-card-accent': item.accent } as CSSProperties} disabled={!wargame.enabled} onClick={() => onAddBuilding(item.kind, customOwn, buildingTeam)}>
+                <span className="wg-building-preview"><img src={item.iconUrl} alt="" draggable={false} /></span>
+                <span><b>{item.name}</b><small>{item.description}</small></span>
+                <em>部署 · {buildingTeam ?? '无队伍'}</em>
+              </button>
+            ))}
+          </div>
+          <div className="palette-tip">部署后可拖动，悬停滚轮旋转图标，右键删除。</div>
         </section>
       )}
     </div>

@@ -19,7 +19,7 @@ interface VehicleLayerProps {
   /** 快捷切换载具阵营（攻↔守） */
   onToggleSide: (uid: string) => void
   /** 循环切换载具所属 A-E 队 */
-  onChangeTeam: (uid: string, team: OperatorTeam) => void
+  onChangeTeam: (uid: string, team?: OperatorTeam) => void
   /** 从该载具位置创建行动路线 */
   onStartRoute: (uid: string) => void
   /** 载具位置注册表（第十四轮：套索框选/整体移动的实时位置来源） */
@@ -56,7 +56,8 @@ function buildVehicleIcon(v: VehicleItem, view: Side, expanded: boolean): L.DivI
   // 图例图标（base64 data URI）正常大小；无图例的本地 PNG 图标（如 ATV）加 no-legend 缩小
   const legendCls = v.iconUrl.startsWith('data:') ? '' : 'no-legend'
   const cls = ['veh-marker', sideCls, legendCls, expanded ? 'expanded' : ''].join(' ')
-  const team = teamOf(v.team ?? 'A')
+  const team = v.team ? teamOf(v.team) : null
+  const sideColor = vehicleColor(v, view)
   // 快捷切换阵营按钮（左上角，hover 显示）：点击切换攻↔守，底色随视角实时反转
   const sideBtn = `
     <button class="veh-side" title="切换本方/敌方" aria-label="切换本方/敌方" onclick="event.stopPropagation();event.preventDefault();window.__vehSide('${v.uid}')">
@@ -65,15 +66,14 @@ function buildVehicleIcon(v: VehicleItem, view: Side, expanded: boolean): L.DivI
   return L.divIcon({
     className: 'veh-marker-wrap',
     html: `
-      <div class="${cls}" style="--vc:${vehicleColor(v, view)};--veh-team:${team.color}">
+      <div class="${cls}" style="--vc:${sideColor};--veh-team:${team?.color ?? sideColor};--veh-fill:${team?.color ?? sideColor}">
         <span class="veh-side-ring"></span>
         <span class="veh-bg"></span>
         <img class="veh-icon" src="${v.iconUrl}" alt="${v.name}" draggable="false" />
         ${sideBtn}
-        <button class="veh-team" title="${team.name}（点击切换队伍）" aria-label="切换载具所属队伍" onclick="event.stopPropagation();event.preventDefault();window.__vehTeam('${v.uid}')">${team.id}</button>
+        <button class="veh-team-letter" title="${team ? `${team.name}（点击切换队伍）` : '无队伍（点击设置队伍）'}" aria-label="切换载具所属队伍" onclick="event.stopPropagation();event.preventDefault();window.__vehTeam('${v.uid}')">${team?.id ?? '–'}</button>
         <button class="veh-route" title="绘制${v.name}行动路线" aria-label="绘制载具行动路线" onclick="event.stopPropagation();event.preventDefault();window.__vehRoute('${v.uid}')"><i class="fa-solid fa-route" aria-hidden="true"></i></button>
         <span class="veh-name">${v.name}</span>
-        <button class="veh-del" title="移除载具" aria-label="移除载具" onclick="event.stopPropagation();event.preventDefault();window.__vehDel('${v.uid}')"><svg viewBox="0 0 10 10" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 2l6 6M8 2l-6 6"/></svg></button>
       </div>`,
     iconSize: [30, 30],
     iconAnchor: [15, 15],
@@ -102,7 +102,7 @@ function VehicleMarker({
   onRotate: (uid: string, rotation: number) => void
   onDelete: (uid: string) => void
   onToggleSide: (uid: string) => void
-  onChangeTeam: (uid: string, team: OperatorTeam) => void
+  onChangeTeam: (uid: string, team?: OperatorTeam) => void
   onStartRoute: (uid: string) => void
   posRef: MutableRefObject<Record<string, [number, number]>>
 }) {
@@ -171,25 +171,6 @@ function VehicleMarker({
     }
   }, [vehicle.uid, onRotate, expanded])
 
-  // 删除按钮：divIcon 内联 onclick 调用 window.__vehDel(uid)。
-  // 多个载具不能共享单个全局回调（后挂载会覆盖先挂载，导致只有最后一个可删除），
-  // 因此注册「按 uid 的处理器表 + 幂等分发器」：每个载具只登记自己的 uid → handler，
-  // 点击任意删除叉时由分发器路由到对应载具的处理器。
-  useEffect(() => {
-    const w = window as unknown as {
-      __vehDel?: (uid: string) => void
-      __vehHandlers?: Record<string, () => void>
-    }
-    if (!w.__vehDel) {
-      w.__vehDel = (uid: string) => w.__vehHandlers?.[uid]?.()
-    }
-    if (!w.__vehHandlers) w.__vehHandlers = {}
-    w.__vehHandlers[vehicle.uid] = () => onDelete(vehicle.uid)
-    return () => {
-      if (w.__vehHandlers) delete w.__vehHandlers[vehicle.uid]
-    }
-  }, [vehicle.uid, onDelete])
-
   // 快捷切换阵营按钮：window.__vehSide(uid)，与删除按钮同样的分发器机制
   useEffect(() => {
     const w = window as unknown as {
@@ -215,8 +196,8 @@ function VehicleMarker({
     if (!w.__vehTeam) w.__vehTeam = (uid: string) => w.__vehTeamHandlers?.[uid]?.()
     if (!w.__vehTeamHandlers) w.__vehTeamHandlers = {}
     w.__vehTeamHandlers[vehicle.uid] = () => {
-      const order: OperatorTeam[] = ['A', 'B', 'C', 'D', 'E']
-      const index = order.indexOf(vehicle.team ?? 'A')
+      const order: Array<OperatorTeam | undefined> = [undefined, 'A', 'B', 'C', 'D', 'E']
+      const index = order.indexOf(vehicle.team)
       onChangeTeam(vehicle.uid, order[(index + 1) % order.length])
     }
     return () => {
@@ -256,6 +237,10 @@ function VehicleMarker({
         dragend: (e) => {
           const ll = (e.target as L.Marker).getLatLng()
           onMove(vehicle.uid, ll.lat, ll.lng)
+        },
+        contextmenu: (event) => {
+          L.DomEvent.stopPropagation(event)
+          onDelete(vehicle.uid)
         },
       }}
     />
