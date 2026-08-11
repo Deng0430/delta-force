@@ -4519,6 +4519,34 @@ body {
 .route-arrow-wrap .route-arrow.type-retreat::after { left: 6px; }
 
 /* 路线与行动指令 V2 属性面板 */
+.route-editor-trigger-wrap {
+  background: transparent;
+  border: 0;
+  overflow: visible !important;
+}
+
+.route-editor-trigger {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--gold);
+  background: rgba(14, 17, 18, .97);
+  border: 1px solid var(--gold);
+  border-radius: 3px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .5);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.route-editor-trigger:hover {
+  color: #0e1112;
+  background: var(--gold);
+  box-shadow: 0 0 10px rgba(244, 207, 103, .65);
+}
+
 .route-editor-panel {
   position: absolute;
   z-index: 1450;
@@ -4885,6 +4913,11 @@ body {
   border: none;
 }
 
+.edit-delete-trigger-wrap {
+  background: transparent;
+  border: none;
+}
+
 .edit-style-trigger {
   width: 30px;
   height: 26px;
@@ -4904,6 +4937,27 @@ body {
   color: #0e1112;
   background: #3f8cff;
   box-shadow: 0 0 9px rgba(63, 140, 255, 0.8);
+}
+
+.edit-delete-trigger {
+  width: 30px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: #ffb3ad;
+  background: rgba(14, 17, 18, 0.96);
+  border: 1px solid var(--danger);
+  border-radius: 3px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+}
+
+.edit-delete-trigger:hover {
+  color: #fff;
+  background: var(--danger);
+  box-shadow: 0 0 9px rgba(224, 69, 58, 0.75);
 }
 
 .edit-handle-dot {

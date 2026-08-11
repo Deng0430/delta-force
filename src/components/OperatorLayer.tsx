@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef } from 'react'
-import { Marker } from 'react-leaflet'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Marker, useMap } from 'react-leaflet'
 import * as L from 'leaflet'
-import type { OperatorUnit, Side, TacticalRoute } from '../types'
+import type { OperatorUnit, Side } from '../types'
 import { operatorClassOf, teamOf } from '../config/operators'
 import { profileOf } from '../config/operatorProfiles'
-import { orderStatusLabel, orderTypeOf } from '../config/routes'
+import { platform } from '../platform'
 
 interface OperatorLayerProps {
   /** 当前视角（决定我方/敌方配色：op.side === view 为我方绿，敌方红） */
@@ -21,7 +21,6 @@ interface OperatorLayerProps {
   pendingConnect: string | null
   interactive: boolean
   onMove: (uid: string, lat: number, lng: number) => void
-  routes: TacticalRoute[]
   onClearDeploy: (uid: string) => void
   onStartRoute: (uid: string) => void
   /** 关系编辑点击回调（App 决定建立/解除关系） */
@@ -61,7 +60,7 @@ function darken(hex: string, f = 0.6): string {
  * - 队伍色主边框 + 状态角标 + 代号/干员名（干员身份由底部名字标签体现）
  * - 外圈：阵营色粗环 + 发光（我方=绿，敌方=红），兵棋红蓝对抗一眼区分
  */
-function buildOperatorIcon(op: OperatorUnit, view: Side, connectMode: boolean, pending: boolean, taskRoute?: TacticalRoute): L.DivIcon {
+function buildOperatorIcon(op: OperatorUnit, view: Side, connectMode: boolean, pending: boolean, expanded = false): L.DivIcon {
   const team = teamOf(op.team)
   const profile = profileOf(op.operatorId)
   const clsConf = operatorClassOf(op.cls)
@@ -76,26 +75,25 @@ function buildOperatorIcon(op: OperatorUnit, view: Side, connectMode: boolean, p
     connectMode ? 'connect' : '',
     pending ? 'pending' : '',
     op.status === 'killed' ? 'dead' : '',
+    expanded ? 'expanded' : '',
   ]
     .filter(Boolean)
     .join(' ')
-  const task = taskRoute ? orderTypeOf(taskRoute.orderType) : null
-  const taskBadge = task && taskRoute
-    ? `<span class="op-task" style="--op-task-color:${taskRoute.color}" title="${task.label} · ${orderStatusLabel(taskRoute.status)}"><i class="fa-solid ${task.icon}" aria-hidden="true"></i></span>`
-    : ''
+  const interactionHint = platform.kind === 'android' ? '点击选中，拖动调整位置' : '右键清除部署'
+  const renameHint = platform.kind === 'android' ? '选中兵棋后点击修改名称' : '点击编辑昵称'
   return L.divIcon({
     className: 'op-marker-wrap',
     html: `
-      <div class="${classes}" tabindex="0" style="--op-team:${team.color};--op-cls:${clsConf.color};--op-side:${sc.bright};--op-side-deep:${sc.deep};--op-team-dark:${darken(team.color)}" title="${profile.name} · ${clsConf.name} · ${status.label} · 右键清除部署">
+      <div class="${classes}" tabindex="0" style="--op-team:${team.color};--op-cls:${clsConf.color};--op-side:${sc.bright};--op-side-deep:${sc.deep};--op-team-dark:${darken(team.color)}" title="${profile.name} · ${clsConf.name} · ${status.label} · ${interactionHint}">
         <span class="op-side-ring"></span>
         <span class="op-team-bg"></span>
         <img class="op-cls-main" src="${clsConf.iconUrl}" alt="${clsConf.name}" draggable="false" />
         <span class="op-team-letter" title="${team.name}">${team.id}</span>
-        <span class="op-code" title="点击编辑昵称">${op.name}</span>
+        <span class="op-code" title="${renameHint}">${op.name}</span>
         <span class="op-name">${profile.name}</span>
         <span class="op-status-dot" style="background:${op.status === 'alive' ? 'var(--green)' : op.status === 'injured' ? '#f4cf67' : '#7a8185'}"></span>
-        ${taskBadge}
         <button class="op-route" title="为${op.name}创建行动路线" aria-label="创建干员行动路线"><i class="fa-solid fa-route" aria-hidden="true"></i></button>
+        <button class="op-delete" title="撤回部署" aria-label="撤回部署"><i class="fa-regular fa-trash-can" aria-hidden="true"></i></button>
       </div>`,
     iconSize: [22, 22],
     iconAnchor: [11, 11],
@@ -112,7 +110,6 @@ function OperatorMarker({
   interactive,
   posRef,
   onMove,
-  taskRoute,
   onClearDeploy,
   onStartRoute,
   onConnectClick,
@@ -127,7 +124,6 @@ function OperatorMarker({
   interactive: boolean
   posRef: React.MutableRefObject<Record<string, [number, number]>>
   onMove: (uid: string, lat: number, lng: number) => void
-  taskRoute?: TacticalRoute
   onClearDeploy: (uid: string) => void
   onStartRoute: (uid: string) => void
   onConnectClick: (uid: string) => void
@@ -136,6 +132,22 @@ function OperatorMarker({
   onRenameClick: (uid: string, containerPoint: { x: number; y: number }) => void
 }) {
   const ref = useRef<L.Marker | null>(null)
+  const [expanded, setExpanded] = useState(false)
+  const map = useMap()
+
+  useEffect(() => {
+    if (platform.kind !== 'android') return
+    const collapse = () => setExpanded(false)
+    const selectOther = (event: Event) => {
+      if ((event as CustomEvent<string>).detail !== op.uid) collapse()
+    }
+    map.on('click', collapse)
+    window.addEventListener('mobile-unit-selected', selectOther)
+    return () => {
+      map.off('click', collapse)
+      window.removeEventListener('mobile-unit-selected', selectOther)
+    }
+  }, [map, op.uid])
 
   // 位置注册表：联线层读取端点（干员移动时连线跟随）
   useEffect(() => {
@@ -150,10 +162,10 @@ function OperatorMarker({
   }, [op.uid, op.lat, op.lng, posRef])
 
   const icon = useMemo(
-    () => buildOperatorIcon(op, view, connectMode, pending, taskRoute),
+    () => buildOperatorIcon(op, view, connectMode, pending, expanded),
     // 干员/职业/状态/队伍色/昵称变化需重建图标
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [op.operatorId, op.cls, op.status, op.team, op.name, op.side, view, connectMode, pending, taskRoute?.uid, taskRoute?.orderType, taskRoute?.status, taskRoute?.color],
+    [op.operatorId, op.cls, op.status, op.team, op.name, op.side, view, connectMode, pending, expanded],
   )
 
   // 代号标签响应：单击代号 = 快捷编辑昵称（与棋子单击三级菜单分离）。
@@ -181,6 +193,19 @@ function OperatorMarker({
             onStartRoute(op.uid)
             return
           }
+          if (t?.closest?.('.op-delete')) {
+            onClearDeploy(op.uid)
+            return
+          }
+          if (platform.kind === 'android') {
+            window.dispatchEvent(new CustomEvent('mobile-unit-selected', { detail: op.uid }))
+            if (t?.closest?.('.op-code') && expanded) {
+              onRenameClick(op.uid, { x: e.containerPoint.x, y: e.containerPoint.y })
+              return
+            }
+            setExpanded((value) => !value)
+            return
+          }
           // 点击顶部代号：快捷编辑昵称（与棋子单击三级菜单分离）
           if (t?.closest?.('.op-code')) {
             if (connectMode) {
@@ -198,18 +223,35 @@ function OperatorMarker({
             onEditClick(op.uid, { x: e.containerPoint.x, y: e.containerPoint.y })
           }
         },
+        dragstart: () => ref.current?.getElement()?.classList.add('mobile-unit-dragging'),
         drag: (e) => {
-          // 拖拽过程中实时上报位置：连线层端点跟随，实现连线实时更新
+          // 拖动期间只更新 Leaflet 原生 Marker 和轻量图层预览；最终位置在 dragend 提交一次。
           const ll = (e.target as L.Marker).getLatLng()
-          onMove(op.uid, ll.lat, ll.lng)
+          posRef.current[op.uid] = [ll.lat, ll.lng]
+          window.dispatchEvent(new CustomEvent('mobile-route-anchor-drag', {
+            detail: { phase: 'move', kind: 'operator', uid: op.uid, lat: ll.lat, lng: ll.lng },
+          }))
+          if (platform.kind !== 'android') window.dispatchEvent(new CustomEvent('desktop-unit-anchor-drag', {
+            detail: { phase: 'move', kind: 'operator', uid: op.uid, lat: ll.lat, lng: ll.lng },
+          }))
         },
         contextmenu: (e) => {
           L.DomEvent.stop(e.originalEvent)
           onClearDeploy(op.uid)
         },
         dragend: (e) => {
+          ref.current?.getElement()?.classList.remove('mobile-unit-dragging')
           const ll = (e.target as L.Marker).getLatLng()
           onMove(op.uid, ll.lat, ll.lng)
+          if (platform.kind === 'android') setExpanded(true)
+          window.requestAnimationFrame(() => {
+            window.dispatchEvent(new CustomEvent('mobile-route-anchor-drag', {
+              detail: { phase: 'end', kind: 'operator', uid: op.uid, lat: ll.lat, lng: ll.lng },
+            }))
+            if (platform.kind !== 'android') window.dispatchEvent(new CustomEvent('desktop-unit-anchor-drag', {
+              detail: { phase: 'end', kind: 'operator', uid: op.uid, lat: ll.lat, lng: ll.lng },
+            }))
+          })
         },
       }}
     />
@@ -232,24 +274,12 @@ export default function OperatorLayer({
   pendingConnect,
   interactive,
   onMove,
-  routes,
   onClearDeploy,
   onStartRoute,
   onConnectClick,
   onEditClick,
   onRenameClick,
 }: OperatorLayerProps) {
-  const routesByOperator = useMemo(() => {
-    const statusPriority: Record<TacticalRoute['status'], number> = { executing: 0, pending: 1, planned: 2, completed: 3, cancelled: 4 }
-    const map = new Map<string, TacticalRoute>()
-    for (const route of routes) {
-      for (const uid of route.operatorIds) {
-        const current = map.get(uid)
-        if (!current || statusPriority[route.status] < statusPriority[current.status]) map.set(uid, route)
-      }
-    }
-    return map
-  }, [routes])
   return (
     <>
       {operators.map((op) => (
@@ -263,7 +293,6 @@ export default function OperatorLayer({
           interactive={interactive}
           posRef={posRef}
           onMove={onMove}
-          taskRoute={routesByOperator.get(op.uid)}
           onClearDeploy={onClearDeploy}
           onStartRoute={onStartRoute}
           onConnectClick={onConnectClick}

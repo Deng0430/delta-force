@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef } from 'react'
-import { Marker } from 'react-leaflet'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Marker, useMap } from 'react-leaflet'
 import * as L from 'leaflet'
 import type { Side, TeamMarker } from '../types'
 import { teamOf } from '../config/operators'
+import { platform } from '../platform'
 
 interface TeamLayerProps {
   view: Side
@@ -42,7 +43,7 @@ function darken(hex: string, f = 0.6): string {
  * - 外圈：阵营色粗环 + 发光（我方=绿，敌方=红，与干员/载具一致）
  * 大小 30px，与载具卡片相当。
  */
-function buildTeamIcon(tm: TeamMarker, view: Side, teamName?: string): L.DivIcon {
+function buildTeamIcon(tm: TeamMarker, view: Side, teamName?: string, expanded = false): L.DivIcon {
   const team = teamOf(tm.team)
   const own = tm.side === view
   const sc = own ? SIDE_COLOR.own : SIDE_COLOR.enemy
@@ -50,12 +51,13 @@ function buildTeamIcon(tm: TeamMarker, view: Side, teamName?: string): L.DivIcon
   return L.divIcon({
     className: 'tm-wrap',
     html: `
-      <div class="tm-marker" style="--tm-team:${team.color};--tm-team-dark:${darken(team.color)};--tm-side:${sc.bright};--tm-side-deep:${sc.deep}" title="${team.name}">
+      <div class="tm-marker ${expanded ? 'expanded' : ''}" style="--tm-team:${team.color};--tm-team-dark:${darken(team.color)};--tm-side:${sc.bright};--tm-side-deep:${sc.deep}" title="${team.name}">
         <span class="tm-side-ring"></span>
         <span class="tm-team-bg"></span>
         <span class="tm-letter">${team.id}</span>
         <span class="tm-name">${name}</span>
         <button class="tm-route" title="绘制${team.name}进攻路线" aria-label="绘制进攻路线" onclick="event.stopPropagation();event.preventDefault();window.__tmRoute('${tm.uid}')"><i class="fa-solid fa-route" aria-hidden="true"></i></button>
+        <button class="tm-delete" title="删除队标" aria-label="删除队标" onclick="event.stopPropagation();event.preventDefault();window.__tmDelete('${tm.uid}')"><i class="fa-regular fa-trash-can" aria-hidden="true"></i></button>
       </div>`,
     iconSize: [30, 30],
     iconAnchor: [15, 15],
@@ -85,6 +87,22 @@ function TeamMarkerItem({
   onStartRoute: (uid: string) => void
 }) {
   const ref = useRef<L.Marker | null>(null)
+  const [expanded, setExpanded] = useState(false)
+  const map = useMap()
+
+  useEffect(() => {
+    if (platform.kind !== 'android') return
+    const collapse = () => setExpanded(false)
+    const selectOther = (event: Event) => {
+      if ((event as CustomEvent<string>).detail !== tm.uid) collapse()
+    }
+    map.on('click', collapse)
+    window.addEventListener('mobile-unit-selected', selectOther)
+    return () => {
+      map.off('click', collapse)
+      window.removeEventListener('mobile-unit-selected', selectOther)
+    }
+  }, [map, tm.uid])
 
   // 位置注册表：套索框选/整体移动读取
   useEffect(() => {
@@ -99,9 +117,9 @@ function TeamMarkerItem({
   }, [tm.uid, tm.lat, tm.lng, posRef])
 
   const icon = useMemo(
-    () => buildTeamIcon(tm, view, teamName),
+    () => buildTeamIcon(tm, view, teamName, expanded),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tm.uid, tm.team, tm.name, tm.side, view, teamName],
+    [tm.uid, tm.team, tm.name, tm.side, view, teamName, expanded],
   )
 
   // 右键删除队标（原生 contextmenu 绑定）
@@ -130,6 +148,19 @@ function TeamMarkerItem({
     }
   }, [tm.uid, onStartRoute])
 
+  useEffect(() => {
+    const w = window as unknown as {
+      __tmDelete?: (uid: string) => void
+      __tmDeleteHandlers?: Record<string, () => void>
+    }
+    if (!w.__tmDelete) w.__tmDelete = (uid) => w.__tmDeleteHandlers?.[uid]?.()
+    if (!w.__tmDeleteHandlers) w.__tmDeleteHandlers = {}
+    w.__tmDeleteHandlers[tm.uid] = () => onDelete(tm.uid)
+    return () => {
+      if (w.__tmDeleteHandlers) delete w.__tmDeleteHandlers[tm.uid]
+    }
+  }, [tm.uid, onDelete])
+
   // 未部署（null 坐标）不渲染
   if (tm.lat == null || tm.lng == null) return null
 
@@ -142,14 +173,29 @@ function TeamMarkerItem({
       zIndexOffset={800}
       interactive={interactive}
       eventHandlers={{
-        click: (e) => L.DomEvent.stopPropagation(e),
+        click: (e) => {
+          L.DomEvent.stopPropagation(e)
+          if (platform.kind === 'android') {
+            window.dispatchEvent(new CustomEvent('mobile-unit-selected', { detail: tm.uid }))
+            setExpanded((value) => !value)
+          }
+        },
+        dragstart: () => ref.current?.getElement()?.classList.add('mobile-unit-dragging'),
         drag: (e) => {
           const ll = (e.target as L.Marker).getLatLng()
-          onMove(tm.uid, ll.lat, ll.lng)
+          posRef.current[tm.uid] = [ll.lat, ll.lng]
+          window.dispatchEvent(new CustomEvent('mobile-route-anchor-drag', {
+            detail: { phase: 'move', kind: 'team', uid: tm.uid, lat: ll.lat, lng: ll.lng },
+          }))
         },
         dragend: (e) => {
+          ref.current?.getElement()?.classList.remove('mobile-unit-dragging')
           const ll = (e.target as L.Marker).getLatLng()
           onMove(tm.uid, ll.lat, ll.lng)
+          if (platform.kind === 'android') setExpanded(true)
+          window.requestAnimationFrame(() => window.dispatchEvent(new CustomEvent('mobile-route-anchor-drag', {
+              detail: { phase: 'end', kind: 'team', uid: tm.uid, lat: ll.lat, lng: ll.lng },
+            })))
         },
       }}
     />

@@ -1,0 +1,783 @@
+/* 移动端基础层：桌面布局保持默认，仅在触屏窄屏或 Android 外壳中启用。 */
+.mobile-layout {
+  --left-panel-width: 260px !important;
+  --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+  --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  width: 100%;
+  height: 100dvh;
+  min-height: 100dvh;
+  padding: 0;
+  background: var(--bg-0);
+}
+
+.mobile-layout .toolbar,
+.mobile-layout .mode-workbench-toolbar {
+  gap: 8px;
+  height: calc(var(--toolbar-height) + var(--safe-top));
+  padding-top: var(--safe-top);
+  padding-left: 0;
+  padding-right: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.mobile-layout .toolbar::-webkit-scrollbar,
+.mobile-layout .mode-workbench-toolbar::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-layout .toolbar .logo-area {
+  width: auto;
+  min-width: 120px;
+  padding-inline: 10px;
+}
+
+.mobile-layout .left-panel {
+  /* 面板底色铺到屏幕物理左边；只有内容通过 padding-left 避开挖孔安全区。 */
+  left: 0;
+  width: calc(var(--safe-left) + min(58vw, 260px)) !important;
+  padding-left: var(--safe-left);
+  min-width: 0;
+  max-width: none;
+  box-shadow: 8px 0 24px rgba(0, 0, 0, .45);
+}
+
+.mobile-layout .left-panel .panel-body {
+  padding-bottom: calc(12px + var(--safe-bottom));
+}
+
+.mobile-layout .point-panel {
+  right: var(--safe-right);
+  width: min(46vw, 200px);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, .45);
+}
+
+.mobile-layout .left-panel .panel-head,
+.mobile-layout .left-panel .panel-sec,
+.mobile-layout .left-panel .wargame-panel {
+  font-size: 11px;
+}
+
+.mobile-layout .left-panel .panel-head { padding: 7px 9px; }
+.mobile-layout .left-panel .panel-sec { padding-inline: 8px; }
+.mobile-layout .left-panel button,
+.mobile-layout .left-panel select,
+.mobile-layout .left-panel input { min-height: 28px; }
+
+.mobile-layout .point-panel .point-head { padding: 8px 9px; font-size: 12px; }
+.mobile-layout .point-panel .stage-steps { padding: 7px 8px; }
+
+.mobile-route-edit-action {
+  display: none !important;
+}
+
+.mobile-layout .mobile-route-edit-action {
+  display: inline-flex !important;
+}
+
+.mobile-layout .route-editor-hint {
+  display: none;
+}
+
+.mobile-layout .route-editor-panel {
+  top: 54px;
+  right: calc(var(--right-panel-w, 0px) + var(--safe-right) + 8px);
+  width: 218px;
+  max-height: calc(100dvh - 62px);
+  padding: 5px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  will-change: transform;
+}
+
+.mobile-layout .route-editor-head {
+  min-height: 28px;
+  padding: 0 2px 4px;
+  margin-bottom: 4px;
+  cursor: move;
+  touch-action: none;
+}
+
+.mobile-layout .route-editor-panel button,
+.mobile-layout .route-editor-panel select,
+.mobile-layout .route-editor-panel input {
+  min-height: 0;
+}
+
+.mobile-layout .route-editor-overview { padding: 4px; margin-bottom: 4px; }
+.mobile-layout .route-editor-summary { margin-top: 3px; }
+.mobile-layout .route-editor-name input { height: 24px; }
+.mobile-layout .route-editor-quick-controls select { height: 24px; }
+.mobile-layout .route-editor-fold > summary { min-height: 22px; }
+.mobile-layout .route-editor-actions { gap: 3px; }
+.mobile-layout .route-editor-actions button { padding: 3px 2px; }
+
+.mobile-layout .route-editor-trigger {
+  position: static;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--gold);
+  background: rgba(14, 17, 18, .97);
+  border: 1px solid var(--gold);
+  border-radius: 4px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .5);
+  font-size: 12px;
+  touch-action: manipulation;
+}
+
+.mobile-layout .left-panel-resizer {
+  display: none;
+}
+
+.mobile-layout .toolbar button,
+.mobile-layout .toolbar select {
+  min-height: 34px;
+}
+
+.mobile-layout .leaflet-control-zoom a {
+  width: 38px;
+  height: 38px;
+  line-height: 38px;
+}
+
+/* 绘制期间由应用独占单指轨迹，防止 WebView 将手势交给页面滚动并触发 pointercancel。 */
+.platform-android .draw-cursor,
+.platform-android .draw-cursor .leaflet-map-pane {
+  touch-action: none !important;
+  overscroll-behavior: none;
+}
+
+/* 已有图形和编辑手柄由应用处理单指拖拽；即使当前是平移工具，也不能让 WebView
+   把这次手势转交给地图缩放/页面滚动，否则图形移动和曲线控制点都会收到 pointercancel。 */
+.platform-android .leaflet-draw-pane,
+.platform-android .leaflet-draw-pane .leaflet-interactive,
+.platform-android .leaflet-draw-pane .leaflet-marker-icon {
+  touch-action: none !important;
+}
+
+.mobile-layout .edit-style-trigger,
+.mobile-layout .edit-delete-trigger {
+  width: 36px;
+  height: 34px;
+  font-size: 14px;
+  touch-action: manipulation;
+}
+
+.mobile-layout .text-style-panel {
+  box-sizing: border-box;
+  max-width: calc(100vw - 12px);
+  max-height: calc(100dvh - 12px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.mobile-layout .text-style-panel .tsp-head {
+  position: sticky;
+  top: -10px;
+  z-index: 1;
+  margin: -10px -10px 8px;
+  padding: 9px 10px 7px;
+  background: rgba(14, 17, 18, 0.99);
+  border-bottom: 1px solid rgba(1, 255, 132, 0.22);
+  cursor: move;
+  touch-action: none;
+}
+
+.mobile-layout .map-wrap .leaflet-top.leaflet-left {
+  left: calc(var(--left-panel-w, 0px) + var(--safe-left));
+}
+
+.mobile-layout.left-panel-closed .map-wrap .leaflet-top.leaflet-left {
+  left: 4px;
+}
+
+/* 图例左边缘紧贴展开后侧栏的右边缘；侧栏收起时回到左侧安全区。 */
+.mobile-layout .zone-legend {
+  left: calc(var(--safe-left) + var(--left-panel-w, 0px));
+}
+
+.mobile-layout.left-panel-closed .zone-legend {
+  left: 4px;
+}
+
+.mobile-layout .map-wrap .leaflet-right {
+  right: var(--safe-right);
+}
+
+.mobile-layout .collapse-float.left { left: 62px; }
+.mobile-layout .collapse-float.right { right: calc(var(--safe-right) + 12px); }
+
+.mobile-layout .mode-config-editor {
+  width: min(92vw, 360px);
+  max-height: calc(100dvh - 80px);
+}
+
+/* 顶栏本身需要横向滚动，因此移动端下拉菜单改为固定浮层，避免被滚动容器裁切。 */
+.mobile-layout .toolbar .map-select-menu {
+  position: fixed;
+  top: calc(var(--toolbar-height) + var(--safe-top));
+  z-index: 5000;
+  width: max-content;
+  min-width: 136px;
+  max-width: min(72vw, 260px);
+  max-height: calc(100dvh - var(--toolbar-height) - 16px);
+  overflow-y: auto;
+}
+
+.mobile-layout .toolbar .map-select-item {
+  min-height: 38px;
+  padding: 8px 11px;
+  font-size: 13px;
+}
+
+/* Android 已由原生层沉浸式全屏；键盘说明和网页全屏按钮在触控端没有意义。 */
+.platform-android .fullscreen-btn,
+.platform-android .shortcut-help {
+  display: none !important;
+}
+
+/* 触控端不依赖 hover：路线入口常驻，并扩大到推荐的可点击尺寸。 */
+.mobile-layout .tm-marker.expanded .tm-route,
+.mobile-layout .op-marker.expanded:not(.connect):not(.dead) .op-route {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  font-size: 11px;
+}
+
+.mobile-layout .veh-marker.expanded .veh-route {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 16px;
+}
+
+.mobile-layout .tm-marker .tm-route { right: -29px; top: 1px; }
+.mobile-layout .op-marker .op-route { right: -29px; top: -4px; }
+.mobile-layout .veh-marker .veh-route { right: -54px; top: -7px; }
+
+.tm-marker .tm-delete {
+  display: none;
+}
+
+.mobile-layout .tm-marker.expanded .tm-delete {
+  position: absolute;
+  left: -29px;
+  top: 1px;
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  border: 1px solid rgba(224, 69, 58, .75);
+  border-radius: 50%;
+  color: #ff766c;
+  background: rgba(8, 13, 15, .96);
+}
+
+/* 地图兵棋内部的小按钮不继承普通表单的触控高度，防止圆形角标被撑成椭圆。 */
+.mobile-layout .tm-marker button,
+.mobile-layout .op-marker button,
+.mobile-layout .veh-marker button,
+.mobile-layout .building-unit button {
+  min-width: 0;
+  min-height: 0;
+}
+
+.mobile-layout .op-marker .op-team-letter,
+.mobile-layout .veh-marker .veh-team-letter,
+.mobile-layout .building-unit .building-team-letter {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  min-height: 16px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  padding: 0;
+}
+
+/* 未选中时沿用共享核心的新位置；建筑保持基础样式中的原位置。
+   载具选中后的队伍按钮位置由下方 expanded 规则继续独立控制。 */
+.mobile-layout .op-marker:not(.expanded) .op-team-letter,
+.mobile-layout .veh-marker:not(.expanded) .veh-team-letter {
+  left: -9px;
+}
+
+.mobile-layout .veh-marker .veh-team-letter,
+.mobile-layout .building-unit .building-team-letter { pointer-events: none; }
+
+.mobile-layout .veh-marker.expanded .veh-team-letter,
+.mobile-layout .building-unit.expanded .building-team-letter {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  pointer-events: auto;
+  left: -54px;
+  bottom: -42px;
+  font-size: 13px;
+}
+
+.op-marker .op-delete {
+  display: none;
+}
+
+.mobile-layout .op-marker.expanded .op-delete {
+  position: absolute;
+  left: -29px;
+  top: -4px;
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0;
+  border: 1px solid rgba(224, 69, 58, .75);
+  border-radius: 50%;
+  color: #ff766c;
+  background: rgba(8, 13, 15, .96);
+}
+
+.mobile-layout .veh-marker.expanded .veh-side,
+.mobile-layout .building-unit.expanded .building-side {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  left: -54px;
+  top: -43px;
+  font-size: 18px;
+}
+
+.mobile-layout .veh-marker.expanded .veh-side svg,
+.mobile-layout .building-unit.expanded .building-side svg { width: 22px; height: 22px; }
+
+.building-unit .building-route {
+  display: none;
+}
+
+.mobile-layout .building-unit.expanded .building-route {
+  position: absolute;
+  right: -54px;
+  top: -4px;
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid var(--building-fill);
+  border-radius: 50%;
+  color: var(--building-fill);
+  background: rgba(8, 13, 15, .96);
+  font-size: 16px;
+}
+
+.mobile-layout .veh-rotate-control,
+.mobile-layout .veh-delete-control,
+.mobile-layout .building-rotate-control,
+.mobile-layout .building-delete-control {
+  display: none;
+  position: absolute;
+  z-index: 12;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 50%;
+  color: var(--tx-1);
+  background: rgba(8, 13, 15, .96);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, .5);
+  font-size: 18px;
+}
+
+.mobile-layout .veh-marker.expanded .veh-rotate-control,
+.mobile-layout .veh-marker.expanded .veh-delete-control,
+.mobile-layout .building-unit.expanded .building-rotate-control,
+.mobile-layout .building-unit.expanded .building-delete-control {
+  display: inline-flex;
+}
+
+.mobile-layout .veh-rotate-control { right: -54px; bottom: -61px; }
+.mobile-layout .veh-delete-control { left: -4px; bottom: -70px; }
+.mobile-layout .building-rotate-control { right: -54px; bottom: -64px; }
+.mobile-layout .building-delete-control { left: -3px; bottom: -72px; }
+
+.mobile-layout .unit-rotate-drag {
+  cursor: grab;
+  touch-action: none;
+  color: var(--accent);
+}
+
+.mobile-layout .veh-delete-control.danger,
+.mobile-layout .building-delete-control.danger {
+  color: #ff766c;
+  border-color: rgba(224, 69, 58, .55);
+}
+
+.mobile-layout .route-hit-area:focus,
+.mobile-layout .route-selected-line:focus { outline: none; }
+
+/* 选中兵棋采用统一的 38px 环形操作布局；建筑在移动端不提供路线入口。 */
+.mobile-layout .tm-marker.expanded .tm-route,
+.mobile-layout .op-marker.expanded:not(.connect):not(.dead) .op-route,
+.mobile-layout .veh-marker.expanded .veh-route,
+.mobile-layout .tm-marker.expanded .tm-delete,
+.mobile-layout .op-marker.expanded .op-delete,
+.mobile-layout .veh-marker.expanded .veh-side,
+.mobile-layout .building-unit.expanded .building-side,
+.mobile-layout .veh-marker.expanded .veh-team-letter,
+.mobile-layout .building-unit.expanded .building-team-letter,
+.mobile-layout .veh-marker.expanded .veh-rotate-control,
+.mobile-layout .veh-marker.expanded .veh-delete-control,
+.mobile-layout .building-unit.expanded .building-rotate-control,
+.mobile-layout .building-unit.expanded .building-delete-control {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  min-height: 38px;
+  font-size: 15px;
+}
+
+.mobile-layout .tm-marker .tm-route,
+.mobile-layout .op-marker .op-route,
+.mobile-layout .veh-marker .veh-route { right: -44px; top: -4px; }
+
+.mobile-layout .tm-marker.expanded .tm-delete,
+.mobile-layout .op-marker.expanded .op-delete { left: -44px; top: -4px; }
+
+.mobile-layout .veh-marker.expanded .veh-side,
+.mobile-layout .building-unit.expanded .building-side { left: -44px; top: -35px; }
+
+.mobile-layout .veh-marker.expanded .veh-team-letter,
+.mobile-layout .building-unit.expanded .building-team-letter { left: -44px; bottom: -36px; font-size: 12px; }
+
+.mobile-layout .veh-rotate-control,
+.mobile-layout .building-rotate-control { right: -44px; bottom: -48px; }
+
+.mobile-layout .veh-delete-control,
+.mobile-layout .building-delete-control { left: 50%; bottom: -58px; transform: translateX(-50%); }
+
+.mobile-layout .veh-marker.expanded .veh-side svg,
+.mobile-layout .building-unit.expanded .building-side svg { width: 19px; height: 19px; }
+
+.mobile-layout .building-unit.expanded .building-route { display: none !important; }
+
+/* 名称栏在未选中时只展示，选中后才成为独立的大触控编辑入口。 */
+.mobile-layout .op-marker .op-code { pointer-events: none; }
+.mobile-layout .op-marker.expanded .op-code {
+  top: -56px;
+  min-width: 76px;
+  min-height: 32px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.mobile-layout .mobile-unit-dragging .tm-marker button,
+.mobile-layout .mobile-unit-dragging .op-marker button,
+.mobile-layout .mobile-unit-dragging .op-marker .op-code,
+.mobile-layout .mobile-unit-dragging .veh-marker button,
+.mobile-layout .mobile-unit-dragging .building-unit button {
+  display: none !important;
+}
+
+.route-mobile-actions {
+  position: absolute;
+  left: 50%;
+  bottom: max(16px, var(--safe-bottom));
+  z-index: 4800;
+  display: none;
+  gap: 8px;
+  transform: translateX(-50%);
+  padding: 7px;
+  border: 1px solid var(--line-2);
+  border-radius: 5px;
+  background: rgba(8, 13, 15, .96);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .58);
+}
+
+.mobile-layout .route-mobile-actions {
+  display: flex;
+}
+
+.route-mobile-actions button {
+  min-width: 76px;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 3px;
+  color: var(--tx-1);
+  background: var(--bg-btn);
+  font-weight: 700;
+}
+
+.route-mobile-actions button.primary {
+  color: #06110c;
+  border-color: var(--green);
+  background: var(--green);
+}
+
+.route-mobile-actions button.danger { color: #ff766c; }
+.route-mobile-actions button:disabled { opacity: .4; }
+
+.mobile-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, .62);
+}
+
+.mobile-confirm-dialog {
+  width: min(360px, calc(100vw - 40px));
+  padding: 18px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  color: #fff;
+  background: #0b1114;
+  box-shadow: 0 14px 42px rgba(0, 0, 0, .65);
+}
+
+.mobile-confirm-dialog h2 {
+  margin: 0 0 10px;
+  color: #fff;
+  font-size: 18px;
+}
+
+.mobile-confirm-dialog p {
+  margin: 0;
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.mobile-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.mobile-confirm-actions button {
+  min-width: 82px;
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 5px;
+  color: #fff;
+  background: #182126;
+  font-weight: 700;
+}
+
+.mobile-confirm-actions button.danger {
+  border-color: #d74d48;
+  color: #fff;
+  background: #a92f2b;
+}
+
+@media (max-width: 900px) and (pointer: coarse) {
+  .mobile-layout .toolbar .logo-mark-img,
+  .mobile-layout .mode-workbench-toolbar > img {
+    max-width: 110px;
+  }
+}
+
+/* 移动端顶部栏：固定两端操作区，仅让中间绘制工具横向滚动。
+   这样战术板始终留在圆角屏安全区内，绘制工具也能获得剩余的全部宽度。 */
+.mobile-layout .toolbar {
+  --toolbar-height: 42px;
+  --tb-height: 42px;
+  width: 100%;
+  box-sizing: border-box;
+  gap: 4px;
+  padding: var(--safe-top) calc(var(--safe-right) + 6px) 0 0;
+  overflow-x: clip;
+  overflow-y: visible;
+}
+
+.mobile-layout .toolbar .logo-area {
+  width: clamp(84px, 22vw, 190px);
+  min-width: clamp(84px, 22vw, 190px);
+  height: 100%;
+  padding: 0 5px;
+  gap: 0;
+}
+
+.mobile-layout .toolbar .logo-mark-img {
+  width: calc(100% - 6px);
+  height: 39px;
+  max-width: 184px;
+  object-fit: contain;
+}
+
+.mobile-layout .toolbar > .topbar-select {
+  max-width: 94px;
+}
+
+.mobile-layout .toolbar .map-select-btn {
+  min-height: 30px;
+  height: 30px;
+  max-width: 94px;
+  gap: 4px;
+  padding: 3px 6px;
+  font-size: 11px;
+}
+
+.mobile-layout .toolbar .map-select-btn .map-select-label {
+  display: none;
+}
+
+.mobile-layout .toolbar .map-select-btn .map-select-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-layout .toolbar-draw {
+  flex: 0 1 42vw;
+  width: 42vw;
+  min-width: 80px;
+  max-width: 420px;
+  height: 34px;
+  padding: 2px 3px;
+}
+
+.mobile-layout .toolbar-draw-scroll {
+  gap: 2px;
+  scrollbar-width: none;
+}
+
+.mobile-layout .toolbar-draw-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-layout .toolbar-draw .draw-btn {
+  width: 27px;
+  height: 27px;
+  min-height: 27px;
+  font-size: 12px;
+}
+
+.mobile-layout .toolbar-draw-divider {
+  margin-inline: 1px;
+}
+
+.mobile-layout .toolbar .mode-area {
+  flex: 0 0 auto;
+  gap: 3px;
+  margin-left: 0;
+}
+
+.mobile-layout .toolbar .mode-area .map-select-btn {
+  max-width: 72px;
+}
+
+/* “游戏数据”表示所查看的游戏版本，并非应用运行平台；移动端保留完整语义标签。 */
+.mobile-layout .toolbar .mode-area .menu-device .map-select-btn {
+  width: 108px;
+  max-width: 108px;
+  justify-content: center;
+}
+
+.mobile-layout .toolbar .mode-area .menu-device .map-select-label {
+  display: inline;
+  flex: 0 0 auto;
+  font-size: 9px;
+}
+
+.mobile-layout .toolbar .mode-area .menu-device .map-select-value {
+  flex: 0 1 auto;
+  font-size: 10px;
+}
+
+.mobile-layout .toolbar .mode-btn,
+.mobile-layout .toolbar .tactical-btn {
+  min-height: 30px;
+  height: 30px;
+  padding: 3px 6px;
+  font-size: 11px;
+}
+
+.mobile-layout .toolbar .mode-group {
+  gap: 0;
+}
+
+.mobile-layout .toolbar .mode-view-long,
+.mobile-layout .toolbar .tactical-label-short {
+  display: none;
+}
+
+.mobile-layout .toolbar .mode-view-short,
+.mobile-layout .toolbar .tactical-label-long {
+  display: inline;
+}
+
+.mobile-layout .toolbar .tactical-btn {
+  min-width: 52px;
+  padding-inline: 8px;
+}
+
+@media (max-width: 760px) and (pointer: coarse) {
+  .mobile-layout .toolbar .logo-area {
+    width: clamp(76px, 20vw, 150px);
+    min-width: clamp(76px, 20vw, 150px);
+    padding-inline: 3px;
+  }
+
+  .mobile-layout .toolbar .logo-mark-img {
+    width: calc(100% - 4px);
+    height: 37px;
+    max-width: 174px;
+  }
+
+  .mobile-layout .toolbar > .topbar-select {
+    max-width: 78px;
+  }
+
+  .mobile-layout .toolbar .map-select-btn {
+    max-width: 78px;
+    padding-inline: 5px;
+  }
+
+  .mobile-layout .toolbar .mode-area .map-select-btn {
+    max-width: 62px;
+  }
+
+  .mobile-layout .toolbar .mode-area .menu-device .map-select-btn {
+    width: 100px;
+    max-width: 100px;
+  }
+}

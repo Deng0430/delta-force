@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ArrowHeadStyle, CurveStyle, DashType, DrawSettings, ToolMode } from '../types'
+import { platform } from '../platform'
 
 /** 画笔工具（图标化，Font Awesome） */
 const DRAW_TOOLS: { mode: ToolMode; icon: string; label: string }[] = [
@@ -204,14 +205,14 @@ export default function DrawBar({
   // 否则点击地图/载具的第一次事件会被 backdrop 吃掉，表现为"载具无法操作"）
   useEffect(() => {
     if (!styleFor) return
-    const onDocDown = (e: MouseEvent) => {
+    const onDocDown = (e: PointerEvent) => {
       const t = e.target as HTMLElement
       if (!t.closest('.settings-popover') && !t.closest('.toolbar-draw-btn')) {
         setStyleFor(null)
       }
     }
-    document.addEventListener('mousedown', onDocDown)
-    return () => document.removeEventListener('mousedown', onDocDown)
+    document.addEventListener('pointerdown', onDocDown)
+    return () => document.removeEventListener('pointerdown', onDocDown)
   }, [styleFor])
 
   const handleTool = (t: ToolMode) => {
@@ -221,7 +222,12 @@ export default function DrawBar({
     }
     // 形状工具：点击就在该工具下方显示样式气泡；再次点击同一工具则切换关闭
     if (hasSettings(t)) {
-      setStyleFor((cur) => (cur === t ? null : t))
+      if (platform.kind === 'android' && tool !== t) {
+        // 触控端第一次点击只选工具，避免设置面板遮住地图；再次点击才打开设置。
+        setStyleFor(null)
+      } else {
+        setStyleFor((cur) => (cur === t ? null : t))
+      }
     } else {
       setStyleFor(null)
     }

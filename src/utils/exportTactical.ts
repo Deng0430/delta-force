@@ -16,6 +16,7 @@ import type {
   TeamMarker,
   VehicleItem,
 } from '../types'
+import { platform } from '../platform'
 import { POINT_ICON_BASE } from '../config/points'
 import { TEAMS } from '../config/operators'
 
@@ -571,16 +572,5 @@ function darken(hex, f) { f = f || .6; const m = String(hex).replace('#',''); if
 
 /** 触发浏览器下载 */
 export function downloadText(filename: string, text: string): void {
-  const mime = filename.toLowerCase().endsWith('.json') ? 'application/json' : 'text/html'
-  const blob = new Blob([text], { type: `${mime};charset=utf-8` })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  setTimeout(() => {
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-  }, 100)
+  void platform.downloadText(filename, text)
 }

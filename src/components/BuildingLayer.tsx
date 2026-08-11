@@ -1,29 +1,30 @@
-import { useEffect, useMemo, useRef } from 'react'
-import { Marker, Tooltip } from 'react-leaflet'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Marker, Tooltip, useMap } from 'react-leaflet'
 import * as L from 'leaflet'
 import type { BuildingUnit, OperatorTeam, Side } from '../types'
 import { teamOf } from '../config/operators'
 import { buildingUnitOf } from '../config/buildingUnits'
+import { platform } from '../platform'
 
 const OWN_COLOR = '#01ff84'
 const ENEMY_COLOR = '#e0453a'
 const ROTATE_STEP = 15
 
-function buildingIcon(building: BuildingUnit, view: Side): L.DivIcon {
+function buildingIcon(building: BuildingUnit, view: Side, expanded: boolean): L.DivIcon {
   const meta = buildingUnitOf(building.kind)
   const own = building.side === view
   const sideColor = own ? OWN_COLOR : ENEMY_COLOR
   const team = building.team ? teamOf(building.team) : null
-  const sideButton = `<button class="building-side" title="切换本方/敌方" aria-label="切换建筑阵营" onclick="event.stopPropagation();event.preventDefault();window.__buildingSide('${building.uid}')"><svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3.5 1 6l2.5 2.5M8.5 3.5 11 6l-2.5 2.5M1 6h10"/></svg></button>`
+  const sideButton = `<button class="building-side" title="切换本方/敌方" aria-label="切换建筑阵营" onclick="event.stopPropagation();event.preventDefault();window.__buildingSide('${building.uid}')"><svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3.5 1 6l2.5 2.5M8.5 3.5 11 6l-2.5 2.5M1 6h10"/></svg></button><button class="building-route" title="创建建筑行动路线" aria-label="创建建筑行动路线" onclick="event.stopPropagation();event.preventDefault();window.__buildingRoute('${building.uid}')"><i class="fa-solid fa-route" aria-hidden="true"></i></button>`
   return L.divIcon({
     className: 'building-unit-wrap',
-    html: `<span class="building-unit ${own ? 'own' : 'enemy'}" style="--building-side:${sideColor};--building-fill:${team?.color ?? sideColor}"><span class="building-side-ring"></span><span class="building-core"><img class="building-icon" src="${meta.iconUrl}" alt="" draggable="false" /></span>${sideButton}<button class="building-team-letter" title="${team ? `${team.name}（点击切换队伍）` : '无队伍（点击设置队伍）'}" aria-label="切换建筑所属队伍" onclick="event.stopPropagation();event.preventDefault();window.__buildingTeam('${building.uid}')">${team?.id ?? '–'}</button><span class="building-name">${meta.name}</span></span>`,
+    html: `<span class="building-unit ${own ? 'own' : 'enemy'} ${expanded ? 'expanded' : ''}" style="--building-side:${sideColor};--building-fill:${team?.color ?? sideColor}"><span class="building-side-ring"></span><span class="building-core"><img class="building-icon" src="${meta.iconUrl}" alt="" draggable="false" /></span>${sideButton}<button class="building-team-letter" title="${team ? `${team.name}（点击切换队伍）` : '无队伍（点击设置队伍）'}" aria-label="切换建筑所属队伍" onclick="event.stopPropagation();event.preventDefault();window.__buildingTeam('${building.uid}')">${team?.id ?? '–'}</button><button type="button" class="building-rotate-control unit-rotate-drag" aria-label="按住并拖动旋转建筑" onmousedown="event.stopPropagation();event.preventDefault()" ontouchstart="event.stopPropagation();event.preventDefault()" onpointerdown="window.__buildingRotateStart(event,'${building.uid}')"><i class="fa-solid fa-rotate"></i></button><button type="button" class="building-delete-control danger" aria-label="删除建筑" onclick="event.stopPropagation();event.preventDefault();window.__buildingDelete('${building.uid}')"><i class="fa-regular fa-trash-can"></i></button><span class="building-name">${meta.name}</span></span>`,
     iconSize: [38, 38],
     iconAnchor: [19, 19],
   })
 }
 
-function BuildingMarker({ building, view, interactive, onMove, onRotate, onToggleSide, onChangeTeam, onDelete }: {
+function BuildingMarker({ building, view, interactive, onMove, onRotate, onToggleSide, onChangeTeam, onDelete, onStartRoute }: {
   building: BuildingUnit
   view: Side
   interactive: boolean
@@ -32,11 +33,28 @@ function BuildingMarker({ building, view, interactive, onMove, onRotate, onToggl
   onToggleSide: (uid: string) => void
   onChangeTeam: (uid: string, team?: OperatorTeam) => void
   onDelete: (uid: string) => void
+  onStartRoute: (uid: string) => void
 }) {
   const ref = useRef<L.Marker | null>(null)
+  const [expanded, setExpanded] = useState(false)
+  const map = useMap()
+
+  useEffect(() => {
+    if (platform.kind !== 'android') return
+    const collapse = () => setExpanded(false)
+    const selectOther = (event: Event) => {
+      if ((event as CustomEvent<string>).detail !== building.uid) collapse()
+    }
+    map.on('click', collapse)
+    window.addEventListener('mobile-unit-selected', selectOther)
+    return () => {
+      map.off('click', collapse)
+      window.removeEventListener('mobile-unit-selected', selectOther)
+    }
+  }, [map, building.uid])
   const rotationRef = useRef(building.rotation ?? 0)
   rotationRef.current = building.rotation ?? 0
-  const icon = useMemo(() => buildingIcon(building, view), [building, view])
+  const icon = useMemo(() => buildingIcon(building, view, expanded), [building, view, expanded])
 
   useEffect(() => {
     const image = (ref.current?.getElement() as HTMLElement | null)?.querySelector<HTMLElement>('.building-icon')
@@ -76,6 +94,70 @@ function BuildingMarker({ building, view, interactive, onMove, onRotate, onToggl
 
   useEffect(() => {
     const target = window as unknown as {
+      __buildingRotateStart?: (event: PointerEvent, uid: string) => void
+      __buildingRotateStartHandlers?: Record<string, (event: PointerEvent) => void>
+      __buildingDelete?: (uid: string) => void
+      __buildingDeleteHandlers?: Record<string, () => void>
+    }
+    if (!target.__buildingRotateStart) target.__buildingRotateStart = (event, uid) => target.__buildingRotateStartHandlers?.[uid]?.(event)
+    if (!target.__buildingRotateStartHandlers) target.__buildingRotateStartHandlers = {}
+    if (!target.__buildingDelete) target.__buildingDelete = (uid) => target.__buildingDeleteHandlers?.[uid]?.()
+    if (!target.__buildingDeleteHandlers) target.__buildingDeleteHandlers = {}
+    target.__buildingRotateStartHandlers[building.uid] = (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const marker = ref.current?.getElement()
+      if (!marker) return
+      ref.current?.dragging?.disable()
+      const rect = marker.getBoundingClientRect()
+      const cx = rect.left + rect.width / 2
+      const cy = rect.top + rect.height / 2
+      const startPointerAngle = Math.atan2(event.clientY - cy, event.clientX - cx) * 180 / Math.PI
+      const startRotation = rotationRef.current
+      let finalRotation = startRotation
+      const move = (moveEvent: PointerEvent) => {
+        if (moveEvent.pointerId !== event.pointerId) return
+        moveEvent.preventDefault()
+        const pointerAngle = Math.atan2(moveEvent.clientY - cy, moveEvent.clientX - cx) * 180 / Math.PI
+        finalRotation = (startRotation + pointerAngle - startPointerAngle + 360) % 360
+        rotationRef.current = finalRotation
+        const image = marker.querySelector<HTMLElement>('.building-icon')
+        if (image) image.style.transform = `rotate(${finalRotation}deg)`
+      }
+      const finish = (finishEvent: PointerEvent) => {
+        if (finishEvent.pointerId !== event.pointerId) return
+        document.removeEventListener('pointermove', move)
+        document.removeEventListener('pointerup', finish)
+        document.removeEventListener('pointercancel', finish)
+        if (interactive) ref.current?.dragging?.enable()
+        onRotate(building.uid, Math.round(finalRotation))
+      }
+      document.addEventListener('pointermove', move, { passive: false })
+      document.addEventListener('pointerup', finish)
+      document.addEventListener('pointercancel', finish)
+    }
+    target.__buildingDeleteHandlers[building.uid] = () => onDelete(building.uid)
+    return () => {
+      if (target.__buildingRotateStartHandlers) delete target.__buildingRotateStartHandlers[building.uid]
+      if (target.__buildingDeleteHandlers) delete target.__buildingDeleteHandlers[building.uid]
+    }
+  }, [building.uid, interactive, onRotate, onDelete])
+
+  useEffect(() => {
+    const target = window as unknown as {
+      __buildingRoute?: (uid: string) => void
+      __buildingRouteHandlers?: Record<string, () => void>
+    }
+    if (!target.__buildingRoute) target.__buildingRoute = (uid) => target.__buildingRouteHandlers?.[uid]?.()
+    if (!target.__buildingRouteHandlers) target.__buildingRouteHandlers = {}
+    target.__buildingRouteHandlers[building.uid] = () => onStartRoute(building.uid)
+    return () => {
+      if (target.__buildingRouteHandlers) delete target.__buildingRouteHandlers[building.uid]
+    }
+  }, [building.uid, onStartRoute])
+
+  useEffect(() => {
+    const target = window as unknown as {
       __buildingSide?: (uid: string) => void
       __buildingSideHandlers?: Record<string, () => void>
     }
@@ -109,9 +191,19 @@ function BuildingMarker({ building, view, interactive, onMove, onRotate, onToggl
       interactive={interactive}
       zIndexOffset={640}
       eventHandlers={{
+        click: (event) => {
+          if (platform.kind === 'android') {
+            L.DomEvent.stopPropagation(event)
+            window.dispatchEvent(new CustomEvent('mobile-unit-selected', { detail: building.uid }))
+            setExpanded((value) => !value)
+          }
+        },
+        dragstart: () => ref.current?.getElement()?.classList.add('mobile-unit-dragging'),
         dragend: (event) => {
+          ref.current?.getElement()?.classList.remove('mobile-unit-dragging')
           const point = event.target.getLatLng() as L.LatLng
           onMove(building.uid, point.lat, point.lng)
+          if (platform.kind === 'android') setExpanded(true)
         },
         contextmenu: (event) => {
           L.DomEvent.stopPropagation(event)
@@ -119,12 +211,12 @@ function BuildingMarker({ building, view, interactive, onMove, onRotate, onToggl
         },
       }}
     >
-      <Tooltip direction="top" offset={[0, -16]}>{building.name} · {building.team ? `${building.team}队` : '无队伍'} · {building.side === view ? '本方' : '敌方'} · 滚轮旋转 · 右键删除</Tooltip>
+      <Tooltip direction="top" offset={[0, -16]}>{building.name} · {building.team ? `${building.team}队` : '无队伍'} · {building.side === view ? '本方' : '敌方'} · {platform.kind === 'android' ? '点击选中 · 拖动移动 · 使用旋转手柄' : '滚轮旋转 · 右键删除'}</Tooltip>
     </Marker>
   )
 }
 
-export default function BuildingLayer({ buildings, view, interactive, onMove, onRotate, onToggleSide, onChangeTeam, onDelete }: {
+export default function BuildingLayer({ buildings, view, interactive, onMove, onRotate, onToggleSide, onChangeTeam, onDelete, onStartRoute }: {
   buildings: BuildingUnit[]
   view: Side
   interactive: boolean
@@ -133,11 +225,12 @@ export default function BuildingLayer({ buildings, view, interactive, onMove, on
   onToggleSide: (uid: string) => void
   onChangeTeam: (uid: string, team?: OperatorTeam) => void
   onDelete: (uid: string) => void
+  onStartRoute: (uid: string) => void
 }) {
   return (
     <>
       {buildings.map((building) => (
-        <BuildingMarker key={building.uid} building={building} view={view} interactive={interactive} onMove={onMove} onRotate={onRotate} onToggleSide={onToggleSide} onChangeTeam={onChangeTeam} onDelete={onDelete} />
+        <BuildingMarker key={building.uid} building={building} view={view} interactive={interactive} onMove={onMove} onRotate={onRotate} onToggleSide={onToggleSide} onChangeTeam={onChangeTeam} onDelete={onDelete} onStartRoute={onStartRoute} />
       ))}
     </>
   )

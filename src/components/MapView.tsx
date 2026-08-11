@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, MutableRefObject } from 'react'
-import { MapContainer, TileLayer, useMap } from 'react-leaflet'
+import { MapContainer, Marker, TileLayer, useMap } from 'react-leaflet'
 import * as L from 'leaflet'
 import type {
   ActiveTextEdit,
@@ -38,6 +38,7 @@ import SpawnMarkers from './SpawnMarkers'
 import ActivityZones from './ActivityZones'
 import MapPropsLayer from './MapPropsLayer'
 import type { LayerVisibility, PropVisibility } from '../types'
+import { platform } from '../platform'
 
 interface OfficialModeMapData {
   stages: StageConfig[]
@@ -47,6 +48,7 @@ interface OfficialModeMapData {
 interface MapViewProps {
   config: MapConfig
   modeData: OfficialModeMapData | null
+  propsOverride?: MapProp[]
   modeStageId: string | null
   view: Side
   tool: ToolMode
@@ -175,6 +177,80 @@ function MapResizeSync() {
   return null
 }
 
+function RouteEditorTrigger({ route, onOpen }: { route: TacticalRoute; onOpen: () => void }) {
+  const map = useMap()
+  const markerRef = useRef<L.Marker | null>(null)
+  const onOpenRef = useRef(onOpen)
+  onOpenRef.current = onOpen
+  const routeNorthEast = useMemo(() => {
+    const bounds = L.latLngBounds(route.waypoints.map(([lat, lng]) => L.latLng(lat, lng)))
+    return bounds.getNorthEast()
+  }, [route.waypoints])
+  const [position, setPosition] = useState(routeNorthEast)
+  const buttonSize = platform.kind === 'android' ? 36 : 30
+  const icon = useMemo(() => L.divIcon({
+    className: 'route-editor-trigger-wrap',
+    html: '<button type="button" class="route-editor-trigger" title="编辑行动指令" aria-label="编辑行动指令"><i class="fa-solid fa-route" aria-hidden="true"></i></button>',
+    iconSize: [buttonSize, buttonSize],
+    iconAnchor: [buttonSize / 2, buttonSize / 2],
+  }), [buttonSize])
+
+  useEffect(() => {
+    const updatePosition = () => {
+      const size = map.getSize()
+      const margin = buttonSize / 2 + 4
+      const desired = map.latLngToContainerPoint(routeNorthEast).add([buttonSize / 2 + 8, 0])
+      const clamped = L.point(
+        Math.max(margin, Math.min(size.x - margin, desired.x)),
+        Math.max(margin, Math.min(size.y - margin, desired.y)),
+      )
+      setPosition(map.containerPointToLatLng(clamped))
+    }
+    updatePosition()
+    map.on('move zoom resize', updatePosition)
+    return () => { map.off('move zoom resize', updatePosition) }
+  }, [map, routeNorthEast, buttonSize])
+
+  useEffect(() => {
+    const button = markerRef.current?.getElement()?.querySelector<HTMLElement>('.route-editor-trigger')
+    if (!button) return
+    const stopPointer = (event: Event) => L.DomEvent.stop(event)
+    const openOnPointerUp = (event: Event) => {
+      L.DomEvent.stop(event)
+      // 等本次触摸产生的合成 click 完整结束后再卸载 Marker、打开面板，
+      // 避免 click 落到下方路线并再次执行“选中路线 = 收起面板”。
+      window.setTimeout(() => onOpenRef.current(), 0)
+    }
+    L.DomEvent.on(button, 'pointerdown', stopPointer)
+    L.DomEvent.on(button, 'pointerup', openOnPointerUp)
+    return () => {
+      L.DomEvent.off(button, 'pointerdown', stopPointer)
+      L.DomEvent.off(button, 'pointerup', openOnPointerUp)
+    }
+  }, [icon])
+
+  return (
+    <Marker
+      ref={markerRef}
+      position={position}
+      icon={icon}
+      zIndexOffset={1250}
+      keyboard={false}
+      eventHandlers={{
+        mousedown: (event) => {
+          L.DomEvent.stop(event.originalEvent)
+          L.DomEvent.stopPropagation(event)
+        },
+        click: (event) => {
+          L.DomEvent.stop(event.originalEvent)
+          L.DomEvent.stopPropagation(event)
+          // pointerup 已统一负责打开；此处仅隔离 Leaflet/地图的合成 click。
+        },
+      }}
+    />
+  )
+}
+
 const STATUS_TEXT: Record<PointStatus, string> = {
   active: '争夺中',
   captured: '已攻下',
@@ -184,6 +260,7 @@ const STATUS_TEXT: Record<PointStatus, string> = {
 export default function MapView({
   config,
   modeData,
+  propsOverride,
   modeStageId,
   view,
   tool,
@@ -256,11 +333,13 @@ export default function MapView({
   const [draft, setDraft] = useState('')
   const [routeDraftSource, setRouteDraftSource] = useState<RouteDraftSource>(null)
   const [selectedRouteUid, setSelectedRouteUid] = useState<string | null>(null)
+  const [routeEditorOpen, setRouteEditorOpen] = useState(false)
   const [branchPickRouteUid, setBranchPickRouteUid] = useState<string | null>(null)
 
   useEffect(() => {
     setRouteDraftSource(null)
     setSelectedRouteUid(null)
+    setRouteEditorOpen(false)
     setBranchPickRouteUid(null)
   }, [view])
   useEffect(() => {
@@ -280,15 +359,16 @@ export default function MapView({
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
-  const rightPanelWidth = vw <= 640 ? '200px' : '250px'
+  const rightPanelWidth = platform.kind === 'android' ? '200px' : vw <= 640 ? '200px' : '250px'
+  const leftPanelWidth = platform.kind === 'android' ? 'min(58vw, 260px)' : 'var(--left-panel-width, 300px)'
 
   const panelInsetVars = useMemo(
     () =>
       ({
-        '--left-panel-w': leftOpen ? 'var(--left-panel-width, 300px)' : '0px',
+        '--left-panel-w': leftOpen ? leftPanelWidth : '0px',
         '--right-panel-w': rightOpen ? rightPanelWidth : '0px',
       }) as CSSProperties,
-    [leftOpen, rightOpen, rightPanelWidth],
+    [leftOpen, leftPanelWidth, rightOpen, rightPanelWidth],
   )
 
   const handleStartEdit = useCallback((edit: ActiveTextEdit) => {
@@ -397,6 +477,8 @@ export default function MapView({
   )
   const handleSelectRoute = useCallback((uid: string | null) => {
     setSelectedRouteUid(uid)
+    // 路线与普通图形一致：选中只显示紧凑入口，完整属性面板由用户主动打开。
+    setRouteEditorOpen(false)
     setBranchPickRouteUid((current) => current === uid ? current : null)
     if (uid) onCloseDetail()
   }, [onCloseDetail])
@@ -477,6 +559,7 @@ export default function MapView({
         minZoom={config.minZoom}
         maxZoom={config.maxZoom}
         zoomControl={true}
+        touchZoom={true}
         attributionControl={false}
         // 绘制工具激活时进入绘制模式：CSS 物理屏蔽非绘制图层鼠标事件
         className={`tactical-map${drawing ? ' drawing-mode' : ''}`}
@@ -497,7 +580,7 @@ export default function MapView({
           visible={layers.props}
           propVis={propVis}
           interactive={interactive}
-          propsOverride={modeData?.props}
+          propsOverride={modeData?.props ?? propsOverride}
         />
         <PointMarkers
           stages={runtimeStages}
@@ -554,6 +637,13 @@ export default function MapView({
             onToggleSide={onToggleBuildingSide}
             onChangeTeam={onChangeBuildingTeam}
             onDelete={onDeleteBuilding}
+            onStartRoute={(uid) => {
+              onTool('pan')
+              onCloseDetail()
+              setSelectedRouteUid(null)
+              setBranchPickRouteUid(null)
+              setRouteDraftSource({ kind: 'building', buildingUid: uid })
+            }}
           />
         )}
         {/* 兵棋推演：干员标记层（视角桶内含双方 40 人；我方绿圈可交互，敌方红圈亦可部署/连线对抗） */}
@@ -567,7 +657,6 @@ export default function MapView({
             pendingConnect={pendingConnect}
             interactive={interactive}
             onMove={onMoveOperator}
-            routes={routes}
             onClearDeploy={onClearOperatorDeploy}
             onStartRoute={(uid) => {
               onTool('pan')
@@ -589,6 +678,7 @@ export default function MapView({
             teams={teams}
             operators={operators}
             vehicles={vehicles}
+            buildings={buildings}
             snapTargets={routeSnapTargets}
             draftSource={routeDraftSource}
             selectedUid={selectedRouteUid}
@@ -605,6 +695,9 @@ export default function MapView({
             onPatch={onUpdateRoute}
             onDelete={onDeleteRoute}
           />
+        )}
+        {selectedRoute && !routeDrawing && !routeEditorOpen && (
+          <RouteEditorTrigger route={selectedRoute} onOpen={() => setRouteEditorOpen(true)} />
         )}
         {wargame.enabled && (
           <TeamLayer
@@ -662,7 +755,7 @@ export default function MapView({
         />
       </MapContainer>
 
-      {selectedRoute && !routeDrawing && (
+      {selectedRoute && !routeDrawing && routeEditorOpen && (
         <RouteEditorPanel
           key={selectedRoute.uid}
           route={selectedRoute}
@@ -688,6 +781,7 @@ export default function MapView({
             }
             onCreateRoute(copy)
             setSelectedRouteUid(copy.uid)
+            setRouteEditorOpen(false)
           }}
           onReverse={() => onUpdateRoute(selectedRoute.uid, {
             waypoints: [...selectedRoute.waypoints].reverse(),
@@ -704,10 +798,11 @@ export default function MapView({
           onDelete={() => {
             onDeleteRoute(selectedRoute.uid)
             setSelectedRouteUid(null)
+            setRouteEditorOpen(false)
             setBranchPickRouteUid(null)
           }}
           onClose={() => {
-            setSelectedRouteUid(null)
+            setRouteEditorOpen(false)
             setBranchPickRouteUid(null)
           }}
         />

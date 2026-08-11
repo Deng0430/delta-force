@@ -1,10 +1,12 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { CircleMarker, Marker, Polyline, Tooltip, useMap, useMapEvents } from 'react-leaflet'
 import * as L from 'leaflet'
-import type { OperatorTeam, OperatorUnit, Side, TacticalRoute, TacticalRouteTarget, TeamMarker, VehicleItem } from '../types'
+import type { BuildingUnit, OperatorTeam, OperatorUnit, Side, TacticalRoute, TacticalRouteTarget, TeamMarker, VehicleItem } from '../types'
 import { ORDER_STATUS_OPTIONS, orderStatusLabel, orderTypeOf, routeVisual } from '../config/routes'
 import { teamOf } from '../config/operators'
 import { genUid } from '../utils/geo'
+import { platform } from '../platform'
 
 export interface RouteSnapTarget extends TacticalRouteTarget {
   lat: number
@@ -22,6 +24,7 @@ export type RouteDraftSource =
   | { kind: 'team'; teamUid: string }
   | { kind: 'operator'; operatorUid: string }
   | { kind: 'vehicle'; vehicleUid: string }
+  | { kind: 'building'; buildingUid: string }
   | { kind: 'branch'; routeUid: string; waypointIndex: number }
   | null
 
@@ -31,6 +34,7 @@ interface RouteLayerProps {
   teams: TeamMarker[]
   operators: OperatorUnit[]
   vehicles: VehicleItem[]
+  buildings: BuildingUnit[]
   snapTargets: RouteSnapTarget[]
   draftSource: RouteDraftSource
   selectedUid: string | null
@@ -345,7 +349,7 @@ function SelectedRouteEditor({ route, interactive, snapTargets, branchPicking, o
 
   return (
     <>
-      <Polyline positions={renderedWaypoints} pathOptions={{ ...visual, interactive: false }} />
+      <Polyline positions={renderedWaypoints} pathOptions={{ ...visual, interactive: false, className: 'route-selected-line' }} />
       <Marker position={renderedWaypoints.at(-1)!} icon={routeArrowIcon({ ...route, waypoints: renderedWaypoints }, visual.color)} interactive={false} zIndexOffset={950} />
       {renderedWaypoints.map((point, index) => (
         <Marker
@@ -358,6 +362,7 @@ function SelectedRouteEditor({ route, interactive, snapTargets, branchPicking, o
             click: (e) => {
               L.DomEvent.stopPropagation(e)
               if (branchPicking) onBranchPoint(index)
+              else if (platform.kind === 'android') deleteWaypoint(index)
             },
             contextmenu: (e) => {
               L.DomEvent.stop(e.originalEvent)
@@ -393,7 +398,7 @@ function SelectedRouteEditor({ route, interactive, snapTargets, branchPicking, o
                       ? '路线节点锚点'
                       : '自由起点 · 拖到兵棋或其他路线节点可吸附绑定'
               : route.waypoints.length > 2
-                ? `${index === route.waypoints.length - 1 ? '终点' : `途经点 ${index}`} · 拖动调整 · 右键删除`
+                ? `${index === route.waypoints.length - 1 ? '终点' : `途经点 ${index}`} · 拖动调整 · ${platform.kind === 'android' ? '轻触删除' : '右键删除'}`
                 : '终点 · 拖动调整 · 路线至少保留一个终点'}
           </Tooltip>
         </Marker>
@@ -436,11 +441,56 @@ function SelectedRouteEditor({ route, interactive, snapTargets, branchPicking, o
   )
 }
 
-export default function RouteLayer({ routes, view, teams, operators, vehicles, snapTargets, draftSource, selectedUid, branchPicking, interactive, onSelect, onBranchPoint, onDraftEnd, onCreate, onPatch, onDelete }: RouteLayerProps) {
+export default function RouteLayer({ routes, view, teams, operators, vehicles, buildings, snapTargets, draftSource, selectedUid, branchPicking, interactive, onSelect, onBranchPoint, onDraftEnd, onCreate, onPatch, onDelete }: RouteLayerProps) {
   const map = useMap()
   const [draftPoints, setDraftPoints] = useState<[number, number][]>([])
   const [passiveDragPreview, setPassiveDragPreview] = useState<{ uid: string; waypoints: [number, number][] } | null>(null)
+  const [anchorDragPreview, setAnchorDragPreview] = useState<{ kind: 'operator' | 'team'; uid: string; point: [number, number] } | null>(null)
+  const anchorDragFrameRef = useRef<number | null>(null)
+  const pendingAnchorDragRef = useRef<{ kind: 'operator' | 'team'; uid: string; point: [number, number] } | null>(null)
   const draftPointsRef = useRef<[number, number][]>([])
+  const mobileActionsRef = useRef<HTMLDivElement | null>(null)
+
+  // 兵棋拖动只在 RouteLayer 内生成轻量预览，并按动画帧节流；最终数据仍在 dragend 提交。
+  useEffect(() => {
+    const eventName = 'mobile-route-anchor-drag'
+    const onAnchorDrag = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        phase: 'move' | 'end'
+        kind: 'operator' | 'team'
+        uid: string
+        lat: number
+        lng: number
+      }>).detail
+      if (!detail) return
+      if (detail.phase === 'end') {
+        pendingAnchorDragRef.current = null
+        if (anchorDragFrameRef.current != null) window.cancelAnimationFrame(anchorDragFrameRef.current)
+        anchorDragFrameRef.current = null
+        setAnchorDragPreview(null)
+        return
+      }
+      pendingAnchorDragRef.current = { kind: detail.kind, uid: detail.uid, point: [detail.lat, detail.lng] }
+      if (anchorDragFrameRef.current != null) return
+      anchorDragFrameRef.current = window.requestAnimationFrame(() => {
+        anchorDragFrameRef.current = null
+        setAnchorDragPreview(pendingAnchorDragRef.current)
+      })
+    }
+    window.addEventListener(eventName, onAnchorDrag)
+    return () => {
+      window.removeEventListener(eventName, onAnchorDrag)
+      if (anchorDragFrameRef.current != null) window.cancelAnimationFrame(anchorDragFrameRef.current)
+    }
+  }, [])
+
+  const previewWaypoints = useCallback((route: TacticalRoute): [number, number][] => {
+    if (!anchorDragPreview) return route.waypoints
+    const matches = anchorDragPreview.kind === 'operator'
+      ? route.anchorMode === 'operator' && route.anchorOperatorUid === anchorDragPreview.uid
+      : route.anchorMode === 'team' && route.teamMarkerUid === anchorDragPreview.uid
+    return matches ? [anchorDragPreview.point, ...route.waypoints.slice(1)] : route.waypoints
+  }, [anchorDragPreview])
 
   const draftContext = useMemo(() => {
     if (!draftSource) return null
@@ -459,11 +509,16 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, s
       if (!vehicle) return null
       return { point: [vehicle.lat, vehicle.lng] as [number, number], side: vehicle.side, team: vehicle.team ?? 'A', teamMarkerUid: '', name: `${vehicle.name}任务`, parent: undefined as TacticalRoute | undefined, vehicle }
     }
+    if (draftSource.kind === 'building') {
+      const building = buildings.find((item) => item.uid === draftSource.buildingUid)
+      if (!building) return null
+      return { point: [building.lat, building.lng] as [number, number], side: building.side, team: building.team ?? 'A', teamMarkerUid: '', name: `${building.name}行动`, parent: undefined as TacticalRoute | undefined, building }
+    }
     const parent = routes.find((route) => route.uid === draftSource.routeUid)
     const point = parent?.waypoints[draftSource.waypointIndex]
     if (!parent || !point) return null
     return { point, side: parent.side, team: parent.team, teamMarkerUid: parent.teamMarkerUid, name: `${parent.name} · 分支`, parent }
-  }, [draftSource, teams, operators, vehicles, routes])
+  }, [draftSource, teams, operators, vehicles, buildings, routes])
 
   useEffect(() => {
     if (!draftContext) {
@@ -484,6 +539,13 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, s
     return () => { if (wasEnabled) map.doubleClickZoom.enable() }
   }, [map, draftContext])
 
+  useEffect(() => {
+    const element = mobileActionsRef.current
+    if (!draftContext || !element) return
+    L.DomEvent.disableClickPropagation(element)
+    L.DomEvent.disableScrollPropagation(element)
+  }, [draftContext])
+
   const addPoint = useCallback((point: [number, number]) => {
     const next = [...draftPointsRef.current, point]
     draftPointsRef.current = next
@@ -496,6 +558,13 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, s
     onDraftEnd()
   }, [onDraftEnd])
 
+  const undoDraftPoint = useCallback(() => {
+    if (draftPointsRef.current.length <= 1) return
+    const next = draftPointsRef.current.slice(0, -1)
+    draftPointsRef.current = next
+    setDraftPoints(next)
+  }, [])
+
   const finishDraft = useCallback(() => {
     if (!draftContext || draftPointsRef.current.length < 2) {
       cancelDraft()
@@ -507,6 +576,7 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, s
     const parent = draftContext.parent
     const operator = 'operator' in draftContext ? draftContext.operator : undefined
     const vehicle = 'vehicle' in draftContext ? draftContext.vehicle : undefined
+    const building = 'building' in draftContext ? draftContext.building : undefined
     const defaultType = operator || vehicle ? 'move' : 'attack'
     const meta = parent ? orderTypeOf(parent.orderType) : orderTypeOf(defaultType)
     const route: TacticalRoute = {
@@ -514,7 +584,7 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, s
       side: draftContext.side,
       team: draftContext.team,
       teamMarkerUid: draftContext.teamMarkerUid,
-      anchorMode: parent ? 'branch' : operator ? 'operator' : vehicle ? 'vehicle' : 'team',
+      anchorMode: parent ? 'branch' : operator ? 'operator' : vehicle ? 'vehicle' : building ? 'free' : 'team',
       anchorOperatorUid: operator?.uid,
       anchorVehicleUid: vehicle?.uid,
       name: draftContext.name,
@@ -548,7 +618,10 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, s
     return () => window.removeEventListener('keydown', onKey)
   }, [selectedUid, onDelete, onSelect])
 
-  const selectedRoute = routes.find((route) => route.uid === selectedUid) ?? null
+  const selectedRouteBase = routes.find((route) => route.uid === selectedUid) ?? null
+  const selectedRoute = selectedRouteBase
+    ? { ...selectedRouteBase, waypoints: previewWaypoints(selectedRouteBase) }
+    : null
 
   return (
     <>
@@ -564,12 +637,12 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, s
             ? `${route.vehicleIds.length}辆载具`
             : '未指定执行单位'
         const teamColor = teamOf(route.team).color
-        const renderedWaypoints = passiveDragPreview?.uid === route.uid ? passiveDragPreview.waypoints : route.waypoints
+        const renderedWaypoints = passiveDragPreview?.uid === route.uid ? passiveDragPreview.waypoints : previewWaypoints(route)
         return (
           <Fragment key={route.uid}>
             <Polyline
               positions={renderedWaypoints}
-              pathOptions={{ color: teamColor, weight: 18, opacity: 0, interactive, bubblingMouseEvents: false }}
+              pathOptions={{ color: teamColor, weight: 18, opacity: 0, interactive, bubblingMouseEvents: false, className: 'route-hit-area' }}
               eventHandlers={{
                 click: (e) => {
                   L.DomEvent.stopPropagation(e)
@@ -587,7 +660,7 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, s
             >
               <Tooltip sticky direction="top" opacity={0.96}>
                 {type.label} · {orderStatusLabel(route.status)} · {route.name}<br />
-                {route.operatorIds.length} 干员 · {route.vehicleIds.length} 载具 · 双击线段插入途经点
+                {route.operatorIds.length} 干员 · {route.vehicleIds.length} 载具 · {platform.kind === 'android' ? '快速双击路线添加途经点' : '双击线段插入途经点'}
               </Tooltip>
             </Polyline>
             {!selected && (
@@ -607,7 +680,14 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, s
                 eventHandlers={{
                   click: (e) => {
                     L.DomEvent.stopPropagation(e)
-                    onSelect(route.uid)
+                    if (platform.kind === 'android' && route.waypoints.length > 2) {
+                      onPatch(route.uid, {
+                        waypoints: route.waypoints.filter((_, waypointIndex) => waypointIndex !== index),
+                        target: route.target,
+                      })
+                    } else {
+                      onSelect(route.uid)
+                    }
                   },
                   contextmenu: (e) => {
                     L.DomEvent.stop(e.originalEvent)
@@ -642,7 +722,7 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, s
                 }}
               >
                 <Tooltip direction="top" offset={[0, -9]} opacity={0.94}>
-                  {`途经点 ${index} · 拖动调整 · 右键删除`}
+                  {`途经点 ${index} · 拖动调整 · ${platform.kind === 'android' ? '轻触删除' : '右键删除'}`}
                 </Tooltip>
               </Marker>
               )
@@ -693,9 +773,23 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, s
             )}
             interactive={false}
           >
-            <Tooltip permanent direction="top" offset={[0, -9]}>单击添加途经点 · 右键/双击/Enter 完成 · Esc 取消</Tooltip>
+            <Tooltip permanent direction="top" offset={[0, -9]}>{platform.kind === 'android' ? '轻触地图添加途经点 · 使用下方按钮撤销、完成或取消' : '单击添加途经点 · 右键/双击/Enter 完成 · Esc 取消'}</Tooltip>
           </Marker>
         </>
+      )}
+      {draftContext && createPortal(
+        <div ref={mobileActionsRef} className="route-mobile-actions" role="toolbar" aria-label="路线绘制控制" onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+          <button type="button" onClick={undoDraftPoint} disabled={draftPoints.length <= 1}>
+            <i className="fa-solid fa-rotate-left" aria-hidden="true" /> 撤销节点
+          </button>
+          <button type="button" className="primary" onClick={(event) => { event.stopPropagation(); finishDraft() }} disabled={draftPoints.length < 2}>
+            <i className="fa-solid fa-check" aria-hidden="true" /> 完成路线
+          </button>
+          <button type="button" className="danger" onClick={cancelDraft}>
+            <i className="fa-solid fa-xmark" aria-hidden="true" /> 取消
+          </button>
+        </div>,
+        map.getContainer(),
       )}
     </>
   )

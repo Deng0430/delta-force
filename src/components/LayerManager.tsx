@@ -5,6 +5,7 @@ import * as L from 'leaflet'
 import type { Feature, FeatureCollection, Point } from 'geojson'
 import type { ActiveTextEdit, ArrowHeadStyle, DashType, DrawSettings, OperatorUnit, Side, TeamMarker, TextStyleProps, ToolMode, VehicleItem } from '../types'
 import { DEFAULT_TEXT_STYLE, ellipsePoints, genUid, textIcon, textStyleFromProps, textStyleToProps } from '../utils/geo'
+import { platform } from '../platform'
 
 export const SIDE_COLORS: Record<Side, string> = {
   attack: '#2f6fed',
@@ -106,6 +107,30 @@ function bezierPoints(s: L.LatLng, c: L.LatLng, e: L.LatLng, N = 30): L.LatLng[]
 }
 
 /**
+ * 拖动手绘路径端点时按路径累计长度渐进分配位移。
+ * 起点拖动：影响从 100% 衰减到 0%；终点拖动：从 0% 增强到 100%。
+ */
+function deformFreehandEndpoint(pts: L.LatLng[], cur: L.LatLng, endIndex: 0 | 1): L.LatLng[] {
+  if (pts.length < 2) return pts
+  const oldEnd = endIndex === 0 ? pts[0] : pts[pts.length - 1]
+  const dLat = cur.lat - oldEnd.lat
+  const dLng = cur.lng - oldEnd.lng
+  const distances = [0]
+  for (let index = 1; index < pts.length; index++) {
+    distances.push(distances[index - 1] + Math.hypot(
+      pts[index].lat - pts[index - 1].lat,
+      pts[index].lng - pts[index - 1].lng,
+    ))
+  }
+  const total = distances[distances.length - 1]
+  return pts.map((point, index) => {
+    const progress = total > 1e-9 ? distances[index] / total : index / Math.max(1, pts.length - 1)
+    const ratio = endIndex === 0 ? 1 - progress : progress
+    return L.latLng(point.lat + dLat * ratio, point.lng + dLng * ratio)
+  })
+}
+
+/**
  * 防线要素生成（第二十二轮再改：纯三角形组成的线条——战略地图防线带）。
  * 三角形尺寸随画笔粗细（weight）等比缩放：底边 = weight、尖端外凸 = weight、
  * 间距 = weight（底边首尾相接，形成连续锯齿条带），不绘制主线。
@@ -198,8 +223,8 @@ const ARROW_STYLE_PATHS: Record<ArrowHeadStyle, { d: string; stroke?: boolean }>
 }
 
 /** 箭头 marker id（按形状+大小区分，如 draw-arrow-triangle-12） */
-function arrowMarkerId(style: ArrowHeadStyle, size: number): string {
-  return `draw-arrow-${style}-${size}`
+function arrowMarkerId(style: ArrowHeadStyle, size: number, color: string): string {
+  return `draw-arrow-${style}-${size}-${color.replace(/[^a-z0-9]/gi, '')}`
 }
 
 /** 已注入的箭头 marker 缓存（按地图） */
@@ -211,11 +236,11 @@ const arrowDefCache = new WeakMap<L.Map, Set<string>>()
  * markerUnits=userSpaceOnUse 保证箭头像素大小恒定、不随缩放变形；fill 用
  * context-stroke 使箭头颜色始终跟随线条颜色。
  */
-function ensureArrowMarkerDef(map: L.Map, style: ArrowHeadStyle, size: number) {
+function ensureArrowMarkerDef(map: L.Map, style: ArrowHeadStyle, size: number, color: string) {
   const pane = map.getPane(DRAW_PANE)
   const svg = pane?.querySelector('svg')
   if (!svg) return
-  const id = arrowMarkerId(style, size)
+  const id = arrowMarkerId(style, size, color)
   let cache = arrowDefCache.get(map)
   if (!cache) {
     cache = new Set()
@@ -240,9 +265,9 @@ function ensureArrowMarkerDef(map: L.Map, style: ArrowHeadStyle, size: number) {
   marker.setAttribute('orient', 'auto')
   const path = document.createElementNS(NS, 'path')
   path.setAttribute('d', spec.d)
-  path.setAttribute('fill', spec.stroke ? 'none' : 'context-stroke')
+  path.setAttribute('fill', spec.stroke ? 'none' : color)
   if (spec.stroke) {
-    path.setAttribute('stroke', 'context-stroke')
+    path.setAttribute('stroke', color)
     // viewBox 会随 marker 尺寸整体缩放，描边无需再乘一次尺寸系数。
     path.setAttribute('stroke-width', '1.6')
     path.setAttribute('stroke-linecap', 'round')
@@ -262,13 +287,14 @@ function ensureArrowMarkerDef(map: L.Map, style: ArrowHeadStyle, size: number) {
 function decorateArrowMarker(line: L.Layer, props: Record<string, unknown>) {
   const style = (String(props.arrowStyle ?? DEFAULT_ARROW_STYLE) as ArrowHeadStyle) || DEFAULT_ARROW_STYLE
   const size = Number(props.arrowSize ?? DEFAULT_ARROW_SIZE) || DEFAULT_ARROW_SIZE
+  const color = String(props.color ?? '#ffd54a')
   line.on('add', () => {
     // _path 为 Leaflet 内部 SVG 元素，类型未暴露
     const path = (line as unknown as { _path?: SVGElement })._path
     if (path) {
       // 确保对应形状/大小的 marker def 已注入
-      ensureArrowMarkerDef((line as unknown as { _map?: L.Map })._map as L.Map, style, size)
-      path.setAttribute('marker-end', `url(#${arrowMarkerId(style, size)})`)
+      ensureArrowMarkerDef((line as unknown as { _map?: L.Map })._map as L.Map, style, size, color)
+      path.setAttribute('marker-end', `url(#${arrowMarkerId(style, size, color)})`)
     }
   })
 }
@@ -350,8 +376,47 @@ function deriveCurveCtrl(pts: L.LatLng[]): L.LatLng {
   return L.latLng(2 * m.lat - (s.lat + e.lat) / 2, 2 * m.lng - (s.lng + e.lng) / 2)
 }
 
-/** 从防线三角组重建原始路径（每个三角的底边中点 = 路径采样点，按最近邻串联） */
-function reconstructDefensePath(layers: L.Layer[]): { path: L.LatLng[]; weight: number } {
+type DefenseCurve = 'straight' | 'smooth' | 'freehand'
+
+function storedDefensePathOf(layer: L.Layer): L.LatLng[] {
+  const props = ((layer as AnyWithFeature).feature?.properties ?? {}) as Record<string, unknown>
+  const rawPath = props.defensePath
+  return Array.isArray(rawPath)
+    ? rawPath.flatMap((point) => (
+        Array.isArray(point) && point.length >= 2 && Number.isFinite(Number(point[0])) && Number.isFinite(Number(point[1]))
+          ? [L.latLng(Number(point[1]), Number(point[0]))]
+          : []
+      ))
+    : []
+}
+
+function setStoredDefensePath(layer: L.Layer, path: L.LatLng[]) {
+  if (path.length < 2) return
+  const props = ((layer as AnyWithFeature).feature?.properties ?? {}) as Record<string, unknown>
+  if (props.type !== 'defense') return
+  props.defensePath = path.map((point) => [point.lng, point.lat])
+}
+
+/** 从防线三角组恢复逻辑中心路径；新数据优先读取绘制时保存的原始路径。 */
+function reconstructDefensePath(layers: L.Layer[]): {
+  path: L.LatLng[]
+  weight: number
+  curve: DefenseCurve
+  curveCtrl?: L.LatLng
+} {
+  const props = ((layers[0] as AnyWithFeature | undefined)?.feature?.properties ?? {}) as Record<string, unknown>
+  const weight = Number(props.weight ?? 3)
+  const storedPath = layers[0] ? storedDefensePathOf(layers[0]) : []
+  const storedCurve: DefenseCurve = props.curve === 'smooth' || props.curve === 'freehand' ? props.curve : 'straight'
+  if (storedPath.length >= 2) {
+    return {
+      path: storedPath,
+      weight,
+      curve: storedCurve,
+      curveCtrl: storedCurve === 'smooth' ? deriveCurveCtrl(storedPath) : undefined,
+    }
+  }
+
   const mids: L.LatLng[] = []
   for (const l of layers) {
     const ring = flatLatLngs(l)
@@ -359,8 +424,7 @@ function reconstructDefensePath(layers: L.Layer[]): { path: L.LatLng[]; weight: 
       mids.push(L.latLng((ring[1].lat + ring[2].lat) / 2, (ring[1].lng + ring[2].lng) / 2))
     }
   }
-  const weight = Number(((layers[0] as AnyWithFeature | undefined)?.feature?.properties as Record<string, unknown> | undefined)?.weight ?? 3)
-  if (mids.length <= 1) return { path: mids, weight }
+  if (mids.length <= 1) return { path: mids, weight, curve: 'straight' }
   // 最近邻串联：从第一个三角开始，每次取最近的未访问点
   const path: L.LatLng[] = [mids[0]]
   const rest = mids.slice(1)
@@ -378,7 +442,24 @@ function reconstructDefensePath(layers: L.Layer[]): { path: L.LatLng[]; weight: 
     path.push(rest[best])
     rest.splice(best, 1)
   }
-  return { path, weight }
+  // 兼容旧数据：共线采样点按直线处理；否则按平滑曲线近似恢复。
+  const start = path[0]
+  const end = path[path.length - 1]
+  const chord = Math.hypot(end.lat - start.lat, end.lng - start.lng)
+  const maxDeviation = chord < 1e-9
+    ? 0
+    : Math.max(...path.map((point) => Math.abs(
+        (end.lng - start.lng) * (start.lat - point.lat)
+        - (start.lng - point.lng) * (end.lat - start.lat),
+      ) / chord))
+  const curve: DefenseCurve = maxDeviation <= Math.max(0.25, weight * 0.15) ? 'straight' : 'smooth'
+  const logicalPath = curve === 'straight' ? [start, end] : path
+  return {
+    path: logicalPath,
+    weight,
+    curve,
+    curveCtrl: curve === 'smooth' ? deriveCurveCtrl(logicalPath) : undefined,
+  }
 }
 
 /** 编辑交互会话（第十五轮；第十六轮：支持多选 keys） */
@@ -397,7 +478,7 @@ interface EditInteract {
   /** 图形中心（缩放/旋转） */
   center?: L.LatLng
   /** 各图层基准顶点（Marker 存 [位置]） */
-  layers: { layer: L.Layer; pts: L.LatLng[] }[]
+  layers: { layer: L.Layer; pts: L.LatLng[]; defensePath?: L.LatLng[] }[]
   /** 文字框变换基准 */
   text?: { pos: L.LatLng; fontSize: number; width: number; rotation: number }
   /** 圆形/椭圆（方向拉伸） */
@@ -405,6 +486,8 @@ interface EditInteract {
   /** 防线重建路径 */
   path?: L.LatLng[]
   weight?: number
+  defenseCurve?: DefenseCurve
+  defenseCurveCtrl?: L.LatLng
   /** 平滑曲线端点调整时保留的原二次贝塞尔控制点。 */
   curveCtrl?: L.LatLng
   /** 等比例缩放（Shift） */
@@ -421,6 +504,21 @@ interface ShapePointerPress {
   startPoint: L.Point
   downEvent: L.LeafletMouseEvent
   dragging: boolean
+}
+
+interface AndroidPinchScaleSession {
+  before: string
+  startDistance: number
+  center: L.LatLng
+  layers: Array<{
+    layer: AnyWithFeature
+    pts: L.LatLng[]
+    defensePath?: L.LatLng[]
+    textStyle?: TextStyleProps
+    text?: string
+    radius?: number
+    radiusY?: number
+  }>
 }
 
 /**
@@ -471,6 +569,12 @@ export default function LayerManager({
   const selectedRef = useRef<Set<string>>(new Set())
   /** 编辑图形/控制点的指针会话锁：防止当前绘图工具同时创建新图形。 */
   const editPointerActiveRef = useRef(false)
+  /** Android 双指缩放选中图形的桥接回调；实现位于编辑器辅助函数之后。 */
+  const androidPinchActiveRef = useRef(false)
+  const androidPinchStartRef = useRef<(a: L.Point, b: L.Point) => boolean>(() => false)
+  const androidPinchMoveRef = useRef<(a: L.Point, b: L.Point) => void>(() => {})
+  const androidPinchEndRef = useRef<() => void>(() => {})
+  const androidPinchSessionRef = useRef<AndroidPinchScaleSession | null>(null)
   // 拖拽位移标记（第十二轮：区分"点击"与"拖动"。拖动结束后 Leaflet 仍会派发 click，
   // 若位移超过阈值则视为拖动，抑制 click 取消选中逻辑）
   const dragMovedRef = useRef(false)
@@ -558,6 +662,208 @@ export default function LayerManager({
     return () => {
       map.dragging.enable()
       container.classList.remove('draw-cursor')
+    }
+  }, [map, tool])
+
+  // Android WebView 的触控不会稳定地产生 Leaflet mousedown/mousemove/mouseup，
+  // 而现有绘制器以这组三段事件为统一协议。仅在 Android 绘制模式下桥接触控指针，
+  // PC 端继续走原生鼠标事件，避免改变桌面交互。
+  useEffect(() => {
+    if (platform.kind !== 'android') return
+    const container = map.getContainer()
+    let activePointerId: number | null = null
+    let activePointerOnDrawLayer = false
+    let activePointerClearsSelection = false
+    let lastTouchPointerAt = 0
+    let lastValidPointerEvent: PointerEvent | null = null
+    const activePointers = new Map<number, PointerEvent>()
+    const bridgedMouseEvents = new WeakSet<MouseEvent>()
+
+    const pointerPoint = (event: PointerEvent) => {
+      const rect = container.getBoundingClientRect()
+      return L.point(event.clientX - rect.left - container.clientLeft, event.clientY - rect.top - container.clientTop)
+    }
+
+    const fireLeafletPointer = (type: 'mousedown' | 'mousemove' | 'mouseup' | 'click', event: PointerEvent) => {
+      // WebView 中直接以当前地图容器的 CSS 像素矩形换算，避免挖孔安全区、
+      // edge-to-edge 窗口或页面缩放使 Leaflet 的鼠标坐标换算产生二次偏移。
+      const rect = container.getBoundingClientRect()
+      const containerPoint = L.point(
+        event.clientX - rect.left - container.clientLeft,
+        event.clientY - rect.top - container.clientTop,
+      )
+      const layerPoint = map.containerPointToLayerPoint(containerPoint)
+      const latlng = map.layerPointToLatLng(layerPoint)
+      map.fire(type, { latlng, layerPoint, containerPoint, originalEvent: event })
+    }
+
+    const fireDrawLayerMouseDown = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Element)) return false
+      // Leaflet 的图形命中层和编辑手柄依赖各自的 mousedown 监听来建立拖拽会话。
+      // 只 map.fire('mousedown') 会绕过这些图层监听，因此在 Android 上向实际命中 DOM
+      // 补发一次鼠标按下；后续移动/松开仍通过地图事件统一驱动编辑主循环。
+      const mouse = new MouseEvent('mousedown', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        view: window,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        screenX: event.screenX,
+        screenY: event.screenY,
+        button: 0,
+        buttons: 1,
+      })
+      bridgedMouseEvents.add(mouse)
+      target.dispatchEvent(mouse)
+      return true
+    }
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.pointerType === 'mouse') return
+      if ((event.target as HTMLElement | null)?.closest('.leaflet-control-container')) return
+      const onDrawLayer = !!(event.target as HTMLElement | null)?.closest(DRAW_PANE_SELECTOR)
+      if (activePointerId != null) {
+        // 第二根手指只有在第一根手指从已选图形/编辑框开始时才由图形编辑器接管；
+        // 地图空白上的双指手势继续交给 Leaflet touchZoom。
+        if (!activePointerOnDrawLayer || activePointers.size !== 1) return
+        activePointers.set(event.pointerId, event)
+        const [first, second] = [...activePointers.values()]
+        if (!androidPinchStartRef.current(pointerPoint(first), pointerPoint(second))) {
+          activePointers.delete(event.pointerId)
+          return
+        }
+        androidPinchActiveRef.current = true
+        lastTouchPointerAt = performance.now()
+        try { container.setPointerCapture?.(event.pointerId) } catch { /* WebView may reject capture */ }
+        event.preventDefault()
+        return
+      }
+      // 平移模式的地图空白仍完全交给 Leaflet 原生触控拖图；只有命中已有图形或
+      // 编辑手柄时才接管，从而让移动端在 pan 模式也能编辑既有图形。
+      if (tool === 'pan' && !onDrawLayer) {
+        // 清除上一轮图形手势的兼容鼠标抑制窗口，确保紧接着点击空白能触发
+        // Leaflet click，从而立即取消图形选中。
+        lastTouchPointerAt = Number.NEGATIVE_INFINITY
+        return
+      }
+      lastTouchPointerAt = performance.now()
+      activePointerId = event.pointerId
+      activePointerOnDrawLayer = onDrawLayer
+      activePointerClearsSelection = !onDrawLayer && selectedRef.current.size > 0
+      activePointers.set(event.pointerId, event)
+      lastValidPointerEvent = event
+      try { container.setPointerCapture?.(event.pointerId) } catch { /* WebView may reject capture during handoff */ }
+      event.preventDefault()
+      if (onDrawLayer) {
+        // 在补发 Leaflet mousedown 之前先上编辑锁。这样即使 WebView/Leaflet 的事件
+        // 调度顺序发生变化，当前仍处于激活状态的防线绘制器也绝不会启动新线。
+        editPointerActiveRef.current = true
+        fireDrawLayerMouseDown(event)
+      }
+      else if (!activePointerClearsSelection && tool !== 'text') fireLeafletPointer('mousedown', event)
+    }
+    const onPointerMove = (event: PointerEvent) => {
+      if (!activePointers.has(event.pointerId)) return
+      lastTouchPointerAt = performance.now()
+      lastValidPointerEvent = event
+      activePointers.set(event.pointerId, event)
+      event.preventDefault()
+      if (androidPinchActiveRef.current && activePointers.size >= 2) {
+        const [first, second] = [...activePointers.values()]
+        androidPinchMoveRef.current(pointerPoint(first), pointerPoint(second))
+        return
+      }
+      if (activePointerId !== event.pointerId) return
+      if (!activePointerClearsSelection && tool !== 'text') fireLeafletPointer('mousemove', event)
+    }
+    const finishPointer = (event: PointerEvent) => {
+      if (!activePointers.has(event.pointerId)) return
+      lastTouchPointerAt = performance.now()
+      lastValidPointerEvent = event
+      event.preventDefault()
+      if (androidPinchActiveRef.current) {
+        androidPinchEndRef.current()
+        androidPinchActiveRef.current = false
+        for (const id of activePointers.keys()) {
+          try { container.releasePointerCapture?.(id) } catch { /* capture may already be released */ }
+        }
+        activePointers.clear()
+        activePointerId = null
+        activePointerOnDrawLayer = false
+        activePointerClearsSelection = false
+        lastValidPointerEvent = null
+        return
+      }
+      if (activePointerId !== event.pointerId) return
+      fireLeafletPointer(activePointerClearsSelection || (tool === 'text' && !activePointerOnDrawLayer) ? 'click' : 'mouseup', event)
+      try { container.releasePointerCapture?.(event.pointerId) } catch { /* capture may already be released */ }
+      activePointerId = null
+      activePointerOnDrawLayer = false
+      activePointerClearsSelection = false
+      activePointers.clear()
+      lastValidPointerEvent = null
+    }
+    const cancelPointer = (event: PointerEvent) => {
+      if (!activePointers.has(event.pointerId)) return
+      lastTouchPointerAt = performance.now()
+      event.preventDefault()
+      if (androidPinchActiveRef.current) {
+        androidPinchEndRef.current()
+        androidPinchActiveRef.current = false
+        for (const id of activePointers.keys()) {
+          try { container.releasePointerCapture?.(id) } catch { /* already released */ }
+        }
+        activePointerId = null
+        activePointerOnDrawLayer = false
+        activePointerClearsSelection = false
+        activePointers.clear()
+        lastValidPointerEvent = null
+        return
+      }
+      if (activePointerId !== event.pointerId) return
+      // pointercancel 在部分 Android WebView 中会报告 (0,0)。绝不能用取消事件本身
+      // 作为终点，否则所有图形都会跳向地图左上角。用最后一个有效采样点收尾；
+      // 文字工具的取消则不产生任何标注。
+      if (!activePointerClearsSelection && tool !== 'text' && lastValidPointerEvent) {
+        fireLeafletPointer('mouseup', lastValidPointerEvent)
+      }
+      try { container.releasePointerCapture?.(event.pointerId) } catch { /* already released */ }
+      activePointerId = null
+      activePointerOnDrawLayer = false
+      activePointerClearsSelection = false
+      activePointers.clear()
+      lastValidPointerEvent = null
+    }
+
+    // Chromium 会在触控 PointerEvent 之后补发 mousedown/mousemove/mouseup/click。
+    // 绘制器已由上面的桥接收到完整事件，必须在捕获阶段拦截这组兼容事件，
+    // 否则一次手势会被提交两次，第二次坐标会令图形跳到错误位置。
+    const suppressCompatibilityMouse = (event: MouseEvent) => {
+      if (bridgedMouseEvents.has(event)) return
+      if (performance.now() - lastTouchPointerAt > 900) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+    }
+
+    container.addEventListener('pointerdown', onPointerDown, { passive: false })
+    container.addEventListener('pointermove', onPointerMove, { passive: false })
+    container.addEventListener('pointerup', finishPointer, { passive: false })
+    container.addEventListener('pointercancel', cancelPointer, { passive: false })
+    container.addEventListener('mousedown', suppressCompatibilityMouse, true)
+    container.addEventListener('mousemove', suppressCompatibilityMouse, true)
+    container.addEventListener('mouseup', suppressCompatibilityMouse, true)
+    container.addEventListener('click', suppressCompatibilityMouse, true)
+    return () => {
+      container.removeEventListener('pointerdown', onPointerDown)
+      container.removeEventListener('pointermove', onPointerMove)
+      container.removeEventListener('pointerup', finishPointer)
+      container.removeEventListener('pointercancel', cancelPointer)
+      container.removeEventListener('mousedown', suppressCompatibilityMouse, true)
+      container.removeEventListener('mousemove', suppressCompatibilityMouse, true)
+      container.removeEventListener('mouseup', suppressCompatibilityMouse, true)
+      container.removeEventListener('click', suppressCompatibilityMouse, true)
     }
   }, [map, tool])
 
@@ -1251,6 +1557,7 @@ export default function LayerManager({
         decorateArrowMarker(line, {
           arrowStyle: draw.arrowStyle,
           arrowSize: draw.arrowSize,
+          color: draw.color,
         })
         return [line]
       }
@@ -1328,7 +1635,10 @@ export default function LayerManager({
         }
         for (const tri of df.triangles) {
           const poly = L.polygon(tri, triStyle)
-          commitLayer(make({ type: 'Polygon', coordinates: [coords(tri)] }, { group: uid }), poly)
+          commitLayer(make(
+            { type: 'Polygon', coordinates: [coords(tri)] },
+            { group: uid, curve: isCurve ? 'smooth' : 'straight', defensePath: coords(linePts) },
+          ), poly)
         }
       } else if (tool === 'arrow') {
         // 原生箭头：单条 LineString（type='arrow'），末端由 SVG marker-end 渲染箭头。
@@ -1412,6 +1722,18 @@ export default function LayerManager({
     }
 
     const onMouseMove = (e: L.LeafletMouseEvent) => {
+      // 已有图形/编辑手柄正在操作时，本绘制器只能保持空闲。Android 的合成
+      // mousemove 会同时到达 map，若不显式隔离会把端点拖动误当成新防线预览。
+      if (editPointerActiveRef.current && st.phase !== 'adjusting') {
+        if (st.phase === 'drawing') {
+          clearPreviews()
+          setDrawingGestureActive(map, false)
+          st.phase = 'idle'
+          st.start = undefined
+          st.end = undefined
+        }
+        return
+      }
       if (st.phase === 'drawing' && st.start) {
         st.end = e.latlng
         setPreviews(st.start, e.latlng)
@@ -1426,6 +1748,16 @@ export default function LayerManager({
     }
 
     const onMouseUp = (e: L.LeafletMouseEvent) => {
+      if (editPointerActiveRef.current && st.phase !== 'adjusting') {
+        if (st.phase === 'drawing') {
+          clearPreviews()
+          setDrawingGestureActive(map, false)
+          st.phase = 'idle'
+          st.start = undefined
+          st.end = undefined
+        }
+        return
+      }
       if (st.phase === 'drawing' && st.start) {
         setDrawingGestureActive(map, false)
         const end = e.latlng
@@ -2089,7 +2421,7 @@ export default function LayerManager({
         }
       } else {
         const line = L.polyline(st.pts, stylePreview)
-        if (tool === 'arrow') decorateArrowMarker(line, { arrowStyle: draw.arrowStyle, arrowSize: draw.arrowSize })
+        if (tool === 'arrow') decorateArrowMarker(line, { arrowStyle: draw.arrowStyle, arrowSize: draw.arrowSize, color: draw.color })
         st.previews.push(line.addTo(map))
       }
     }
@@ -2106,6 +2438,16 @@ export default function LayerManager({
     }
 
     const onMove = (e: L.LeafletMouseEvent) => {
+      if (editPointerActiveRef.current) {
+        if (st.drawing) {
+          st.drawing = false
+          setDrawingGestureActive(map, false)
+          st.previews.forEach((preview) => preview.remove())
+          st.previews = []
+          st.pts = []
+        }
+        return
+      }
       if (!st.drawing) return
       // 按容器像素距离过滤，控制轨迹点密度（与普通画笔一致）
       const last = st.pts[st.pts.length - 1]
@@ -2118,6 +2460,16 @@ export default function LayerManager({
     }
 
     const onUp = () => {
+      if (editPointerActiveRef.current) {
+        if (st.drawing) {
+          st.drawing = false
+          setDrawingGestureActive(map, false)
+          st.previews.forEach((preview) => preview.remove())
+          st.previews = []
+          st.pts = []
+        }
+        return
+      }
       if (!st.drawing) return
       st.drawing = false
       setDrawingGestureActive(map, false)
@@ -2147,7 +2499,7 @@ export default function LayerManager({
         for (const tri of df.triangles) {
           const feature: Feature = {
             type: 'Feature',
-            properties: { ...props, group: uid },
+            properties: { ...props, group: uid, curve: 'freehand', defensePath: coords(st.pts) },
             geometry: { type: 'Polygon', coordinates: [coords(tri)] },
           }
           const layer = L.polygon(tri, triStyle)
@@ -2328,6 +2680,64 @@ export default function LayerManager({
       })
     | null
   >(null)
+  const selPanelElRef = useRef<HTMLDivElement | null>(null)
+  const selPanelDragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null)
+  const selWeightDraftRef = useRef<number | null>(null)
+
+  const clampSelPanelPosition = useCallback((x: number, y: number) => {
+    const panel = selPanelElRef.current
+    const width = panel?.offsetWidth ?? 270
+    const height = panel?.offsetHeight ?? 240
+    const margin = 6
+    return {
+      x: Math.min(Math.max(margin, x), Math.max(margin, window.innerWidth - width - margin)),
+      y: Math.min(Math.max(margin, y), Math.max(margin, window.innerHeight - height - margin)),
+    }
+  }, [])
+
+  // Portal 首次渲染后才能取得真实尺寸；测量后立即把整个面板约束回可视区域。
+  useEffect(() => {
+    if (!selPanel) return
+    const frame = window.requestAnimationFrame(() => {
+      setSelPanel((current) => {
+        if (!current) return current
+        const next = clampSelPanelPosition(current.x, current.y)
+        return next.x === current.x && next.y === current.y ? current : { ...current, ...next }
+      })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [selPanel?.uid, selPanel?.kind, clampSelPanelPosition])
+
+  const startSelPanelDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest('button')) return
+    const panel = selPanelElRef.current
+    if (!panel) return
+    const rect = panel.getBoundingClientRect()
+    selPanelDragRef.current = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    event.preventDefault()
+    event.stopPropagation()
+  }, [])
+
+  const moveSelPanel = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = selPanelDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    const next = clampSelPanelPosition(event.clientX - drag.offsetX, event.clientY - drag.offsetY)
+    setSelPanel((current) => current ? { ...current, ...next } : current)
+    event.preventDefault()
+    event.stopPropagation()
+  }, [clampSelPanelPosition])
+
+  const stopSelPanelDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (selPanelDragRef.current?.pointerId !== event.pointerId) return
+    selPanelDragRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    event.stopPropagation()
+  }, [])
 
   /** 按 uid（组）收集目标图层：有 group 匹配整组（箭头/防线），否则单图层 */
   const targetLayersOf = useCallback((key: string): AnyWithFeature[] => {
@@ -2409,11 +2819,14 @@ export default function LayerManager({
 
   /** 重建防线三角带（端点拖拽时实时重生成） */
   const rebuildDefenseGroup = useCallback(
-    (uid: string, path: L.LatLng[], weight: number) => {
+    (uid: string, path: L.LatLng[], weight: number, curve: DefenseCurve) => {
       const g = fgRef.current
       const hit = hitRef.current
+      const highlights = hlRef.current
       if (!g) return
       const doomed = targetLayersOf(uid)
+      const doomedUids = new Set(doomed.map((layer) => String((layer.feature?.properties as Record<string, unknown> | undefined)?.uid ?? '')))
+      const wasSelected = [...doomedUids].some((id) => selectedRef.current.has(id))
       const props0 = (doomed[0]?.feature?.properties ?? {}) as Record<string, unknown>
       const color = String(props0.color ?? SIDE_COLORS[view])
       // 移除旧三角与旧命中层（先收集再删除，避免迭代中删除）
@@ -2426,6 +2839,17 @@ export default function LayerManager({
       })
       for (const d of doomed) g.removeLayer(d)
       for (const d of hitDoomed) hit?.removeLayer(d)
+      // 防线编辑会实时替换整组三角形。同步移除旧高亮和旧选中 uid，避免旧防线
+      // 作为一条“额外线”残留在画面上，并保证新生成的三角仍属于当前选中组。
+      const highlightDoomed: L.Layer[] = []
+      highlights?.eachLayer((layer) => {
+        const p = (layer as AnyWithFeature).feature?.properties as Record<string, unknown> | undefined
+        const layerUid = String(p?.uid ?? '')
+        const group = String(p?.group ?? '')
+        if (doomedUids.has(layerUid) || group === uid) highlightDoomed.push(layer)
+      })
+      for (const layer of highlightDoomed) highlights?.removeLayer(layer)
+      for (const id of doomedUids) selectedRef.current.delete(id)
       // 重新生成三角
       const df = defenseFeatures(path, weight)
       const triStyle: L.PathOptions = {
@@ -2440,7 +2864,13 @@ export default function LayerManager({
         const uid2 = genUid('draw')
         const feature: Feature = {
           type: 'Feature',
-          properties: { ...props0, uid: uid2, group: uid },
+          properties: {
+            ...props0,
+            uid: uid2,
+            group: uid,
+            curve,
+            defensePath: path.map((point) => [point.lng, point.lat]),
+          },
           geometry: { type: 'Polygon', coordinates: [tri.map((ll) => [ll.lng, ll.lat])] },
         }
         const layer = L.polygon(tri, triStyle)
@@ -2448,6 +2878,7 @@ export default function LayerManager({
         any.feature = feature
         g.addLayer(layer)
         buildHitRef.current(any)
+        if (wasSelected) selectedRef.current.add(uid2)
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2647,8 +3078,9 @@ export default function LayerManager({
       if (layer instanceof L.Polyline) {
         const path = (layer as unknown as { _path?: SVGElement })._path
         if (path) {
-          ensureArrowMarkerDef(map, style, size)
-          path.setAttribute('marker-end', `url(#${arrowMarkerId(style, size)})`)
+          const color = String(props.color ?? '#ffd54a')
+          ensureArrowMarkerDef(map, style, size, color)
+          path.setAttribute('marker-end', `url(#${arrowMarkerId(style, size, color)})`)
         }
       }
     },
@@ -2870,13 +3302,54 @@ export default function LayerManager({
       styleButton.on('mousedown', (e: L.LeafletMouseEvent) => {
         L.DomEvent.stop(e.originalEvent as MouseEvent)
         L.DomEvent.stopPropagation(e)
+        // 在按下阶段立即打开，避免绘制模式的后续 click 被地图手势状态机吞掉。
+        if (stylePanelRef.current?.uid !== keys[0]) openSelPanelRef.current(keys[0])
       })
       styleButton.on('click', (e: L.LeafletMouseEvent) => {
+        L.DomEvent.stop(e.originalEvent as MouseEvent)
         L.DomEvent.stopPropagation(e)
-        if (stylePanelRef.current?.uid === keys[0]) closeSelPanelRef.current(true)
-        else openSelPanelRef.current(keys[0])
+        // click 只负责隔离地图；面板已在首次 mousedown / pointerdown 中打开。
       })
       styleButton.addTo(gz)
+      const styleButtonElement = styleButton.getElement()?.querySelector<HTMLElement>('.edit-style-trigger')
+      if (styleButtonElement) {
+        L.DomEvent.on(styleButtonElement, 'pointerdown', (event: Event) => {
+          L.DomEvent.stop(event)
+          if (stylePanelRef.current?.uid !== keys[0]) openSelPanelRef.current(keys[0])
+        })
+      }
+
+      const deletePos = map.containerPointToLatLng(map.latLngToContainerPoint(eastCenter).add([34, 32]))
+      const deleteButton = L.marker(deletePos, {
+        icon: L.divIcon({
+          className: 'edit-delete-trigger-wrap',
+          html: '<button type="button" class="edit-delete-trigger" title="删除图形" aria-label="删除图形"><i class="fa-regular fa-trash-can"></i></button>',
+          iconSize: [30, 26],
+          iconAnchor: [15, 13],
+        }),
+        pane: DRAW_PANE,
+        interactive: true,
+        keyboard: false,
+        zIndexOffset: 1100,
+      })
+      deleteButton.on('mousedown', (e: L.LeafletMouseEvent) => {
+        L.DomEvent.stop(e.originalEvent as MouseEvent)
+        L.DomEvent.stopPropagation(e)
+      })
+      deleteButton.on('click', (e: L.LeafletMouseEvent) => {
+        L.DomEvent.stop(e.originalEvent as MouseEvent)
+        L.DomEvent.stopPropagation(e)
+        deleteSelected()
+      })
+      deleteButton.addTo(gz)
+      const deleteButtonElement = deleteButton.getElement()?.querySelector<HTMLElement>('.edit-delete-trigger')
+      if (deleteButtonElement) {
+        L.DomEvent.on(deleteButtonElement, 'pointerdown', (event: Event) => L.DomEvent.stop(event))
+        L.DomEvent.on(deleteButtonElement, 'pointerup', (event: Event) => {
+          L.DomEvent.stop(event)
+          deleteSelected()
+        })
+      }
     }
     const mk = (pos: L.LatLng, kind: string, cls: string, radius = 6) => {
       const h = L.marker(pos, {
@@ -2941,10 +3414,11 @@ export default function LayerManager({
       if (pts.length >= 2) mk(pts[pts.length - 1], 'endpoint-1', 'endpoint', 8)
     }
     if (single && isDefense) {
-      // 防线：路径首尾端点手柄
-      const { path } = reconstructDefensePath(layers)
+      // 防线：路径首尾端点手柄；平滑曲线额外提供独立弯曲手柄。
+      const { path, curve, curveCtrl } = reconstructDefensePath(layers)
       if (path.length >= 1) mk(path[0], 'endpoint-0', 'endpoint', 8)
       if (path.length >= 2) mk(path[path.length - 1], 'endpoint-1', 'endpoint', 8)
+      if (curve === 'smooth' && curveCtrl) mk(curveCtrl, 'curve', 'curve', 9)
     }
     if (single && isLine && props.curve === 'smooth') {
       // 曲线控制点（绿色，拖拽调曲度）
@@ -3033,6 +3507,7 @@ export default function LayerManager({
         layers: layers.map((l) => ({
           layer: l,
           pts: l instanceof L.Marker ? [(l as L.Marker).getLatLng()] : flatLatLngs(l),
+          defensePath: storedDefensePathOf(l),
         })),
       }
       const first = layers[0]
@@ -3074,6 +3549,7 @@ export default function LayerManager({
         layers: layers.map((l) => ({
           layer: l,
           pts: l instanceof L.Marker ? [(l as L.Marker).getLatLng()] : flatLatLngs(l),
+          defensePath: storedDefensePathOf(l),
         })),
         uniform: !!(e.originalEvent as MouseEvent).shiftKey,
       }
@@ -3109,11 +3585,20 @@ export default function LayerManager({
           const r = reconstructDefensePath(layers)
           it.path = r.path
           it.weight = r.weight
+          it.defenseCurve = r.curve
+          it.defenseCurveCtrl = r.curveCtrl
         } else if (props.curve === 'smooth') {
           // 平滑曲线端点移动必须重算整条贝塞尔曲线，不能只替换首/尾采样点。
           const pts = it.layers[0]?.pts ?? []
           if (pts.length >= 3) it.curveCtrl = deriveCurveCtrl(pts)
         }
+      }
+      if (kind === 'curve' && props.type === 'defense') {
+        const r = reconstructDefensePath(layers)
+        it.path = r.path
+        it.weight = r.weight
+        it.defenseCurve = 'smooth'
+        it.defenseCurveCtrl = r.curveCtrl
       }
       interactRef.current = it
     },
@@ -3121,6 +3606,105 @@ export default function LayerManager({
   )
   const startHandleDragRef = useRef(startHandleDrag)
   startHandleDragRef.current = startHandleDrag
+
+  /** Android：双指在已选图形上捏合时，对选中集合做等比例缩放。 */
+  const startAndroidPinch = useCallback((a: L.Point, b: L.Point): boolean => {
+    if (platform.kind !== 'android') return false
+    // 结束第一根手指刚建立的普通点击/拖动候选会话，再切换为双指缩放。
+    finishShapePointerRef.current()
+    const keys = selectedKeys()
+    const layers = layersOfKeys(keys)
+    if (layers.length === 0) return false
+    const startDistance = a.distanceTo(b)
+    if (startDistance < 8) return false
+    const center = unionBounds(layers).getCenter()
+    androidPinchSessionRef.current = {
+      before: snapshotNow(),
+      startDistance,
+      center,
+      layers: layers.map((layer) => {
+        const props = (layer.feature?.properties ?? {}) as Record<string, unknown>
+        const isText = props.type === 'text' && layer instanceof L.Marker
+        return {
+          layer,
+          pts: layer instanceof L.Marker ? [(layer as L.Marker).getLatLng()] : flatLatLngs(layer),
+          defensePath: storedDefensePathOf(layer),
+          textStyle: isText ? textStyleFromProps(props) : undefined,
+          text: isText ? String(props.text ?? '') : undefined,
+          radius: props.type === 'circle' ? Number(props.radius ?? 0) : undefined,
+          radiusY: props.type === 'circle' ? Number(props.radiusY ?? props.radius ?? 0) : undefined,
+        }
+      }),
+    }
+    if (!handleMapDragLockedRef.current && map.dragging.enabled()) {
+      map.dragging.disable()
+      handleMapDragLockedRef.current = true
+    }
+    editPointerActiveRef.current = true
+    return true
+  }, [layersOfKeys, map, selectedKeys, snapshotNow])
+
+  const moveAndroidPinch = useCallback((a: L.Point, b: L.Point) => {
+    const session = androidPinchSessionRef.current
+    if (!session) return
+    const factor = Math.min(12, Math.max(0.08, a.distanceTo(b) / session.startDistance))
+    const c = session.center
+    for (const item of session.layers) {
+      const { layer, pts } = item
+      if (layer instanceof L.Marker) {
+        const base = pts[0]
+        ;(layer as L.Marker).setLatLng(L.latLng(
+          c.lat + (base.lat - c.lat) * factor,
+          c.lng + (base.lng - c.lng) * factor,
+        ))
+        if (item.textStyle) {
+          const props = (layer.feature?.properties ?? {}) as Record<string, unknown>
+          const style = {
+            ...item.textStyle,
+            fontSize: Math.min(96, Math.max(8, Math.round(Number(item.textStyle.fontSize ?? 16) * factor))),
+            width: Math.min(800, Math.max(48, Math.round(Number(item.textStyle.width ?? 160) * factor))),
+          }
+          textStyleToProps(props, style)
+          ;(layer as L.Marker).setIcon(textIcon(item.text ?? '', style))
+        }
+        continue
+      }
+      setFlatLatLngs(layer, pts.map((point) => L.latLng(
+        c.lat + (point.lat - c.lat) * factor,
+        c.lng + (point.lng - c.lng) * factor,
+      )))
+      if (item.defensePath) {
+        setStoredDefensePath(layer, item.defensePath.map((point) => L.latLng(
+          c.lat + (point.lat - c.lat) * factor,
+          c.lng + (point.lng - c.lng) * factor,
+        )))
+      }
+      const props = (layer.feature?.properties ?? {}) as Record<string, unknown>
+      if (props.type === 'circle') {
+        if (item.radius != null) props.radius = item.radius * factor
+        if (item.radiusY != null) props.radiusY = item.radiusY * factor
+      }
+    }
+    dragMovedRef.current = true
+    buildGizmoRef.current()
+  }, [])
+
+  const endAndroidPinch = useCallback(() => {
+    const session = androidPinchSessionRef.current
+    androidPinchSessionRef.current = null
+    if (session && snapshotNow() !== session.before) commitDraw(session.before)
+    editPointerActiveRef.current = false
+    dragMovedRef.current = false
+    if (handleMapDragLockedRef.current) {
+      handleMapDragLockedRef.current = false
+      if (toolRef.current === 'pan') map.dragging.enable()
+    }
+    buildGizmoRef.current()
+  }, [commitDraw, map, snapshotNow])
+
+  androidPinchStartRef.current = startAndroidPinch
+  androidPinchMoveRef.current = moveAndroidPinch
+  androidPinchEndRef.current = endAndroidPinch
 
   /** 应用交互（mousemove：实时更新图形几何） */
   const applyInteract = useCallback(
@@ -3132,12 +3716,15 @@ export default function LayerManager({
       const dLat = cur.lat - it.start.lat
       const dLng = cur.lng - it.start.lng
       if (it.kind === 'move') {
-        for (const { layer, pts } of it.layers) {
+        for (const { layer, pts, defensePath } of it.layers) {
           if (layer instanceof L.Marker) {
             const base = it.text?.pos ?? pts[0]
             ;(layer as L.Marker).setLatLng([base.lat + dLat, base.lng + dLng])
           } else {
             setFlatLatLngs(layer, pts.map((p) => L.latLng(p.lat + dLat, p.lng + dLng)))
+            if (defensePath) {
+              setStoredDefensePath(layer, defensePath.map((point) => L.latLng(point.lat + dLat, point.lng + dLng)))
+            }
           }
         }
       } else if (it.kind === 'rotate') {
@@ -3164,15 +3751,16 @@ export default function LayerManager({
           }
           return
         }
-        for (const { layer, pts } of it.layers) {
+        for (const { layer, pts, defensePath } of it.layers) {
           if (layer instanceof L.Marker) continue
-          const out = pts.map((p) => {
+          const rotatePoint = (p: L.LatLng) => {
             const pp = map.latLngToContainerPoint(p)
             const dx = pp.x - cp.x
             const dy = pp.y - cp.y
             return map.containerPointToLatLng(L.point(cp.x + dx * cos - dy * sin, cp.y + dx * sin + dy * cos))
-          })
-          setFlatLatLngs(layer, out)
+          }
+          setFlatLatLngs(layer, pts.map(rotatePoint))
+          if (defensePath) setStoredDefensePath(layer, defensePath.map(rotatePoint))
         }
         showEditLabelRef.current(cur, `${Math.round((((th * 180) / Math.PI) % 360 + 360) % 360)}°`)
       } else if (it.kind === 'scale') {
@@ -3219,10 +3807,15 @@ export default function LayerManager({
           showEditLabelRef.current(cur, `半径 ${nrx.toFixed(0)}×${nry.toFixed(0)}`)
           return
         }
-        for (const { layer, pts } of it.layers) {
+        for (const { layer, pts, defensePath } of it.layers) {
           if (layer instanceof L.Marker) continue
           const out = pts.map((p) => L.latLng(c.lat + (p.lat - c.lat) * sy, c.lng + (p.lng - c.lng) * sx))
           setFlatLatLngs(layer, out)
+          if (defensePath) {
+            setStoredDefensePath(layer, defensePath.map((point) => (
+              L.latLng(c.lat + (point.lat - c.lat) * sy, c.lng + (point.lng - c.lng) * sx)
+            )))
+          }
         }
         // 尺寸反馈（宽 × 高，地图单位）
         const nb = unionBounds(it.layers.map((l) => l.layer))
@@ -3267,15 +3860,31 @@ export default function LayerManager({
         const layer = it.layers[0]?.layer
         if (!layer || layer instanceof L.Marker) return
         if (it.path) {
-          // 防线：替换端点后重建三角带
-          const path = [...it.path]
-          if (it.endIndex === 0) path[0] = cur
-          else path[path.length - 1] = cur
-          rebuildDefenseGroupRef.current(it.uid, path, it.weight ?? 3)
-          interactRef.current = { ...it, path }
+          // 防线是三角形带，不直接拉某一个三角形。根据保存的逻辑路径重算完整防线，
+          // 确保直线仍是直线、贝塞尔曲线整体变化、手绘路径连续形变。
+          const source = it.path
+          const curve = it.defenseCurve ?? 'straight'
+          let path: L.LatLng[]
+          if (curve === 'straight') {
+            path = it.endIndex === 0
+              ? [cur, source[source.length - 1]]
+              : [source[0], cur]
+          } else if (curve === 'smooth') {
+            const start = it.endIndex === 0 ? cur : source[0]
+            const end = it.endIndex === 1 ? cur : source[source.length - 1]
+            const ctrl = it.defenseCurveCtrl ?? deriveCurveCtrl(source)
+            path = bezierPoints(start, ctrl, end)
+          } else {
+            path = deformFreehandEndpoint(source, cur, it.endIndex ?? 1)
+          }
+          rebuildDefenseGroupRef.current(it.uid, path, it.weight ?? 3, curve)
         } else {
           const pts = [...it.layers[0].pts]
-          if (it.curveCtrl && pts.length >= 2) {
+          const props = ((layer as AnyWithFeature).feature?.properties ?? {}) as Record<string, unknown>
+          const isFreehandLine = props.curve === 'freehand' && (props.type === 'line' || props.type === 'arrow')
+          if (isFreehandLine) {
+            setFlatLatLngs(layer, deformFreehandEndpoint(pts, cur, it.endIndex ?? 1))
+          } else if (it.curveCtrl && pts.length >= 2) {
             const start = it.endIndex === 0 ? cur : pts[0]
             const end = it.endIndex === 1 ? cur : pts[pts.length - 1]
             setFlatLatLngs(layer, bezierPoints(start, it.curveCtrl, end))
@@ -3288,8 +3897,13 @@ export default function LayerManager({
       } else if (it.kind === 'curve') {
         const layer = it.layers[0]?.layer
         if (!layer || layer instanceof L.Marker) return
-        const pts = it.layers[0].pts
-        setFlatLatLngs(layer, bezierPoints(pts[0], cur, pts[pts.length - 1]))
+        if (it.path) {
+          const path = bezierPoints(it.path[0], cur, it.path[it.path.length - 1])
+          rebuildDefenseGroupRef.current(it.uid, path, it.weight ?? 3, 'smooth')
+        } else {
+          const pts = it.layers[0].pts
+          setFlatLatLngs(layer, bezierPoints(pts[0], cur, pts[pts.length - 1]))
+        }
       }
       buildGizmoRef.current()
     },
@@ -3445,11 +4059,25 @@ export default function LayerManager({
   }, [map, fg, tool, geoJson])
 
   // 选中属性面板（Portal 到 body，fixed 定位；第十六轮：文字样式 / 箭头样式）
+  const finishSelectedWeight = () => {
+    if (!selPanel || selPanel.kind !== 'shape' || selWeightDraftRef.current == null) return
+    const next = { ...selPanel, weight: selWeightDraftRef.current }
+    selWeightDraftRef.current = null
+    setSelPanel(next)
+    commitStyleRef.current(selPanel.uid, 'shape', next)
+  }
+
   const selPanelUI =
     selPanel &&
     createPortal(
-      <div className="text-style-panel" style={{ left: selPanel.x, top: selPanel.y }} onClick={(e) => e.stopPropagation()}>
-        <div className="tsp-head">
+      <div ref={selPanelElRef} className="text-style-panel" style={{ left: selPanel.x, top: selPanel.y }} onClick={(e) => e.stopPropagation()}>
+        <div
+          className="tsp-head"
+          onPointerDown={startSelPanelDrag}
+          onPointerMove={moveSelPanel}
+          onPointerUp={stopSelPanelDrag}
+          onPointerCancel={stopSelPanelDrag}
+        >
           <span>{selPanel.kind === 'text' ? '文字样式' : '图形样式'}</span>
           <button type="button" className="tsp-close" onClick={() => closeSelPanelRef.current(true)} title="关闭并保存">
             ×
@@ -3686,10 +4314,20 @@ export default function LayerManager({
                     step={1}
                     value={selPanel.weight}
                     onChange={(e) => {
-                      const next = { ...selPanel, weight: Number(e.target.value) }
+                      const weight = Number(e.target.value)
+                      selWeightDraftRef.current = weight
+                      const next = { ...selPanel, weight }
                       setSelPanel(next)
-                      commitStyleRef.current(selPanel.uid, 'shape', next)
+                      // 拖动中只更新当前 Leaflet 图层，不触发 App 全量状态与 localStorage。
+                      for (const target of targetLayersOf(selPanel.uid)) {
+                        const props = (target.feature?.properties ?? {}) as Record<string, unknown>
+                        if (target instanceof L.Path && props.type !== 'defense') target.setStyle({ weight })
+                      }
                     }}
+                    onPointerUp={finishSelectedWeight}
+                    onPointerCancel={finishSelectedWeight}
+                    onBlur={finishSelectedWeight}
+                    onKeyUp={finishSelectedWeight}
                   />
                   <span className="tsp-val">{selPanel.weight}px</span>
                 </div>

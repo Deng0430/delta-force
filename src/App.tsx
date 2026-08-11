@@ -21,8 +21,6 @@ import type {
   WargameState,
 } from './types'
 import { MAP_BY_ID } from './config/maps'
-import { STAGES_BY_MAP, stageCount } from './config/points'
-import { MAP_PROPS } from './config/pointsStages'
 import { buildingsBucketOf, createEmptyMapState, loadState, saveState, vehiclesBucketOf, operatorsBucketOf, connectionsBucketOf, teamsBucketOf, routesBucketOf, wargameOf } from './utils/storage'
 import { emptyGeoJson, genUid } from './utils/geo'
 import { buildTacticalHtml, downloadText } from './utils/exportTactical'
@@ -49,6 +47,9 @@ import {
   normalizeModeConfigStore,
   saveModeConfigStore,
 } from './utils/modeConfigStorage'
+import { platform } from './platform'
+import { useDeviceType } from './hooks/useDeviceType'
+import { propsForPlatform, stagesForPlatform, type GameDataPlatform } from './config/gameDataPlatform'
 
 const DEFAULT_MAP_IDS = ['ascent', 'flashpoint', 'fault', 'brokentrack', 'colosseum', 'stormeye', 'ember', 'pyramid', 'trench', 'umuscanal', 'aftershock']
 const DEFAULT_PROP_VIS: PropVisibility = {
@@ -111,10 +112,14 @@ function syncRouteTargetPosition(
 }
 
 export default function App() {
+  const device = useDeviceType()
   const persisted = useMemo(loadState, [])
   const initialModeStore = useMemo(loadModeConfigStore, [])
   const [modeStore, setModeStore] = useState<ModeConfigStore>(initialModeStore)
   const [modeStageSelection, setModeStageSelection] = useState<Record<string, string>>({})
+  const [gameDataPlatform, setGameDataPlatform] = useState<GameDataPlatform>(() =>
+    localStorage.getItem('deltaforce-game-data-platform') === 'mobile' ? 'mobile' : 'pc',
+  )
 
   const [mapId, setMapId] = useState<string>(
     persisted?.lastMapId && MAP_BY_ID[persisted.lastMapId] ? persisted.lastMapId : 'ascent',
@@ -205,6 +210,12 @@ export default function App() {
   )
   // 战术板弹窗开关
   const [tacticalOpen, setTacticalOpen] = useState(false)
+  const [mobileConfirm, setMobileConfirm] = useState<{
+    title: string
+    message: string
+    confirmLabel: string
+    onConfirm: () => void
+  } | null>(null)
   // 左右工具栏折叠 + 图层/道具显示开关（问题1/2/8）+ 画笔设置（问题4）
   const [ui, setUi] = useState(() => ({
     paletteOpen: persisted?.ui?.paletteOpen ?? true,
@@ -250,8 +261,10 @@ export default function App() {
 
   const mapRef = useRef<L.Map | null>(null)
   const config = MAP_BY_ID[mapId] ?? MAP_BY_ID.ascent
-  const stages = STAGES_BY_MAP[mapId] ?? []
-  const capturedStageIndex = Math.min(progress[mapId] ?? 0, stageCount(mapId))
+  const platformStages = useMemo(() => stagesForPlatform(gameDataPlatform), [gameDataPlatform])
+  const platformProps = useMemo(() => propsForPlatform(gameDataPlatform), [gameDataPlatform])
+  const stages = platformStages[mapId] ?? []
+  const capturedStageIndex = Math.min(progress[mapId] ?? 0, Math.max(0, stages.length - 1))
   const activeModeProfile = useMemo(
     () => modeStore.profiles.find((profile) => profile.id === modeStore.activeModeId) ?? null,
     [modeStore.activeModeId, modeStore.profiles],
@@ -292,10 +305,12 @@ export default function App() {
   }, [])
 
   const handleOpenModeEditor = useCallback(() => {
-    const editor = window.open(
+    const editor = platform.openPath(
       '/mode-config.html',
-      'deltaforce-mode-config-editor',
-      'popup=yes,width=1440,height=900,resizable=yes,scrollbars=no',
+      {
+        target: 'deltaforce-mode-config-editor',
+        features: 'popup=yes,width=1440,height=900,resizable=yes,scrollbars=no',
+      },
     )
     editor?.focus()
   }, [])
@@ -533,7 +548,14 @@ export default function App() {
 
   // 自动持久化（v14：载具队伍 + 行动指令 V2 + 干员独立任务；旧版本由 storage 统一迁移）
   useEffect(() => {
-    saveState({ version: 16, lastMapId: mapId, lastView: view, maps, progress, plans, ui })
+    const snapshot = { version: 16 as const, lastMapId: mapId, lastView: view, maps, progress, plans, ui }
+    // 桌面端连续编辑时合并密集写入；Android 保留已验收的持久化行为。
+    if (platform.kind === 'android') {
+      saveState(snapshot)
+      return
+    }
+    const timer = window.setTimeout(() => saveState(snapshot), 250)
+    return () => window.clearTimeout(timer)
   }, [maps, mapId, view, progress, plans, ui])
 
   useEffect(() => {
@@ -960,10 +982,7 @@ export default function App() {
     [updateMap, mapId],
   )
 
-  const handleClearDraw = useCallback(() => {
-    if (!window.confirm(`确定清空「${config.name}」当前${view === 'attack' ? '攻方' : '守方'}视角的全部绘制内容？`)) {
-      return
-    }
+  const clearCurrentDraw = useCallback(() => {
     // 清空入历史栈（可撤回）
     const cur = mapsRef.current[mapId] ?? createEmptyMapState()
     pushEntry(cloneState(cur), { ...cloneState(cur), drawings: { ...cur.drawings, [view]: emptyGeoJson() } })
@@ -971,13 +990,25 @@ export default function App() {
       ...s,
       drawings: { ...s.drawings, [view]: emptyGeoJson() },
     }))
-  }, [updateMap, mapId, view, config, cloneState, pushEntry])
+  }, [updateMap, mapId, view, cloneState, pushEntry])
 
-  /** 一键消除当前视角全部载具部署图标（入历史栈，可撤回；与"清空本层绘制"对称只清当前视角桶） */
-  const handleClearVehicles = useCallback(() => {
-    if (!window.confirm(`确定一键消除本地图当前${view === 'attack' ? '攻方' : '守方'}视角的全部载具部署图标？`)) {
+  const handleClearDraw = useCallback(() => {
+    if (platform.kind === 'android') {
+      setMobileConfirm({
+        title: '清空绘制内容',
+        message: `确定清空「${config.name}」当前${view === 'attack' ? '攻方' : '守方'}视角的全部绘制内容？`,
+        confirmLabel: '确定清空',
+        onConfirm: clearCurrentDraw,
+      })
       return
     }
+    if (window.confirm(`确定清空「${config.name}」当前${view === 'attack' ? '攻方' : '守方'}视角的全部绘制内容？`)) {
+      clearCurrentDraw()
+    }
+  }, [clearCurrentDraw, config.name, view])
+
+  /** 一键消除当前视角全部载具部署图标（入历史栈，可撤回；与"清空本层绘制"对称只清当前视角桶） */
+  const clearCurrentVehicles = useCallback(() => {
     const cur = mapsRef.current[mapId] ?? createEmptyMapState()
     const before = cloneState(cur)
     const after = { ...before, vehicles: { ...before.vehicles, [view]: [] } }
@@ -985,12 +1016,18 @@ export default function App() {
     updateMap(mapId, (s) => ({ ...s, vehicles: { ...s.vehicles, [view]: [] } }))
   }, [mapId, view, cloneState, pushEntry, updateMap])
 
-  /** 一键清空本地图所有画笔和载具（入历史栈，可撤回）；兵棋推演数据不受影响：
-   *  干员保留配置但回到未部署（保留自定义昵称/干员/状态），联线与推演状态原样保留。 */
-  const handleClearAll = useCallback(() => {
-    if (!window.confirm(`确定一键清空「${config.name}」的所有画笔和载具部署图标？（兵棋干员回到未部署，攻防进度保留）`)) {
+  const handleClearVehicles = useCallback(() => {
+    const message = `确定一键消除本地图当前${view === 'attack' ? '攻方' : '守方'}视角的全部载具部署图标？`
+    if (platform.kind === 'android') {
+      setMobileConfirm({ title: '清空载具', message, confirmLabel: '确定清空', onConfirm: clearCurrentVehicles })
       return
     }
+    if (window.confirm(message)) clearCurrentVehicles()
+  }, [clearCurrentVehicles, view])
+
+  /** 一键清空本地图所有画笔和载具（入历史栈，可撤回）；兵棋推演数据不受影响：
+   *  干员保留配置但回到未部署（保留自定义昵称/干员/状态），联线与推演状态原样保留。 */
+  const clearAllMapContent = useCallback(() => {
     const cur = mapsRef.current[mapId] ?? createEmptyMapState()
     const before = cloneState(cur)
     // 干员回未部署（lat/lng 置 null），配置全部保留；联线/推演状态不动
@@ -1025,7 +1062,16 @@ export default function App() {
       routes: { attack: [], defense: [] },
       wargame: { ...wargameOf(s) },
     }))
-  }, [mapId, config, cloneState, pushEntry, updateMap])
+  }, [mapId, cloneState, pushEntry, updateMap])
+
+  const handleClearAll = useCallback(() => {
+    const message = `确定一键清空「${config.name}」的所有画笔和载具部署图标？（兵棋干员回到未部署，攻防进度保留）`
+    if (platform.kind === 'android') {
+      setMobileConfirm({ title: '清空地图内容', message, confirmLabel: '确定清空', onConfirm: clearAllMapContent })
+      return
+    }
+    if (window.confirm(message)) clearAllMapContent()
+  }, [clearAllMapContent, config.name])
 
   const handleResetProgress = useCallback(() => {
     if (!window.confirm('确定重置本图攻防进度？所有阶段回到未激活状态。')) return
@@ -1116,7 +1162,7 @@ export default function App() {
   const handleToggleOperatorDeploy = useCallback(
     (uid: string) => {
       const center = mapRef.current?.getCenter() ?? { lat: 0, lng: 0 }
-      const offset = 12
+      const offset = device.mobileLayout ? 0 : 12
       const cur = mapsRef.current[mapId] ?? createEmptyMapState()
       const before = cloneState(cur)
       const current = operatorsBucketOf(cur)[view]
@@ -1147,7 +1193,7 @@ export default function App() {
         routes: { ...before.routes, [view]: nextRoutes },
       })
     },
-    [mapId, view, cloneState, pushEntry, updateMap],
+    [mapId, view, cloneState, pushEntry, updateMap, device.mobileLayout],
   )
 
   /** 拖拽移动干员（高频，不入历史栈；与载具移动一致） */
@@ -1175,13 +1221,13 @@ export default function App() {
   const handleDeployTeam = useCallback(
     (side: Side, team: OperatorTeam) => {
       const center = mapRef.current?.getCenter() ?? { lat: 0, lng: 0 }
-      const offset = 12
+      const offset = device.mobileLayout ? 7 : 12
       const order: Record<OperatorTeam, [number, number][]> = {
         A: [[-offset, -offset], [offset, -offset], [-offset, offset], [offset, offset]],
         B: [[offset * 1.6, 0], [-offset * 1.6, 0], [offset * 1.6, offset], [-offset * 1.6, -offset]],
         C: [[0, offset * 1.6], [0, -offset * 1.6], [offset, offset * 1.6], [-offset, -offset * 1.6]],
         D: [[offset * 1.6, offset * 1.6], [-offset * 1.6, offset * 1.6], [offset * 1.6, -offset * 1.6], [-offset * 1.6, -offset * 1.6]],
-        E: [[0, 0], [offset, 0], [0, offset], [offset, offset]],
+        E: [[-offset, -offset], [offset, -offset], [-offset, offset], [offset, offset]],
       }
       const spots = order[team]
       commitOperatorChange((ops) =>
@@ -1192,7 +1238,7 @@ export default function App() {
         }),
       )
     },
-    [commitOperatorChange],
+    [commitOperatorChange, device.mobileLayout],
   )
 
   /** 清除某方某队全部干员部署（回未部署） */
@@ -1361,7 +1407,7 @@ export default function App() {
   const handleExportTactical = useCallback(
     async (stageMode: 'current' | 'all') => {
       const cur = mapsRef.current[mapId] ?? createEmptyMapState()
-      const propsList = MAP_PROPS[mapId] ?? []
+      const propsList = platformProps[mapId] ?? []
       const html = await buildTacticalHtml({
         config,
         mapName: config.name,
@@ -1382,7 +1428,7 @@ export default function App() {
       const stageTag = stageMode === 'current' ? (stages[capturedStageIndex]?.id ?? 'cur') : 'all'
       downloadText(`战术板_${config.name}_${view === 'attack' ? '攻方' : '守方'}_${stageTag}.html`, html)
     },
-    [mapId, config, view, capturedStageIndex, stages, ui.layers.props, ui.propVis],
+    [mapId, config, view, capturedStageIndex, stages, platformProps, ui.layers.props, ui.propVis],
   )
 
   /** 保存当前战术为方案（自定义名称；记录当前 地图×阶段×视角 的完整部署快照） */
@@ -1673,7 +1719,7 @@ export default function App() {
   const handleDeployTeamMarker = useCallback(
     (side: Side, team: OperatorTeam, name?: string) => {
       const center = mapRef.current?.getCenter() ?? { lat: 0, lng: 0 }
-      const offset = 10
+      const offset = device.mobileLayout ? 0 : 10
       commitTeamChange((ts) => {
         const existing = ts.find((t) => t.side === side && t.team === team)
         if (existing) {
@@ -1693,7 +1739,7 @@ export default function App() {
         return [...ts, mk]
       })
     },
-    [mapId, view, commitTeamChange],
+    [mapId, view, commitTeamChange, device.mobileLayout],
   )
 
   /** 拖拽移动队标（高频，不入历史栈；与干员一致） */
@@ -1832,10 +1878,18 @@ export default function App() {
   }, [activeModeMap, handleSelectModeStage, mapId, stages])
 
   return (
-    <div className="app" style={{ '--left-panel-width': `${ui.leftPanelWidth}px` } as CSSProperties}>
+    <div className={`app platform-${device.platform} ${device.mobileLayout ? 'mobile-layout' : 'desktop-layout'} ${ui.paletteOpen ? 'left-panel-open' : 'left-panel-closed'}`} style={{ '--left-panel-width': `${ui.leftPanelWidth}px` } as CSSProperties}>
       <Toolbar
         mapId={mapId}
         onMapId={setMapId}
+        gameDataPlatform={gameDataPlatform}
+        onGameDataPlatform={(nextPlatform) => {
+          setGameDataPlatform(nextPlatform)
+          localStorage.setItem('deltaforce-game-data-platform', nextPlatform)
+          setProgress((current) => ({ ...current, [mapId]: 0 }))
+          setSelectedPoint(null)
+          setDeployTarget(null)
+        }}
         gameModeName={gameModeName}
         gameModeOptions={modeStore.profiles.map((profile) => ({ id: profile.id, name: profile.name }))}
         onGameMode={handleSelectGameMode}
@@ -1908,7 +1962,7 @@ export default function App() {
           onAddBuilding={handleAddBuilding}
         />
         <MapView
-          key={mapId}
+          key={`${gameDataPlatform}:${mapId}`}
           config={config}
           modeData={activeOfficialModeMap}
           modeStageId={activeModeStageId}
@@ -1917,6 +1971,7 @@ export default function App() {
           onTool={setTool}
           state={state}
           stages={stages}
+          propsOverride={platformProps[mapId]}
           capturedStageIndex={capturedStageIndex}
           selectedPoint={selectedPoint}
           layers={ui.layers}
@@ -1997,6 +2052,35 @@ export default function App() {
       </div>
 
       {/* 战术板弹窗（第二十一轮：导出 HTML + 方案管理） */}
+      {mobileConfirm && (
+        <div
+          className="mobile-confirm-backdrop"
+          role="presentation"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) setMobileConfirm(null)
+          }}
+        >
+          <div className="mobile-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="mobile-confirm-title">
+            <h2 id="mobile-confirm-title">{mobileConfirm.title}</h2>
+            <p>{mobileConfirm.message}</p>
+            <div className="mobile-confirm-actions">
+              <button type="button" onClick={() => setMobileConfirm(null)}>取消</button>
+              <button
+                type="button"
+                className="danger"
+                onClick={() => {
+                  const action = mobileConfirm.onConfirm
+                  setMobileConfirm(null)
+                  action()
+                }}
+              >
+                {mobileConfirm.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <TacticalBoardModal
         open={tacticalOpen}
         mapId={mapId}

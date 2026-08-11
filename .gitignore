@@ -15,11 +15,15 @@
 # Recording/demo-only material
 /demo/
 
+# Local detailed development notes (README keeps the public summary)
+/docs/双端详细更新记录.md
+
 # Local map source assets
 /map_source/
 
 # Logs and runtime files
 /logs/
+/window.xml
 *.log
 *.pid
 *.seed

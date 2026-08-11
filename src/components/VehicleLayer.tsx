@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
-import { Marker } from 'react-leaflet'
+import { Marker, useMap } from 'react-leaflet'
 import * as L from 'leaflet'
 import type { OperatorTeam, Side, VehicleItem } from '../types'
 import { teamOf } from '../config/operators'
+import { platform } from '../platform'
 
 interface VehicleLayerProps {
   vehicles: VehicleItem[]
@@ -63,6 +64,9 @@ function buildVehicleIcon(v: VehicleItem, view: Side, expanded: boolean): L.DivI
     <button class="veh-side" title="切换本方/敌方" aria-label="切换本方/敌方" onclick="event.stopPropagation();event.preventDefault();window.__vehSide('${v.uid}')">
       <svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3.5 1 6l2.5 2.5M8.5 3.5 11 6l-2.5 2.5M1 6h10"/></svg>
     </button>`
+  const mobileControls = platform.kind === 'android' ? `
+        <button type="button" class="veh-rotate-control unit-rotate-drag" aria-label="按住并拖动旋转载具" onmousedown="event.stopPropagation();event.preventDefault()" ontouchstart="event.stopPropagation();event.preventDefault()" onpointerdown="window.__vehRotateStart(event,'${v.uid}')"><i class="fa-solid fa-rotate" aria-hidden="true"></i></button>
+        <button type="button" class="veh-delete-control danger" aria-label="删除载具" onclick="event.stopPropagation();event.preventDefault();window.__vehDelete('${v.uid}')"><i class="fa-regular fa-trash-can" aria-hidden="true"></i></button>` : ''
   return L.divIcon({
     className: 'veh-marker-wrap',
     html: `
@@ -73,6 +77,7 @@ function buildVehicleIcon(v: VehicleItem, view: Side, expanded: boolean): L.DivI
         ${sideBtn}
         <button class="veh-team-letter" title="${team ? `${team.name}（点击切换队伍）` : '无队伍（点击设置队伍）'}" aria-label="切换载具所属队伍" onclick="event.stopPropagation();event.preventDefault();window.__vehTeam('${v.uid}')">${team?.id ?? '–'}</button>
         <button class="veh-route" title="绘制${v.name}行动路线" aria-label="绘制载具行动路线" onclick="event.stopPropagation();event.preventDefault();window.__vehRoute('${v.uid}')"><i class="fa-solid fa-route" aria-hidden="true"></i></button>
+        ${mobileControls}
         <span class="veh-name">${v.name}</span>
       </div>`,
     iconSize: [30, 30],
@@ -108,6 +113,21 @@ function VehicleMarker({
 }) {
   const ref = useRef<L.Marker | null>(null)
   const [expanded, setExpanded] = useState(false)
+  const map = useMap()
+
+  useEffect(() => {
+    if (platform.kind !== 'android') return
+    const collapse = () => setExpanded(false)
+    const selectOther = (event: Event) => {
+      if ((event as CustomEvent<string>).detail !== vehicle.uid) collapse()
+    }
+    map.on('click', collapse)
+    window.addEventListener('mobile-unit-selected', selectOther)
+    return () => {
+      map.off('click', collapse)
+      window.removeEventListener('mobile-unit-selected', selectOther)
+    }
+  }, [map, vehicle.uid])
   // 最新角度副本：滚轮连续滚动时无需 React 往返，直接读/写
   const rotRef = useRef(vehicle.rotation ?? 0)
   rotRef.current = vehicle.rotation ?? 0
@@ -171,6 +191,58 @@ function VehicleMarker({
     }
   }, [vehicle.uid, onRotate, expanded])
 
+  useEffect(() => {
+    if (platform.kind !== 'android') return
+    const w = window as unknown as {
+      __vehRotateStart?: (event: PointerEvent, uid: string) => void
+      __vehRotateStartHandlers?: Record<string, (event: PointerEvent) => void>
+      __vehDelete?: (uid: string) => void
+      __vehDeleteHandlers?: Record<string, () => void>
+    }
+    if (!w.__vehRotateStart) w.__vehRotateStart = (event, uid) => w.__vehRotateStartHandlers?.[uid]?.(event)
+    if (!w.__vehRotateStartHandlers) w.__vehRotateStartHandlers = {}
+    if (!w.__vehDelete) w.__vehDelete = (uid) => w.__vehDeleteHandlers?.[uid]?.()
+    if (!w.__vehDeleteHandlers) w.__vehDeleteHandlers = {}
+    w.__vehRotateStartHandlers[vehicle.uid] = (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const marker = ref.current?.getElement()
+      if (!marker) return
+      ref.current?.dragging?.disable()
+      const rect = marker.getBoundingClientRect()
+      const cx = rect.left + rect.width / 2
+      const cy = rect.top + rect.height / 2
+      const startPointerAngle = Math.atan2(event.clientY - cy, event.clientX - cx) * 180 / Math.PI
+      const startRotation = rotRef.current
+      let finalRotation = startRotation
+      const move = (moveEvent: PointerEvent) => {
+        if (moveEvent.pointerId !== event.pointerId) return
+        moveEvent.preventDefault()
+        const pointerAngle = Math.atan2(moveEvent.clientY - cy, moveEvent.clientX - cx) * 180 / Math.PI
+        finalRotation = (startRotation + pointerAngle - startPointerAngle + 360) % 360
+        rotRef.current = finalRotation
+        const image = marker.querySelector<HTMLElement>('.veh-icon')
+        if (image) image.style.transform = `rotate(${finalRotation}deg)`
+      }
+      const finish = (finishEvent: PointerEvent) => {
+        if (finishEvent.pointerId !== event.pointerId) return
+        document.removeEventListener('pointermove', move)
+        document.removeEventListener('pointerup', finish)
+        document.removeEventListener('pointercancel', finish)
+        if (canDrag) ref.current?.dragging?.enable()
+        onRotate(vehicle.uid, Math.round(finalRotation))
+      }
+      document.addEventListener('pointermove', move, { passive: false })
+      document.addEventListener('pointerup', finish)
+      document.addEventListener('pointercancel', finish)
+    }
+    w.__vehDeleteHandlers[vehicle.uid] = () => onDelete(vehicle.uid)
+    return () => {
+      if (w.__vehRotateStartHandlers) delete w.__vehRotateStartHandlers[vehicle.uid]
+      if (w.__vehDeleteHandlers) delete w.__vehDeleteHandlers[vehicle.uid]
+    }
+  }, [vehicle.uid, canDrag, onRotate, onDelete])
+
   // 快捷切换阵营按钮：window.__vehSide(uid)，与删除按钮同样的分发器机制
   useEffect(() => {
     const w = window as unknown as {
@@ -228,15 +300,21 @@ function VehicleMarker({
       // 绘制工具激活时禁用交互：载具图标不拦截 mousedown，绘制可穿过
       interactive={interactive}
       eventHandlers={{
-        click: () => {
+        click: (event) => {
           // 绘制工具激活时忽略点击（不展开载具属性卡）
           if (!interactive) return
+          if (platform.kind === 'android') {
+            L.DomEvent.stopPropagation(event)
+            window.dispatchEvent(new CustomEvent('mobile-unit-selected', { detail: vehicle.uid }))
+          }
           setExpanded((v) => !v)
         },
-        dragstart: () => setExpanded(false),
+        dragstart: () => ref.current?.getElement()?.classList.add('mobile-unit-dragging'),
         dragend: (e) => {
+          ref.current?.getElement()?.classList.remove('mobile-unit-dragging')
           const ll = (e.target as L.Marker).getLatLng()
           onMove(vehicle.uid, ll.lat, ll.lng)
+          if (platform.kind === 'android') setExpanded(true)
         },
         contextmenu: (event) => {
           L.DomEvent.stopPropagation(event)

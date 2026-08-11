@@ -34,6 +34,8 @@ import ModeConfigEditor from './ModeConfigEditor'
 import ModeConfigLayer from './ModeConfigLayer'
 import ModeAssetPalette, { readModePaletteAsset } from './ModeAssetPalette'
 import ShortcutHelp from './ShortcutHelp'
+import { platform } from '../platform'
+import { useDeviceType } from '../hooks/useDeviceType'
 
 const MODE_HISTORY_LIMIT = 100
 
@@ -98,6 +100,7 @@ function WorkbenchMapSync({ config, onReady }: { config: (typeof MAPS)[number]; 
 }
 
 export default function ModeConfigWorkbench() {
+  const device = useDeviceType()
   const mapRef = useRef<L.Map | null>(null)
   const handleMapReady = useCallback((map: L.Map) => { mapRef.current = map }, [])
   const initialStore = useMemo(loadModeConfigStore, [])
@@ -115,7 +118,7 @@ export default function ModeConfigWorkbench() {
   const [syncStatus, setSyncStatus] = useState('')
   const [leftPaletteOpen, setLeftPaletteOpen] = useState(true)
   const [rightEditorOpen, setRightEditorOpen] = useState(true)
-  const [fullscreen, setFullscreen] = useState(Boolean(document.fullscreenElement))
+  const [fullscreen, setFullscreen] = useState(platform.isFullscreen())
   const [elementVisibility, setElementVisibility] = useState({ zones: true, spawns: true, objectives: true, props: true })
   const syncStatusTimerRef = useRef<number | null>(null)
   const initialStages = STAGES_BY_MAP[mapId] ?? []
@@ -334,7 +337,7 @@ export default function ModeConfigWorkbench() {
 
   useEffect(() => {
     const onFullscreenChange = () => {
-      setFullscreen(Boolean(document.fullscreenElement))
+      setFullscreen(platform.isFullscreen())
       window.setTimeout(() => mapRef.current?.invalidateSize(), 0)
     }
     document.addEventListener('fullscreenchange', onFullscreenChange)
@@ -342,8 +345,7 @@ export default function ModeConfigWorkbench() {
   }, [])
 
   const toggleFullscreen = useCallback(async () => {
-    if (document.fullscreenElement) await document.exitFullscreen()
-    else await document.documentElement.requestFullscreen()
+    await platform.toggleFullscreen()
   }, [])
 
   useEffect(() => {
@@ -543,9 +545,7 @@ export default function ModeConfigWorkbench() {
     const nextStore = { ...store, activeModeId: profile.id }
     setStore(nextStore)
     publishModeConfigStore(nextStore)
-    const officialWindow = window.opener && !window.opener.closed
-      ? window.opener
-      : window.open('/', 'deltaforce-map-tools-official')
+    const officialWindow = platform.focusParentOrOpen('/', { target: 'deltaforce-map-tools-official' })
     officialWindow?.focus()
     setSyncStatus(`已同步并刷新正式版 · ${config.name} ${mapConfig.stages.length} 个阶段`)
     if (syncStatusTimerRef.current != null) window.clearTimeout(syncStatusTimerRef.current)
@@ -555,7 +555,7 @@ export default function ModeConfigWorkbench() {
   if (!config || !profile) return null
 
   return (
-    <main className={`mode-workbench${leftPaletteOpen ? '' : ' left-palette-collapsed'}`}>
+    <main className={`mode-workbench platform-${device.platform} ${device.mobileLayout ? 'mobile-layout' : 'desktop-layout'}${leftPaletteOpen ? '' : ' left-palette-collapsed'}`}>
       <header className="mode-workbench-toolbar">
         <img src="/nav_title.png" alt="三角洲行动" draggable={false} />
         <div className="mode-workbench-title"><strong>模式配置器</strong><span>独立数据工作台</span></div>
@@ -596,7 +596,7 @@ export default function ModeConfigWorkbench() {
           <i className={`fa-solid ${fullscreen ? 'fa-compress' : 'fa-expand'}`} />{fullscreen ? '退出全屏' : '全屏'}
         </button>
         <ShortcutHelp />
-        <button className="mode-workbench-close" onClick={() => window.close()}><i className="fa-solid fa-arrow-up-right-from-square" />关闭工具</button>
+        <button className="mode-workbench-close" onClick={() => platform.closeCurrentView()}><i className="fa-solid fa-arrow-up-right-from-square" />关闭工具</button>
       </header>
 
       <div
@@ -699,7 +699,7 @@ export default function ModeConfigWorkbench() {
           }}
           collapsed={!rightEditorOpen}
           onToggleCollapsed={() => setRightEditorOpen((open) => !open)}
-          onClose={() => window.close()}
+          onClose={() => platform.closeCurrentView()}
         />
       </div>
     </main>

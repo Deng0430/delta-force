@@ -1,7 +1,8 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { OperatorUnit, Side, TacticalOrderType, TacticalRoute, TacticalRouteLineStyle } from '../types'
 import { ORDER_STATUS_OPTIONS, ORDER_TYPE_OPTIONS, ROUTE_LINE_OPTIONS, orderTypeOf } from '../config/routes'
 import { teamOf } from '../config/operators'
+import { platform } from '../platform'
 
 interface RouteEditorPanelProps {
   route: TacticalRoute
@@ -19,6 +20,9 @@ interface RouteEditorPanelProps {
 export default function RouteEditorPanel({ route, view, availableOperators, branchPicking, onPatch, onCopy, onReverse, onBranch, onDelete, onClose }: RouteEditorPanelProps) {
   const [name, setName] = useState(route.name)
   const [opacity, setOpacity] = useState(Math.round(route.opacity * 100))
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const panelOffsetRef = useRef({ x: 0, y: 0 })
+  const panelDragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number; baseLeft: number; baseTop: number; width: number; height: number } | null>(null)
 
   useEffect(() => setName(route.name), [route.uid, route.name])
   useEffect(() => setOpacity(Math.round(route.opacity * 100)), [route.uid, route.opacity])
@@ -32,6 +36,59 @@ export default function RouteEditorPanel({ route, view, availableOperators, bran
   const changeType = (orderType: TacticalOrderType) => {
     const meta = orderTypeOf(orderType)
     onPatch({ orderType, lineStyle: meta.lineStyle })
+  }
+
+  const addWaypointForTouch = () => {
+    const endIndex = route.waypoints.length - 1
+    const start = route.waypoints[Math.max(0, endIndex - 1)]
+    const end = route.waypoints[endIndex]
+    if (!start || !end) return
+    const waypoints = [...route.waypoints]
+    waypoints.splice(endIndex, 0, [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2])
+    onPatch({ waypoints })
+  }
+
+  const removeWaypointForTouch = () => {
+    if (route.waypoints.length <= 2) return
+    onPatch({ waypoints: route.waypoints.filter((_, index) => index !== route.waypoints.length - 2) })
+  }
+
+  const beginPanelDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (platform.kind !== 'android' || (event.target as HTMLElement).closest('button')) return
+    const panel = panelRef.current
+    if (!panel) return
+    const rect = panel.getBoundingClientRect()
+    panelDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: panelOffsetRef.current.x,
+      originY: panelOffsetRef.current.y,
+      baseLeft: rect.left - panelOffsetRef.current.x,
+      baseTop: rect.top - panelOffsetRef.current.y,
+      width: rect.width,
+      height: rect.height,
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    event.preventDefault()
+  }
+
+  const movePanel = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = panelDragRef.current
+    const panel = panelRef.current
+    if (!drag || !panel || drag.pointerId !== event.pointerId) return
+    const rawX = drag.originX + event.clientX - drag.startX
+    const rawY = drag.originY + event.clientY - drag.startY
+    const x = Math.min(window.innerWidth - 4 - drag.width - drag.baseLeft, Math.max(4 - drag.baseLeft, rawX))
+    const y = Math.min(window.innerHeight - 4 - drag.height - drag.baseTop, Math.max(4 - drag.baseTop, rawY))
+    panelOffsetRef.current = { x, y }
+    panel.style.transform = `translate3d(${x}px, ${y}px, 0)`
+  }
+
+  const endPanelDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (panelDragRef.current?.pointerId !== event.pointerId) return
+    panelDragRef.current = null
+    event.currentTarget.releasePointerCapture(event.pointerId)
   }
 
   const anchoredOperator = route.anchorOperatorUid
@@ -62,8 +119,8 @@ export default function RouteEditorPanel({ route, view, availableOperators, bran
   const teamColor = teamOf(route.team).color
 
   return (
-    <div className="route-editor-panel" onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
-      <div className="route-editor-head">
+    <div ref={panelRef} className="route-editor-panel" onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
+      <div className="route-editor-head" onPointerDown={beginPanelDrag} onPointerMove={movePanel} onPointerUp={endPanelDrag} onPointerCancel={endPanelDrag}>
         <span><i className="fa-solid fa-route" aria-hidden="true" /> 行动指令</span>
         <button type="button" onClick={onClose} aria-label="关闭路线属性">×</button>
       </div>
@@ -192,6 +249,8 @@ export default function RouteEditorPanel({ route, view, availableOperators, bran
       </details>
 
       <div className="route-editor-actions">
+        <button type="button" className="mobile-route-edit-action" onClick={addWaypointForTouch}><i className="fa-solid fa-plus" />增加途经点</button>
+        <button type="button" className="mobile-route-edit-action" disabled={route.waypoints.length <= 2} onClick={removeWaypointForTouch}><i className="fa-solid fa-minus" />移除末段节点</button>
         <button type="button" onClick={onCopy}><i className="fa-regular fa-copy" />复制</button>
         <button type="button" onClick={onReverse}><i className="fa-solid fa-right-left" />反转</button>
         {(route.anchorMode !== 'free' || route.target) && (

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">三角洲战术地图</string>
+    <string name="title_activity_main">三角洲战术地图</string>
+    <string name="package_name">com.d4820.deltaforce.tacticalmap</string>
+    <string name="custom_url_scheme">com.d4820.deltaforce.tacticalmap</string>
+</resources>

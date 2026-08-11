@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import type { DrawSettings, Side, ToolMode } from '../types'
 import DrawBar from './DrawBar'
 import { IconFullscreen } from './icons'
 import ShortcutHelp from './ShortcutHelp'
+import { platform } from '../platform'
+import type { GameDataPlatform } from '../config/gameDataPlatform'
 
 type ToolbarMenu = 'map' | 'mode' | 'device'
 
@@ -35,10 +37,27 @@ function ToolbarSelect({
 }: ToolbarSelectProps) {
   const open = openMenu === menu
   const menuId = `toolbar-${menu}-menu`
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const [menuPosition, setMenuPosition] = useState<CSSProperties>({})
+
+  useLayoutEffect(() => {
+    if (!open || platform.kind !== 'android') return
+    const updatePosition = () => {
+      const rect = buttonRef.current?.getBoundingClientRect()
+      if (!rect) return
+      setMenuPosition(align === 'right'
+        ? { top: rect.bottom + 4, right: Math.max(6, window.innerWidth - rect.right) }
+        : { top: rect.bottom + 4, left: Math.max(6, rect.left) })
+    }
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    return () => window.removeEventListener('resize', updatePosition)
+  }, [align, open])
 
   return (
-    <div className={`map-select topbar-select ${open ? 'open' : ''}`}>
+    <div className={`map-select topbar-select menu-${menu} ${open ? 'open' : ''}`}>
       <button
+        ref={buttonRef}
         className="map-select-btn"
         onClick={() => onOpenMenu(open ? null : menu)}
         aria-haspopup="listbox"
@@ -50,7 +69,7 @@ function ToolbarSelect({
         <i className="fa-solid fa-chevron-down" aria-hidden="true" />
       </button>
       {open ? (
-        <div id={menuId} className={`map-select-menu align-${align}`} role="listbox">
+        <div id={menuId} className={`map-select-menu align-${align}`} role="listbox" style={menuPosition}>
           {options.map((option) => (
             <button
               key={option.value}
@@ -90,13 +109,15 @@ const MAPS: { id: string; name: string }[] = [
 const MAP_OPTIONS: ToolbarSelectOption[] = MAPS.map((map) => ({ value: map.id, label: map.name }))
 
 const DEVICE_OPTIONS: ToolbarSelectOption[] = [
-  { value: 'pc', label: 'PC' },
-  { value: 'mobile', label: '移动端', disabled: true },
+  { value: 'pc', label: 'PC端' },
+  { value: 'mobile', label: '移动端' },
 ]
 
 interface ToolbarProps {
   mapId: string
   onMapId: (id: string) => void
+  gameDataPlatform: GameDataPlatform
+  onGameDataPlatform: (platform: GameDataPlatform) => void
   gameModeName: string
   gameModeOptions: { id: string; name: string }[]
   onGameMode: (id: string) => void
@@ -127,11 +148,7 @@ const OFFICIAL_LOGO = '/nav_title.png'
 
 /** 全屏切换（复刻官网功能） */
 function toggleFullscreen() {
-  if (document.fullscreenElement) {
-    void document.exitFullscreen()
-  } else {
-    void document.documentElement.requestFullscreen()
-  }
+  void platform.toggleFullscreen()
 }
 
 /**
@@ -141,6 +158,8 @@ function toggleFullscreen() {
 export default function Toolbar({
   mapId,
   onMapId,
+  gameDataPlatform,
+  onGameDataPlatform,
   gameModeName,
   gameModeOptions,
   onGameMode,
@@ -169,17 +188,17 @@ export default function Toolbar({
   // 三个下拉栏共用一个打开状态，保证同一时间只展开一项。
   useEffect(() => {
     if (!openMenu) return
-    const onDocDown = (e: MouseEvent) => {
+    const onDocDown = (e: PointerEvent) => {
       const t = e.target as HTMLElement
       if (!t.closest('.topbar-select')) setOpenMenu(null)
     }
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpenMenu(null)
     }
-    document.addEventListener('mousedown', onDocDown)
+    document.addEventListener('pointerdown', onDocDown)
     document.addEventListener('keydown', onKeyDown)
     return () => {
-      document.removeEventListener('mousedown', onDocDown)
+      document.removeEventListener('pointerdown', onDocDown)
       document.removeEventListener('keydown', onKeyDown)
     }
   }, [openMenu])
@@ -250,11 +269,12 @@ export default function Toolbar({
         />
         <ToolbarSelect
           menu="device"
-          label="设备"
-          value="PC"
+          label="游戏数据"
+          value={gameDataPlatform === 'mobile' ? '移动端' : 'PC端'}
           options={DEVICE_OPTIONS}
           openMenu={openMenu}
           onOpenMenu={setOpenMenu}
+          onSelect={(value) => onGameDataPlatform(value as GameDataPlatform)}
           align="right"
         />
         <div className="mode-divider" />

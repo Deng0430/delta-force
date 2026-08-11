@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Marker, Polyline } from 'react-leaflet'
 import * as L from 'leaflet'
 import type { OperatorConnection, OperatorUnit } from '../types'
@@ -136,6 +136,41 @@ export default function ConnectionLayer({
   view,
   onRemoveConnection,
 }: ConnectionLayerProps) {
+  const [anchorPreview, setAnchorPreview] = useState<{ uid: string; point: [number, number] } | null>(null)
+  const previewFrameRef = useRef<number | null>(null)
+  const pendingPreviewRef = useRef<{ uid: string; point: [number, number] } | null>(null)
+
+  useEffect(() => {
+    const onAnchorDrag = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        phase: 'move' | 'end'
+        kind: 'operator' | 'team'
+        uid: string
+        lat: number
+        lng: number
+      }>).detail
+      if (!detail || detail.kind !== 'operator') return
+      if (detail.phase === 'end') {
+        pendingPreviewRef.current = null
+        if (previewFrameRef.current != null) window.cancelAnimationFrame(previewFrameRef.current)
+        previewFrameRef.current = null
+        setAnchorPreview(null)
+        return
+      }
+      pendingPreviewRef.current = { uid: detail.uid, point: [detail.lat, detail.lng] }
+      if (previewFrameRef.current != null) return
+      previewFrameRef.current = window.requestAnimationFrame(() => {
+        previewFrameRef.current = null
+        setAnchorPreview(pendingPreviewRef.current)
+      })
+    }
+    window.addEventListener('desktop-unit-anchor-drag', onAnchorDrag)
+    return () => {
+      window.removeEventListener('desktop-unit-anchor-drag', onAnchorDrag)
+      if (previewFrameRef.current != null) window.cancelAnimationFrame(previewFrameRef.current)
+    }
+  }, [])
+
   // uid → 干员映射（校验端点 + 取坐标 + 判阵营，随 operators 更新）
   const byUid = useMemo(() => {
     const m: Record<string, OperatorUnit> = {}
@@ -153,12 +188,14 @@ export default function ConnectionLayer({
         // 阵营色：取 A 端点干员阵营；有 view 时我方绿/敌方红，无 view 时按团队色回退
         const own = view != null ? a.side === view : a.side === 'attack'
         const color = view != null ? (own ? SIDE_COLOR.own : SIDE_COLOR.enemy) : '#8f9aa3'
+        const from: [number, number] = anchorPreview?.uid === a.uid ? anchorPreview.point : [a.lat, a.lng]
+        const to: [number, number] = anchorPreview?.uid === b.uid ? anchorPreview.point : [b.lat, b.lng]
         return (
           <ConnectionLine
             key={conn.id}
             conn={conn}
-            from={[a.lat, a.lng]}
-            to={[b.lat, b.lng]}
+            from={from}
+            to={to}
             fromName={a.name}
             toName={b.name}
             color={color}
