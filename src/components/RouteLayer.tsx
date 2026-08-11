@@ -434,7 +434,7 @@ function SelectedRouteEditor({ route, interactive, snapTargets, branchPicking, o
             },
           }}
         >
-          <Tooltip direction="top" offset={[0, -11]}>拖动整条路线</Tooltip>
+          {platform.kind !== 'android' && <Tooltip direction="top" offset={[0, -11]}>拖动整条路线</Tooltip>}
         </Marker>
       )}
     </>
@@ -658,10 +658,12 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, b
                 },
               }}
             >
-              <Tooltip sticky direction="top" opacity={0.96}>
-                {type.label} · {orderStatusLabel(route.status)} · {route.name}<br />
-                {route.operatorIds.length} 干员 · {route.vehicleIds.length} 载具 · {platform.kind === 'android' ? '快速双击路线添加途经点' : '双击线段插入途经点'}
-              </Tooltip>
+              {platform.kind !== 'android' && (
+                <Tooltip sticky direction="top" opacity={0.96}>
+                  {type.label} · {orderStatusLabel(route.status)} · {route.name}<br />
+                  {route.operatorIds.length} 干员 · {route.vehicleIds.length} 载具 · 双击线段插入途经点
+                </Tooltip>
+              )}
             </Polyline>
             {!selected && (
               <Polyline positions={renderedWaypoints} pathOptions={{ ...visual, interactive: false }} />
@@ -721,9 +723,11 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, b
                   },
                 }}
               >
-                <Tooltip direction="top" offset={[0, -9]} opacity={0.94}>
-                  {`途经点 ${index} · 拖动调整 · ${platform.kind === 'android' ? '轻触删除' : '右键删除'}`}
-                </Tooltip>
+                {platform.kind !== 'android' && (
+                  <Tooltip direction="top" offset={[0, -9]} opacity={0.94}>
+                    {`途经点 ${index} · 拖动调整 · 右键删除`}
+                  </Tooltip>
+                )}
               </Marker>
               )
             })}

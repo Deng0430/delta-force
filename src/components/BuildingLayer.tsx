@@ -16,9 +16,12 @@ function buildingIcon(building: BuildingUnit, view: Side, expanded: boolean): L.
   const sideColor = own ? OWN_COLOR : ENEMY_COLOR
   const team = building.team ? teamOf(building.team) : null
   const sideButton = `<button class="building-side" title="切换本方/敌方" aria-label="切换建筑阵营" onclick="event.stopPropagation();event.preventDefault();window.__buildingSide('${building.uid}')"><svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3.5 1 6l2.5 2.5M8.5 3.5 11 6l-2.5 2.5M1 6h10"/></svg></button><button class="building-route" title="创建建筑行动路线" aria-label="创建建筑行动路线" onclick="event.stopPropagation();event.preventDefault();window.__buildingRoute('${building.uid}')"><i class="fa-solid fa-route" aria-hidden="true"></i></button>`
+  const mobileControls = platform.kind === 'android'
+    ? `<button type="button" class="building-rotate-control unit-rotate-drag" aria-label="按住并拖动旋转建筑" onmousedown="event.stopPropagation();event.preventDefault()" ontouchstart="event.stopPropagation();event.preventDefault()" onpointerdown="window.__buildingRotateStart(event,'${building.uid}')"><i class="fa-solid fa-rotate"></i></button><button type="button" class="building-delete-control danger" aria-label="删除建筑" onclick="event.stopPropagation();event.preventDefault();window.__buildingDelete('${building.uid}')"><i class="fa-regular fa-trash-can"></i></button>`
+    : ''
   return L.divIcon({
     className: 'building-unit-wrap',
-    html: `<span class="building-unit ${own ? 'own' : 'enemy'} ${expanded ? 'expanded' : ''}" style="--building-side:${sideColor};--building-fill:${team?.color ?? sideColor}"><span class="building-side-ring"></span><span class="building-core"><img class="building-icon" src="${meta.iconUrl}" alt="" draggable="false" /></span>${sideButton}<button class="building-team-letter" title="${team ? `${team.name}（点击切换队伍）` : '无队伍（点击设置队伍）'}" aria-label="切换建筑所属队伍" onclick="event.stopPropagation();event.preventDefault();window.__buildingTeam('${building.uid}')">${team?.id ?? '–'}</button><button type="button" class="building-rotate-control unit-rotate-drag" aria-label="按住并拖动旋转建筑" onmousedown="event.stopPropagation();event.preventDefault()" ontouchstart="event.stopPropagation();event.preventDefault()" onpointerdown="window.__buildingRotateStart(event,'${building.uid}')"><i class="fa-solid fa-rotate"></i></button><button type="button" class="building-delete-control danger" aria-label="删除建筑" onclick="event.stopPropagation();event.preventDefault();window.__buildingDelete('${building.uid}')"><i class="fa-regular fa-trash-can"></i></button><span class="building-name">${meta.name}</span></span>`,
+    html: `<span class="building-unit ${own ? 'own' : 'enemy'} ${expanded ? 'expanded' : ''}" style="--building-side:${sideColor};--building-fill:${team?.color ?? sideColor}"><span class="building-side-ring"></span><span class="building-core"><img class="building-icon" src="${meta.iconUrl}" alt="" draggable="false" /></span>${sideButton}<button class="building-team-letter" title="${team ? `${team.name}（点击切换队伍）` : '无队伍（点击设置队伍）'}" aria-label="切换建筑所属队伍" onclick="event.stopPropagation();event.preventDefault();window.__buildingTeam('${building.uid}')">${team?.id ?? '–'}</button>${mobileControls}<span class="building-name">${meta.name}</span></span>`,
     iconSize: [38, 38],
     iconAnchor: [19, 19],
   })
@@ -93,6 +96,7 @@ function BuildingMarker({ building, view, interactive, onMove, onRotate, onToggl
   }, [building.uid, icon, onRotate])
 
   useEffect(() => {
+    if (platform.kind !== 'android') return
     const target = window as unknown as {
       __buildingRotateStart?: (event: PointerEvent, uid: string) => void
       __buildingRotateStartHandlers?: Record<string, (event: PointerEvent) => void>
@@ -211,7 +215,11 @@ function BuildingMarker({ building, view, interactive, onMove, onRotate, onToggl
         },
       }}
     >
-      <Tooltip direction="top" offset={[0, -16]}>{building.name} · {building.team ? `${building.team}队` : '无队伍'} · {building.side === view ? '本方' : '敌方'} · {platform.kind === 'android' ? '点击选中 · 拖动移动 · 使用旋转手柄' : '滚轮旋转 · 右键删除'}</Tooltip>
+      <Tooltip direction="top" offset={platform.kind === 'android' ? [0, -64] : [0, -16]}>
+        {building.name} · {platform.kind === 'android'
+          ? '拖动移动 · 手柄旋转'
+          : `${building.team ? `${building.team}队` : '无队伍'} · ${building.side === view ? '本方' : '敌方'} · 滚轮旋转 · 右键删除`}
+      </Tooltip>
     </Marker>
   )
 }

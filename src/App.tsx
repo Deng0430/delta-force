@@ -1645,7 +1645,6 @@ export default function App() {
           nextRoutes = syncRouteTargetPosition(nextRoutes, 'team', updated.teamMarkerUid, origin)
         }
       }
-      nextRoutes = syncBranchRouteOrigins(nextRoutes)
       let nextOperators = operatorsBucketOf(cur)[view]
       if (updated.anchorMode === 'operator' && updated.anchorOperatorUid && updated.waypoints[0]) {
         const origin = updated.waypoints[0]
@@ -1653,6 +1652,11 @@ export default function App() {
         if (origin[0] !== previousOrigin[0] || origin[1] !== previousOrigin[1]) {
           nextOperators = nextOperators.map((operator) =>
             operator.uid === updated.anchorOperatorUid ? { ...operator, lat: origin[0], lng: origin[1] } : operator,
+          )
+          nextRoutes = nextRoutes.map((route) =>
+            route.uid !== uid && route.anchorMode === 'operator' && route.anchorOperatorUid === updated.anchorOperatorUid
+              ? { ...route, waypoints: [[...origin] as [number, number], ...route.waypoints.slice(1)] }
+              : route,
           )
           nextRoutes = syncRouteTargetPosition(nextRoutes, 'operator', updated.anchorOperatorUid, origin)
         }
@@ -1665,9 +1669,16 @@ export default function App() {
           nextVehicles = nextVehicles.map((vehicle) =>
             vehicle.uid === updated.anchorVehicleUid ? { ...vehicle, lat: origin[0], lng: origin[1] } : vehicle,
           )
+          nextRoutes = nextRoutes.map((route) =>
+            route.uid !== uid && route.anchorMode === 'vehicle' && route.anchorVehicleUid === updated.anchorVehicleUid
+              ? { ...route, waypoints: [[...origin] as [number, number], ...route.waypoints.slice(1)] }
+              : route,
+          )
           nextRoutes = syncRouteTargetPosition(nextRoutes, 'vehicle', updated.anchorVehicleUid, origin)
         }
       }
+      // 所有共享兵棋锚点更新完成后再刷新分支，避免分支读取到其他路线的旧起点。
+      nextRoutes = syncBranchRouteOrigins(nextRoutes)
       updateMap(mapId, (state) => ({
         ...state,
         routes: { ...routesBucketOf(state), [view]: nextRoutes },

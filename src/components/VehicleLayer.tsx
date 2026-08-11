@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
-import { Marker, useMap } from 'react-leaflet'
+import { Marker, Tooltip, useMap } from 'react-leaflet'
 import * as L from 'leaflet'
 import type { OperatorTeam, Side, VehicleItem } from '../types'
 import { teamOf } from '../config/operators'
@@ -321,7 +321,11 @@ function VehicleMarker({
           onDelete(vehicle.uid)
         },
       }}
-    />
+    >
+      <Tooltip direction="top" offset={platform.kind === 'android' ? [0, -64] : [0, -16]}>
+        {vehicle.name} · {platform.kind === 'android' ? '拖动移动 · 手柄旋转' : '滚轮旋转 · 右键删除'}
+      </Tooltip>
+    </Marker>
   )
 }
 

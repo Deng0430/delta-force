@@ -116,7 +116,8 @@
 .mobile-layout .route-editor-actions { gap: 3px; }
 .mobile-layout .route-editor-actions button { padding: 3px 2px; }
 
-.mobile-layout .route-editor-trigger {
+.mobile-layout .route-editor-trigger,
+.mobile-layout .route-delete-trigger {
   position: static;
   width: 36px;
   height: 36px;
@@ -131,6 +132,17 @@
   box-shadow: 0 4px 14px rgba(0, 0, 0, .5);
   font-size: 12px;
   touch-action: manipulation;
+}
+
+.mobile-layout .route-delete-trigger {
+  color: #ff7770;
+  border-color: #c94d48;
+}
+
+.mobile-layout .route-selection-hint {
+  max-width: 118px;
+  font-size: 10px;
+  line-height: 15px;
 }
 
 .mobile-layout .left-panel-resizer {

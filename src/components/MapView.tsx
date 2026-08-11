@@ -177,43 +177,50 @@ function MapResizeSync() {
   return null
 }
 
-function RouteEditorTrigger({ route, onOpen }: { route: TacticalRoute; onOpen: () => void }) {
+function RouteEditorTrigger({ route, onOpen, onDelete }: { route: TacticalRoute; onOpen: () => void; onDelete: () => void }) {
   const map = useMap()
   const markerRef = useRef<L.Marker | null>(null)
   const onOpenRef = useRef(onOpen)
+  const onDeleteRef = useRef(onDelete)
   onOpenRef.current = onOpen
+  onDeleteRef.current = onDelete
   const routeNorthEast = useMemo(() => {
     const bounds = L.latLngBounds(route.waypoints.map(([lat, lng]) => L.latLng(lat, lng)))
     return bounds.getNorthEast()
   }, [route.waypoints])
   const [position, setPosition] = useState(routeNorthEast)
   const buttonSize = platform.kind === 'android' ? 36 : 30
+  const controlWidth = buttonSize * 2 + 6
+  const controlHeight = buttonSize + 24
   const icon = useMemo(() => L.divIcon({
     className: 'route-editor-trigger-wrap',
-    html: '<button type="button" class="route-editor-trigger" title="编辑行动指令" aria-label="编辑行动指令"><i class="fa-solid fa-route" aria-hidden="true"></i></button>',
-    iconSize: [buttonSize, buttonSize],
-    iconAnchor: [buttonSize / 2, buttonSize / 2],
-  }), [buttonSize])
+    html: '<div class="route-selection-controls"><span class="route-selection-hint"></span><div class="route-selection-actions"><button type="button" class="route-editor-trigger" title="编辑行动指令" aria-label="编辑行动指令"><i class="fa-solid fa-route" aria-hidden="true"></i></button><button type="button" class="route-delete-trigger" title="删除路线" aria-label="删除路线"><i class="fa-regular fa-trash-can" aria-hidden="true"></i></button></div></div>',
+    iconSize: [controlWidth, controlHeight],
+    iconAnchor: [0, controlHeight],
+  }), [buttonSize, controlWidth, controlHeight])
 
   useEffect(() => {
     const updatePosition = () => {
       const size = map.getSize()
-      const margin = buttonSize / 2 + 4
-      const desired = map.latLngToContainerPoint(routeNorthEast).add([buttonSize / 2 + 8, 0])
+      const desired = map.latLngToContainerPoint(routeNorthEast).add([8, -8])
       const clamped = L.point(
-        Math.max(margin, Math.min(size.x - margin, desired.x)),
-        Math.max(margin, Math.min(size.y - margin, desired.y)),
+        Math.max(4, Math.min(size.x - controlWidth - 4, desired.x)),
+        Math.max(controlHeight + 4, Math.min(size.y - 4, desired.y)),
       )
       setPosition(map.containerPointToLatLng(clamped))
     }
     updatePosition()
     map.on('move zoom resize', updatePosition)
     return () => { map.off('move zoom resize', updatePosition) }
-  }, [map, routeNorthEast, buttonSize])
+  }, [map, routeNorthEast, controlWidth, controlHeight])
 
   useEffect(() => {
-    const button = markerRef.current?.getElement()?.querySelector<HTMLElement>('.route-editor-trigger')
-    if (!button) return
+    const element = markerRef.current?.getElement()
+    const openButton = element?.querySelector<HTMLElement>('.route-editor-trigger')
+    const deleteButton = element?.querySelector<HTMLElement>('.route-delete-trigger')
+    const hint = element?.querySelector<HTMLElement>('.route-selection-hint')
+    if (!element || !openButton || !deleteButton || !hint) return
+    hint.textContent = route.name || '已选路线'
     const stopPointer = (event: Event) => L.DomEvent.stop(event)
     const openOnPointerUp = (event: Event) => {
       L.DomEvent.stop(event)
@@ -221,13 +228,19 @@ function RouteEditorTrigger({ route, onOpen }: { route: TacticalRoute; onOpen: (
       // 避免 click 落到下方路线并再次执行“选中路线 = 收起面板”。
       window.setTimeout(() => onOpenRef.current(), 0)
     }
-    L.DomEvent.on(button, 'pointerdown', stopPointer)
-    L.DomEvent.on(button, 'pointerup', openOnPointerUp)
-    return () => {
-      L.DomEvent.off(button, 'pointerdown', stopPointer)
-      L.DomEvent.off(button, 'pointerup', openOnPointerUp)
+    const deleteOnPointerUp = (event: Event) => {
+      L.DomEvent.stop(event)
+      window.setTimeout(() => onDeleteRef.current(), 0)
     }
-  }, [icon])
+    L.DomEvent.on(element, 'pointerdown', stopPointer)
+    L.DomEvent.on(openButton, 'pointerup', openOnPointerUp)
+    L.DomEvent.on(deleteButton, 'pointerup', deleteOnPointerUp)
+    return () => {
+      L.DomEvent.off(element, 'pointerdown', stopPointer)
+      L.DomEvent.off(openButton, 'pointerup', openOnPointerUp)
+      L.DomEvent.off(deleteButton, 'pointerup', deleteOnPointerUp)
+    }
+  }, [icon, route.name])
 
   return (
     <Marker
@@ -697,7 +710,16 @@ export default function MapView({
           />
         )}
         {selectedRoute && !routeDrawing && !routeEditorOpen && (
-          <RouteEditorTrigger route={selectedRoute} onOpen={() => setRouteEditorOpen(true)} />
+          <RouteEditorTrigger
+            route={selectedRoute}
+            onOpen={() => setRouteEditorOpen(true)}
+            onDelete={() => {
+              onDeleteRoute(selectedRoute.uid)
+              setSelectedRouteUid(null)
+              setRouteEditorOpen(false)
+              setBranchPickRouteUid(null)
+            }}
+          />
         )}
         {wargame.enabled && (
           <TeamLayer
