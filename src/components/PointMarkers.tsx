@@ -94,6 +94,7 @@ export default function PointMarkers({
             opacity: 0.9,
             fillColor: pointOwnColor(activeStatus, view),
             fillOpacity: 0,
+            className: 'demo-map-frontline',
             // 绘制工具激活时禁用交互：否则多边形拦截鼠标事件，战斗区域内无法绘制
             interactive,
           }}
@@ -114,6 +115,7 @@ export default function PointMarkers({
                 opacity: 0.85,
                 fillColor: pointOwnColor(activeStatus, view),
                 fillOpacity: 0.1,
+                className: 'demo-map-capture',
                 // 绘制工具激活时禁用交互：据点可占领区域（战斗区域主体）不再拦截绘制
                 interactive,
               }}

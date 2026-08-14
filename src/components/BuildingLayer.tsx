@@ -148,6 +148,68 @@ function BuildingMarker({ building, view, interactive, onMove, onRotate, onToggl
   }, [building.uid, interactive, onRotate, onDelete])
 
   useEffect(() => {
+    if (platform.kind !== 'android' || !interactive) return
+    let element: HTMLElement | null = null
+    let disposed = false
+    let bindTimer: number | undefined
+    const bind = () => {
+      if (disposed) return
+      element = ref.current?.getElement() ?? null
+      if (!element) {
+        bindTimer = window.setTimeout(bind, 40)
+        return
+      }
+      element.addEventListener('pointerdown', onPointerDown, { passive: false })
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.pointerType === 'mouse' || (event.target as HTMLElement).closest('button')) return
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+      const marker = ref.current
+      if (!marker) return
+      const mapDraggingWasEnabled = map.dragging.enabled()
+      if (mapDraggingWasEnabled) map.dragging.disable()
+      marker.dragging?.disable()
+      const pointerId = event.pointerId
+      const startPointer = L.point(event.clientX, event.clientY)
+      const startLatLng = marker.getLatLng()
+      let moved = false
+      const move = (moveEvent: PointerEvent) => {
+        if (moveEvent.pointerId !== pointerId) return
+        moveEvent.preventDefault()
+        const delta = L.point(moveEvent.clientX, moveEvent.clientY).subtract(startPointer)
+        if (delta.distanceTo(L.point(0, 0)) > 4) moved = true
+        const origin = map.latLngToContainerPoint(startLatLng)
+        marker.setLatLng(map.containerPointToLatLng(origin.add(delta)))
+        marker.getElement()?.classList.add('mobile-unit-dragging')
+      }
+      const finish = (finishEvent: PointerEvent) => {
+        if (finishEvent.pointerId !== pointerId) return
+        document.removeEventListener('pointermove', move)
+        document.removeEventListener('pointerup', finish)
+        document.removeEventListener('pointercancel', finish)
+        marker.getElement()?.classList.remove('mobile-unit-dragging')
+        if (mapDraggingWasEnabled) map.dragging.enable()
+        if (moved) {
+          const point = marker.getLatLng()
+          onMove(building.uid, point.lat, point.lng)
+          setExpanded(true)
+        }
+      }
+      document.addEventListener('pointermove', move, { passive: false })
+      document.addEventListener('pointerup', finish)
+      document.addEventListener('pointercancel', finish)
+    }
+    bind()
+    return () => {
+      disposed = true
+      if (bindTimer) window.clearTimeout(bindTimer)
+      element?.removeEventListener('pointerdown', onPointerDown)
+    }
+  }, [building.uid, interactive, map, onMove])
+
+  useEffect(() => {
     const target = window as unknown as {
       __buildingRoute?: (uid: string) => void
       __buildingRouteHandlers?: Record<string, () => void>
@@ -191,7 +253,7 @@ function BuildingMarker({ building, view, interactive, onMove, onRotate, onToggl
       ref={ref}
       position={[building.lat, building.lng]}
       icon={icon}
-      draggable={interactive}
+      draggable={interactive && platform.kind !== 'android'}
       interactive={interactive}
       zIndexOffset={640}
       eventHandlers={{

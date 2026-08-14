@@ -10,6 +10,8 @@ function capacitorBridge(): CapacitorBridge | undefined {
 }
 
 function detectPlatformKind(): PlatformKind {
+  const demoParams = new URLSearchParams(window.location.search)
+  if (demoParams.get('cinematicDemoFrame') === '1' && demoParams.get('platformDemo') === 'android') return 'android'
   const capacitor = capacitorBridge()
   if (capacitor?.getPlatform?.() === 'android') return 'android'
   if (/Electron/i.test(navigator.userAgent)) return 'electron'

@@ -183,6 +183,15 @@
   touch-action: manipulation;
 }
 
+.mobile-layout .text-editor {
+  width: min(380px, calc(100% - 16px));
+}
+
+.mobile-layout .text-editor .btn {
+  flex: 0 0 auto;
+  min-height: 34px;
+}
+
 .mobile-layout .text-style-panel {
   box-sizing: border-box;
   max-width: calc(100vw - 12px);

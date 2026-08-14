@@ -26,7 +26,7 @@ import winnerTakesAllOfficial from '../config/winnerTakesAllOfficial.json'
 export const MODE_CONFIG_STORAGE_KEY = 'deltaforce-mode-configs-v1'
 export const MODE_CONFIG_SYNC_CHANNEL = 'deltaforce-mode-config-sync-v1'
 export const MODE_CONFIG_SYNC_MESSAGE = 'deltaforce-mode-config-sync'
-const MODE_STORAGE_VERSION = 6 as const
+const MODE_STORAGE_VERSION = 8 as const
 
 const SIDES: Side[] = ['attack', 'defense']
 const VERIFICATIONS: ModeConfigVerification[] = ['draft', 'confirmed']
@@ -174,7 +174,7 @@ function modeMapFromOfficial(mapId: string, official: OfficialModeMapData): Mode
 
   return {
     mapId,
-    notes: '内置数据：攀升 · 胜者为王（2026-08-11）。',
+    notes: '内置数据：攀升 · 胜者为王（2026-08-14）。',
     stages: official.stages.map((stage) => ({ id: stage.id, label: stage.label })),
     zones,
     spawns,
@@ -549,6 +549,17 @@ export function normalizeModeConfigStore(value: unknown): ModeConfigStore | null
         winner.maps.ember = modeMapFromOfficial('ember', winnerTakesAllOfficial.maps.ember as unknown as OfficialModeMapData)
         continue
       }
+      // v7 更新“攀升·胜者为王”正式数据；仅覆盖该内置地图，保留烬区与其他模式配置。
+      if (map.id === 'ascent' && sourceVersion < 7) {
+        winner.maps.ascent = modeMapFromOfficial('ascent', winnerTakesAllOfficial.maps.ascent as unknown as OfficialModeMapData)
+        continue
+      }
+      // v8 再次发布 2026-08-14 攀升数据，确保已经写入 v7 的安装用户
+      // 也能获得 S1 守方复活点新增的 M1A4 主战坦克。
+      if (map.id === 'ascent' && sourceVersion < 8) {
+        winner.maps.ascent = modeMapFromOfficial('ascent', winnerTakesAllOfficial.maps.ascent as unknown as OfficialModeMapData)
+        continue
+      }
       // 更早的旧格式仍需补齐其他地图；已有数据在本轮只迁移对应新增地图。
       if (sourceVersion < 4 || !winner.maps[map.id]) {
         winner.maps[map.id] = syncModeMapFromAttackDefense(map.id, STAGES_BY_MAP[map.id] ?? [])
@@ -562,7 +573,14 @@ export function loadModeConfigStore(): ModeConfigStore {
   try {
     const raw = localStorage.getItem(MODE_CONFIG_STORAGE_KEY)
     if (!raw) return defaultStore()
-    return normalizeModeConfigStore(JSON.parse(raw)) ?? defaultStore()
+    const parsed = JSON.parse(raw) as { version?: unknown }
+    const normalized = normalizeModeConfigStore(parsed) ?? defaultStore()
+    // 迁移不能只停留在当前窗口内存中，否则其他正式版/编辑器窗口仍可能
+    // 用旧存储内容覆盖新数据。版本发生变化时立即写回规范化结果。
+    if (Number(parsed.version ?? 1) !== normalized.version) {
+      localStorage.setItem(MODE_CONFIG_STORAGE_KEY, JSON.stringify(normalized))
+    }
+    return normalized
   } catch (error) {
     console.warn('[mode-config] 读取失败，将使用默认草稿', error)
     return defaultStore()

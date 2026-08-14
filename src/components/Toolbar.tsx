@@ -141,6 +141,7 @@ interface ToolbarProps {
   onClearAll: () => void
   /** 打开战术板弹窗（导出 HTML / 方案管理） */
   onOpenTactical: () => void
+  cinematicModeSwitch?: boolean
 }
 
 /** 左上角图标（来自 enn.com.cn，三角洲行动标题标识） */
@@ -181,9 +182,33 @@ export default function Toolbar({
   onClearVehicles,
   onClearAll,
   onOpenTactical,
+  cinematicModeSwitch = false,
 }: ToolbarProps) {
   const [openMenu, setOpenMenu] = useState<ToolbarMenu | null>(null)
   const currentMap = MAPS.find((m) => m.id === mapId) ?? MAPS[0]
+
+  useEffect(() => {
+    if (!cinematicModeSwitch) return
+    const openTimer = window.setTimeout(() => setOpenMenu('mode'), 1100)
+    const selectTimer = window.setTimeout(() => {
+      onGameMode('winner-takes-all')
+      setOpenMenu(null)
+    }, 3100)
+    const openDataTimer = window.setTimeout(() => {
+      document.querySelector<HTMLButtonElement>('.topbar-select.menu-device .map-select-btn')?.click()
+    }, 4300)
+    const selectDataTimer = window.setTimeout(() => {
+      const mobileOption = [...document.querySelectorAll<HTMLButtonElement>('.topbar-select.menu-device .map-select-item')]
+        .find((option) => option.textContent?.trim() === '移动端')
+      mobileOption?.click()
+    }, 5900)
+    return () => {
+      window.clearTimeout(openTimer)
+      window.clearTimeout(selectTimer)
+      window.clearTimeout(openDataTimer)
+      window.clearTimeout(selectDataTimer)
+    }
+  }, [cinematicModeSwitch, onGameMode])
 
   // 三个下拉栏共用一个打开状态，保证同一时间只展开一项。
   useEffect(() => {

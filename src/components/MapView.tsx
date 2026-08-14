@@ -47,6 +47,7 @@ interface OfficialModeMapData {
 
 interface MapViewProps {
   config: MapConfig
+  mobileLayout: boolean
   modeData: OfficialModeMapData | null
   propsOverride?: MapProp[]
   modeStageId: string | null
@@ -139,23 +140,81 @@ interface MapViewProps {
   onCreateRoute: (route: TacticalRoute) => void
   onUpdateRoute: (uid: string, patch: Partial<TacticalRoute>) => void
   onDeleteRoute: (uid: string) => void
+  cinematicInitialView?: { center: [number, number]; zoom: number } | null
+  cinematicBattleCompare?: string | null
+}
+
+function CinematicBattleHighlights({ stage }: { stage: string }) {
+  const map = useMap()
+  const points = stage === 'S4'
+    ? [
+        { kind: 'attack', pos: [-153.407, 208.457] as [number, number], label: '洞穴出口' },
+        { kind: 'objective', pos: [-173.957, 190.895] as [number, number], label: '据点 D' },
+        { kind: 'defense', pos: [-182.931, 189.536] as [number, number], label: '守方复活点 1' },
+      ]
+    : [
+        { kind: 'attack', pos: [-161.74964700298045, 205.31205528170955] as [number, number], label: '进攻复活点' },
+        { kind: 'objective', pos: [-173.957, 190.895] as [number, number], label: '据点 D2' },
+        { kind: 'defense canceled', pos: [-182.931, 189.536] as [number, number], label: '守方复活点取消' },
+      ]
+  useEffect(() => {
+    const report = () => {
+      const size = map.getSize()
+      const positions = points.map(({ kind, pos }) => {
+        const pixel = map.latLngToContainerPoint(pos)
+        return { kind: kind.split(' ')[0], x: pixel.x / size.x, y: pixel.y / size.y }
+      })
+      window.parent.postMessage({ type: 'cinematic-battle-positions', stage, positions }, '*')
+    }
+    report()
+    map.on('move zoom resize', report)
+    return () => { map.off('move zoom resize', report) }
+  }, [map, points, stage])
+  return <>{points.map(({ kind, pos, label }) => <Marker key={kind} position={pos} interactive={false} zIndexOffset={1800} icon={L.divIcon({ className: 'cinematic-battle-marker-wrap', html: `<div class="cinematic-battle-marker ${kind}"><i></i><span>${label}</span></div>`, iconSize: [1, 1], iconAnchor: [0, 0] })} />)}</>
 }
 
 /** 地图实例就绪 / 视角切换后的同步（视口、边界） */
 function MapSync({
   config,
   onReady,
+  initialView,
+  minZoom,
+  defaultZoom,
 }: {
   config: MapConfig
   onReady: (map: L.Map) => void
+  initialView?: { center: [number, number]; zoom: number } | null
+  minZoom: number
+  defaultZoom: number
 }) {
   const map = useMap()
+  const appliedViewRef = useRef('')
   useEffect(() => {
-    map.setView(config.initCenter, config.initZoom, { animate: false })
+    const center = initialView?.center ?? config.initCenter
+    const zoom = initialView?.zoom ?? defaultZoom
+    const signature = `${config.id}:${center[0]}:${center[1]}:${zoom}`
+    let firstFrame = 0
+    let secondFrame = 0
+    if (appliedViewRef.current !== signature) {
+      appliedViewRef.current = signature
+      map.setView(center, zoom, { animate: false })
+      // Android 横屏侧栏与安全区会在首帧后完成尺寸计算。待布局稳定后只校正一次，
+      // 避免初始中心按旧容器尺寸计算；后续兵棋状态更新不会再次进入此分支。
+      firstFrame = window.requestAnimationFrame(() => {
+        secondFrame = window.requestAnimationFrame(() => {
+          map.invalidateSize({ animate: false })
+          map.setView(center, zoom, { animate: false })
+        })
+      })
+    }
     map.setMaxBounds(mapBounds(config))
-    map.options.minZoom = config.minZoom
+    map.options.minZoom = minZoom
     onReady(map)
-  }, [map, config, onReady])
+    return () => {
+      if (firstFrame) window.cancelAnimationFrame(firstFrame)
+      if (secondFrame) window.cancelAnimationFrame(secondFrame)
+    }
+  }, [map, config, onReady, initialView, minZoom, defaultZoom])
   return null
 }
 
@@ -272,6 +331,7 @@ const STATUS_TEXT: Record<PointStatus, string> = {
 
 export default function MapView({
   config,
+  mobileLayout,
   modeData,
   propsOverride,
   modeStageId,
@@ -335,8 +395,14 @@ export default function MapView({
   onCreateRoute,
   onUpdateRoute,
   onDeleteRoute,
+  cinematicInitialView,
+  cinematicBattleCompare,
 }: MapViewProps) {
   const bounds = useMemo(() => mapBounds(config), [config])
+  // A phone viewport needs one extra zoom level to show roughly twice as much
+  // of the map. Keep desktop map tuning and explicit cinematic views unchanged.
+  const minZoom = mobileLayout ? Math.max(1, config.minZoom - 1) : config.minZoom
+  const defaultZoom = mobileLayout ? Math.max(minZoom, config.initZoom - 1) : config.initZoom
   const runtimeStages = modeData?.stages ?? stages
   const selectedModeStageIndex = modeData
     ? runtimeStages.findIndex((stage) => stage.id === modeStageId)
@@ -344,6 +410,9 @@ export default function MapView({
   const runtimeStageIndex = modeData ? Math.max(0, selectedModeStageIndex) : capturedStageIndex
   const [editing, setEditing] = useState<ActiveTextEdit | null>(null)
   const [draft, setDraft] = useState('')
+  const mapWrapRef = useRef<HTMLDivElement | null>(null)
+  const textEditorRef = useRef<HTMLDivElement | null>(null)
+  const [textEditorPosition, setTextEditorPosition] = useState<{ left: number; top: number } | null>(null)
   const [routeDraftSource, setRouteDraftSource] = useState<RouteDraftSource>(null)
   const [selectedRouteUid, setSelectedRouteUid] = useState<string | null>(null)
   const [routeEditorOpen, setRouteEditorOpen] = useState(false)
@@ -386,8 +455,46 @@ export default function MapView({
 
   const handleStartEdit = useCallback((edit: ActiveTextEdit) => {
     setDraft(edit.initialText)
+    setTextEditorPosition(null)
     setEditing(edit)
   }, [])
+
+  useEffect(() => {
+    if (!editing) return
+    const placeEditor = () => {
+      const wrap = mapWrapRef.current
+      const editor = textEditorRef.current
+      if (!wrap || !editor) return
+
+      const wrapRect = wrap.getBoundingClientRect()
+      const viewport = window.visualViewport
+      const visibleLeft = Math.max(wrapRect.left, viewport?.offsetLeft ?? 0)
+      const visibleTop = Math.max(wrapRect.top, viewport?.offsetTop ?? 0)
+      const visibleRight = Math.min(wrapRect.right, (viewport?.offsetLeft ?? 0) + (viewport?.width ?? window.innerWidth))
+      const visibleBottom = Math.min(wrapRect.bottom, (viewport?.offsetTop ?? 0) + (viewport?.height ?? window.innerHeight))
+      const margin = 8
+      const anchorX = wrapRect.left + (editing.containerPoint?.x ?? wrapRect.width / 2)
+      const anchorY = wrapRect.top + (editing.containerPoint?.y ?? 0) + 10
+      const maxLeft = Math.max(visibleLeft + margin, visibleRight - editor.offsetWidth - margin)
+      const maxTop = Math.max(visibleTop + margin, visibleBottom - editor.offsetHeight - margin)
+
+      setTextEditorPosition({
+        left: Math.min(Math.max(anchorX + 12, visibleLeft + margin), maxLeft) - wrapRect.left,
+        top: Math.min(Math.max(anchorY, visibleTop + margin), maxTop) - wrapRect.top,
+      })
+    }
+
+    const frame = window.requestAnimationFrame(placeEditor)
+    window.addEventListener('resize', placeEditor)
+    window.visualViewport?.addEventListener('resize', placeEditor)
+    window.visualViewport?.addEventListener('scroll', placeEditor)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.removeEventListener('resize', placeEditor)
+      window.visualViewport?.removeEventListener('resize', placeEditor)
+      window.visualViewport?.removeEventListener('scroll', placeEditor)
+    }
+  }, [editing])
 
   // ---- 干员更换气泡（问题3：点击干员 → 就近气泡 → 选职业） ----
   const [opBubble, setOpBubble] = useState<{ uid: string; x: number; y: number } | null>(null)
@@ -560,6 +667,7 @@ export default function MapView({
 
   return (
     <div
+      ref={mapWrapRef}
       className="map-wrap"
       style={panelInsetVars}
       onContextMenuCapture={handleMapContextMenu}
@@ -569,8 +677,10 @@ export default function MapView({
         key={config.id}
         crs={L.CRS.Simple}
         bounds={bounds}
-        minZoom={config.minZoom}
+        minZoom={minZoom}
         maxZoom={config.maxZoom}
+        zoomDelta={mobileLayout ? 0.5 : 1}
+        zoomSnap={mobileLayout ? 0.5 : 1}
         zoomControl={true}
         touchZoom={true}
         attributionControl={false}
@@ -581,13 +691,20 @@ export default function MapView({
         <TileLayer
           url={config.tileUrl}
           bounds={bounds}
-          minZoom={config.minZoom}
+          minZoom={minZoom}
           maxZoom={config.maxZoom}
           maxNativeZoom={config.maxNativeZoom}
           tileSize={256}
         />
-        <MapSync config={config} onReady={onMapReady} />
+        <MapSync
+          config={config}
+          onReady={onMapReady}
+          initialView={cinematicInitialView}
+          minZoom={minZoom}
+          defaultZoom={defaultZoom}
+        />
         <MapResizeSync />
+        {cinematicBattleCompare ? <CinematicBattleHighlights stage={cinematicBattleCompare} /> : null}
         <MapPropsLayer
           mapId={config.id}
           visible={layers.props}
@@ -927,19 +1044,13 @@ export default function MapView({
 
       {editing && (
         <div
+          ref={textEditorRef}
           className="text-editor"
           // 第十三轮：编辑器跟随文字标注位置显示（容器坐标），不再固定在顶部被横幅遮挡。
           // 地图容器尺寸取窗口估算，向右/向下超出边缘时向内收，避免溢出视口。
-          style={
-            editing.containerPoint
-              ? {
-                  top: editing.containerPoint.y + 10,
-                  left: editing.containerPoint.x + 12,
-                  transform: 'none',
-                  maxWidth: Math.max(240, window.innerWidth - editing.containerPoint.x - 40),
-                }
-              : undefined
-          }
+          style={textEditorPosition
+            ? { top: textEditorPosition.top, left: textEditorPosition.left, transform: 'none' }
+            : { visibility: 'hidden' }}
         >
           <input
             autoFocus

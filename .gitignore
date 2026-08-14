@@ -5,6 +5,7 @@
 /dist/
 /dist-ssr/
 /release/
+/release-optimized/
 /out/
 *.exe
 *.msi

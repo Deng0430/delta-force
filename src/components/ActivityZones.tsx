@@ -79,6 +79,7 @@ export default function ActivityZones({ stages, capturedStageIndex, view, visibl
             dashArray: z.dash,
             fillColor: z.color,
             fillOpacity: 0,
+            className: 'demo-map-activity',
             // 第九轮：活动区纯视觉背景，永久禁用交互（无选中/高亮/提示）
             interactive: false,
           }}

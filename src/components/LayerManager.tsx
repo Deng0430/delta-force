@@ -564,6 +564,7 @@ export default function LayerManager({
   // 回调 ref（供 restoreLayer 等早期定义的闭包在 render 后读取最新回调，第十一轮）
   const onFeatureClickRef = useRef<(e: L.LeafletMouseEvent) => void>(() => {})
   const openEditorRef = useRef<(m: MarkerWithFeature) => void>(() => {})
+  const clearEditSelectionRef = useRef<(commitPanel: boolean) => void>(() => {})
 
   // 当前选中的图形 uid 集合（套索/整体移动，问题4）
   const selectedRef = useRef<Set<string>>(new Set())
@@ -742,7 +743,9 @@ export default function LayerManager({
       }
       // 平移模式的地图空白仍完全交给 Leaflet 原生触控拖图；只有命中已有图形或
       // 编辑手柄时才接管，从而让移动端在 pan 模式也能编辑既有图形。
-      if (tool === 'pan' && !onDrawLayer) {
+      // 物理触摸交给 Leaflet 原生处理；影视 Demo 派发的非受信任 PointerEvent
+      // 不会获得浏览器的后续兼容 click，因此继续走下方桥接以形成完整点击。
+      if (tool === 'pan' && !onDrawLayer && event.isTrusted) {
         // 清除上一轮图形手势的兼容鼠标抑制窗口，确保紧接着点击空白能触发
         // Leaflet click，从而立即取消图形选中。
         lastTouchPointerAt = Number.NEGATIVE_INFINITY
@@ -968,9 +971,20 @@ export default function LayerManager({
           save()
         },
         cancel: () => {
-          // 新建但未输入文字的标注：撤销删除，避免留下空「标注」
+          clearEditSelectionRef.current(false)
           const target = findByUid(uid)
           if (target && !String((target.feature?.properties as Record<string, unknown>)?.text ?? '')) {
+            const removeByUid = (group: L.FeatureGroup | null) => {
+              if (!group) return
+              const stale: L.Layer[] = []
+              group.eachLayer((layer) => {
+                const props = (layer as AnyWithFeature).feature?.properties as Record<string, unknown> | undefined
+                if (String(props?.uid ?? '') === uid) stale.push(layer)
+              })
+              for (const layer of stale) group.removeLayer(layer)
+            }
+            removeByUid(hitRef.current)
+            removeByUid(hlRef.current)
             fgRef.current?.removeLayer(target)
             save()
           }
@@ -986,6 +1000,14 @@ export default function LayerManager({
   const highlight = useCallback((uid: string, on: boolean) => {
     const h = hlRef.current
     if (!h) return
+    // Highlight overlays are independent Leaflet layers. Remove an existing
+    // overlay before looking up its source, because cancelling a newly-created
+    // empty text marker deletes the source first.
+    h.eachLayer((l) => {
+      const fl = l as AnyWithFeature
+      if (fl.feature && String((fl.feature.properties as Record<string, unknown>).uid) === uid) h.removeLayer(l)
+    })
+    if (!on) return
     const g = fgRef.current
     const layer = g?.eachLayer
       ? ((() => {
@@ -1000,11 +1022,6 @@ export default function LayerManager({
         })() as AnyWithFeature | null)
       : null
     if (!layer) return
-    h.eachLayer((l) => {
-      const fl = l as AnyWithFeature
-      if (fl.feature && String((fl.feature.properties as Record<string, unknown>).uid) === uid) h.removeLayer(l)
-    })
-    if (!on) return
     // 用黄色描边叠加高亮（不修改原始图形样式，问题1：高亮也在 drawPane 之上；
     // interactive:false 让高亮为纯视觉层，不拦截鼠标事件，点击/拖拽仍作用于下方图形）
     let hlLayer: L.Layer | null = null
@@ -1423,6 +1440,9 @@ export default function LayerManager({
   // GeoJSON -> 图层（还原 + 绑定交互）
   useEffect(() => {
     if (!fg || !hl) return
+    // 本图层刚完成的真实交互已经直接修改了 Leaflet 对象；App 回写的 GeoJSON
+    // 若与当前快照一致，无需先清空再还原，否则每次点击/拖动都会产生一帧闪烁。
+    if (snapshotNow() === geoJson) return
     fg.clearLayers()
     hl.clearLayers()
     // 第十二轮：重建后恢复选中高亮（套索移动/删除触发保存会重建图层，选中状态不应丢失）
@@ -3489,8 +3509,8 @@ export default function LayerManager({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [clearSelection],
   )
-  const clearEditSelectionRef = useRef(clearEditSelection)
   clearEditSelectionRef.current = clearEditSelection
+
 
   /** 启动整体移动（按住已选中的图形本体 → 整个选中集合一起移动） */
   const startBodyMove = useCallback(
@@ -3985,13 +4005,13 @@ export default function LayerManager({
     }
     const onUp = () => finishShapePointer()
     const onClick = (e: L.LeafletMouseEvent) => {
-      const t = e.originalEvent.target as HTMLElement
-      if (t.closest?.(DRAW_PANE_SELECTOR)) return
       // 拖动结束后的 click 不取消选中
       if (dragMovedRef.current) {
         dragMovedRef.current = false
         return
       }
+      const t = e.originalEvent.target as HTMLElement
+      if (t.closest?.(DRAW_PANE_SELECTOR)) return
       clearEditSelectionRef.current(true)
     }
     // 空白处按下：重置"图形按下"标记，保证随后的点击空白能正常取消选中

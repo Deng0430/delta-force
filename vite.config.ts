@@ -8,6 +8,7 @@ export default defineConfig({
       input: {
         main: 'index.html',
         modeConfig: 'mode-config.html',
+        cinematicDemo: 'demo/v0.0.1/app/cinematic-demo.html',
       },
     },
   },

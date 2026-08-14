@@ -13,6 +13,9 @@ extraResources:
   - from: build/icon.ico
     to: app-icon-v1.ico
 asar: true
+# 发行包仅保留应用实际使用的 Chromium 语言资源，避免打入数十种无关 locale。
+electronLanguages:
+  - zh-CN
 # 纯前端应用，无原生模块，跳过 electron-rebuild（避免扫描缺失的可选依赖报错）
 npmRebuild: false
 win:
@@ -21,9 +24,10 @@ win:
     - target: nsis
       arch:
         - x64
-  artifactName: ${productName}-${version}-setup.${ext}
+  artifactName: deltaforce-tactical-map-${version}-setup.${ext}
 nsis:
   oneClick: false
+  runAfterFinish: false
   allowToChangeInstallationDirectory: true
   include: build/installer.nsh
   createDesktopShortcut: always

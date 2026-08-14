@@ -113,16 +113,49 @@ function syncRouteTargetPosition(
 
 export default function App() {
   const device = useDeviceType()
+  const cinematicDemoParams = useMemo(() => new URLSearchParams(window.location.search), [])
+  const isCinematicDemoFrame = cinematicDemoParams.get('cinematicDemoFrame') === '1'
+  const isCinematicMobileFrame = isCinematicDemoFrame && cinematicDemoParams.get('platformDemo') === 'android'
+  const isCinematicMapOnly = isCinematicDemoFrame && cinematicDemoParams.get('mapOnly') === '1'
+  const isCinematicLayerTour = isCinematicDemoFrame && cinematicDemoParams.get('layerTour') === '1'
+  const isCinematicModeSwitch = isCinematicDemoFrame && cinematicDemoParams.get('modeSwitch') === '1'
+  const isCinematicBattleCompare = isCinematicDemoFrame && cinematicDemoParams.get('battleCompare') === '1'
+  const isCinematicC1Highlight = isCinematicDemoFrame && cinematicDemoParams.get('c1Highlight') === '1'
+  const isCinematicTouchPrinciples = isCinematicDemoFrame && cinematicDemoParams.get('touchPrinciples') === '1'
+  const isCinematicPawnMotion = isCinematicDemoFrame && cinematicDemoParams.get('pawnMotion') === '1'
+  const isCinematicUnitCards = isCinematicDemoFrame && cinematicDemoParams.get('unitCards') === '1'
+  const isCinematicRouteGrow = isCinematicDemoFrame && cinematicDemoParams.get('routeGrow') === '1'
+  const cinematicDefenseDemo = cinematicDemoParams.get('defenseDemo') as 'straight' | 'smooth' | 'freehand' | null
+  const isCinematicStylePanelDemo = isCinematicDemoFrame && cinematicDemoParams.get('stylePanelDemo') === '1'
+  const cinematicLayoutPreset = cinematicDemoParams.get('layoutPreset') as 'winnerA' | 'platformCompare' | 'backdrop' | null
+  const cinematicDemoMap = cinematicDemoParams.get('map')
+  const cinematicDemoStage = cinematicDemoParams.get('stage')
+  const cinematicFocusLat = Number(cinematicDemoParams.get('focusLat'))
+  const cinematicFocusLng = Number(cinematicDemoParams.get('focusLng'))
+  const cinematicFocusZoom = Number(cinematicDemoParams.get('focusZoom'))
   const persisted = useMemo(loadState, [])
-  const initialModeStore = useMemo(loadModeConfigStore, [])
+  const initialModeStore = useMemo(() => {
+    const store = loadModeConfigStore()
+    if (!isCinematicDemoFrame) return store
+    return {
+      ...store,
+      activeModeId: cinematicDemoParams.get('mode') === 'winner' ? 'winner-takes-all' : 'attack-defense',
+    }
+  }, [cinematicDemoParams, isCinematicDemoFrame])
   const [modeStore, setModeStore] = useState<ModeConfigStore>(initialModeStore)
-  const [modeStageSelection, setModeStageSelection] = useState<Record<string, string>>({})
+  const [modeStageSelection, setModeStageSelection] = useState<Record<string, string>>(() => (
+    isCinematicDemoFrame && cinematicDemoMap && cinematicDemoStage
+      ? { [`winner-takes-all:${cinematicDemoMap}`]: cinematicDemoStage }
+      : {}
+  ))
   const [gameDataPlatform, setGameDataPlatform] = useState<GameDataPlatform>(() =>
-    localStorage.getItem('deltaforce-game-data-platform') === 'mobile' ? 'mobile' : 'pc',
+    isCinematicModeSwitch ? 'pc' : localStorage.getItem('deltaforce-game-data-platform') === 'mobile' ? 'mobile' : 'pc',
   )
 
   const [mapId, setMapId] = useState<string>(
-    persisted?.lastMapId && MAP_BY_ID[persisted.lastMapId] ? persisted.lastMapId : 'ascent',
+    cinematicDemoMap && MAP_BY_ID[cinematicDemoMap]
+      ? cinematicDemoMap
+      : persisted?.lastMapId && MAP_BY_ID[persisted.lastMapId] ? persisted.lastMapId : 'ascent',
   )
   const [view, setView] = useState<Side>(persisted?.lastView ?? 'attack')
   const [tool, setTool] = useState<ToolMode>('pan')
@@ -218,18 +251,18 @@ export default function App() {
   } | null>(null)
   // 左右工具栏折叠 + 图层/道具显示开关（问题1/2/8）+ 画笔设置（问题4）
   const [ui, setUi] = useState(() => ({
-    paletteOpen: persisted?.ui?.paletteOpen ?? true,
-    panelOpen: persisted?.ui?.panelOpen ?? true,
-    legendOpen: persisted?.ui?.legendOpen ?? true,
+    paletteOpen: isCinematicMapOnly || isCinematicMobileFrame || cinematicLayoutPreset === 'platformCompare' || cinematicLayoutPreset === 'backdrop' ? false : persisted?.ui?.paletteOpen ?? true,
+    panelOpen: isCinematicMapOnly || isCinematicMobileFrame || cinematicLayoutPreset === 'winnerA' || cinematicLayoutPreset === 'platformCompare' || cinematicLayoutPreset === 'backdrop' ? false : persisted?.ui?.panelOpen ?? true,
+    legendOpen: isCinematicMapOnly || Boolean(cinematicDefenseDemo) || cinematicLayoutPreset === 'backdrop' ? false : persisted?.ui?.legendOpen ?? true,
     leftPanelWidth: Math.max(250, Math.min(440, persisted?.ui?.leftPanelWidth ?? 300)),
     layers: {
-      props: persisted?.ui?.layers?.props ?? true,
-      points: persisted?.ui?.layers?.points ?? true,
-      pointsLabels: persisted?.ui?.layers?.pointsLabels ?? true,
-      pointsCapture: persisted?.ui?.layers?.pointsCapture ?? true,
-      pointsFrontline: persisted?.ui?.layers?.pointsFrontline ?? true,
-      spawns: persisted?.ui?.layers?.spawns ?? true,
-      zones: persisted?.ui?.layers?.zones ?? true,
+      props: cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.props ?? true,
+      points: cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.points ?? true,
+      pointsLabels: cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.pointsLabels ?? true,
+      pointsCapture: cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.pointsCapture ?? true,
+      pointsFrontline: cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.pointsFrontline ?? true,
+      spawns: cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.spawns ?? true,
+      zones: cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.zones ?? true,
     } as LayerVisibility,
     propVis: {
       ...DEFAULT_PROP_VIS,
@@ -260,6 +293,13 @@ export default function App() {
   }))
 
   const mapRef = useRef<L.Map | null>(null)
+  const [cinematicTouchMap, setCinematicTouchMap] = useState<L.Map | null>(null)
+  const touchDemoStartedRef = useRef(false)
+  const pawnMotionStartedRef = useRef(false)
+  const unitCardsStartedRef = useRef(false)
+  const routeGrowStartedRef = useRef(false)
+  const defenseDemoStartedRef = useRef(false)
+  const stylePanelDemoStartedRef = useRef(false)
   const config = MAP_BY_ID[mapId] ?? MAP_BY_ID.ascent
   const platformStages = useMemo(() => stagesForPlatform(gameDataPlatform), [gameDataPlatform])
   const platformProps = useMemo(() => propsForPlatform(gameDataPlatform), [gameDataPlatform])
@@ -485,6 +525,607 @@ export default function App() {
     [mapId, view, pushEntry, updateMap],
   )
 
+  useEffect(() => {
+    if (!isCinematicTouchPrinciples || touchDemoStartedRef.current) return
+    const map = cinematicTouchMap
+    if (!map) return
+    touchDemoStartedRef.current = true
+    const uid = 'cinematic_touch_circle'
+    const center = L.latLng(-117.455, 87.686)
+    const container = map.getContainer()
+    const touchPoint = document.createElement('div')
+    touchPoint.className = 'app-touch-demo-point'
+    container.appendChild(touchPoint)
+    const containerSize = container.getBoundingClientRect()
+    const emptyDx = -Math.min(280, containerSize.width * .3)
+    const emptyDy = Math.min(145, containerSize.height * .24)
+    const radius = 8
+    const drawing = JSON.stringify({
+      type: 'FeatureCollection',
+      features: [{
+        type: 'Feature',
+        properties: {
+          uid,
+          type: 'circle',
+          color: '#00e39b',
+          weight: 4,
+          dash: 'solid',
+          fillColor: '#00e39b',
+          fillEnabled: true,
+          radius,
+          radiusY: radius,
+        },
+        geometry: { type: 'Point', coordinates: [center.lng, center.lat] },
+      }],
+    })
+    updateMap(mapId, (current) => ({
+      ...current,
+      drawings: { ...current.drawings, [view]: drawing },
+    }))
+
+    const timers: number[] = []
+    const later = (delay: number, action: () => void) => timers.push(window.setTimeout(action, delay))
+    const pointAt = (dx = 0, dy = 0) => {
+      const rect = map.getContainer().getBoundingClientRect()
+      const point = map.latLngToContainerPoint(center)
+      return { x: rect.left + point.x + dx, y: rect.top + point.y + dy }
+    }
+    const placeTouchPoint = (x: number, y: number) => {
+      const rect = container.getBoundingClientRect()
+      touchPoint.style.left = `${x - rect.left}px`
+      touchPoint.style.top = `${y - rect.top}px`
+      touchPoint.classList.add('visible')
+    }
+    const pulseTouchPoint = () => {
+      touchPoint.classList.remove('contact')
+      void touchPoint.offsetWidth
+      touchPoint.classList.add('contact')
+    }
+    const emit = (type: string, x: number, y: number, buttons: number) => {
+      placeTouchPoint(x, y)
+      if (type === 'pointerdown') pulseTouchPoint()
+      const target = document.elementFromPoint(x, y) ?? map.getContainer()
+      target.dispatchEvent(new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 41,
+        pointerType: 'touch',
+        isPrimary: true,
+        clientX: x,
+        clientY: y,
+        buttons,
+        button: 0,
+      }))
+    }
+    const fireLeafletClick = (point: { x: number; y: number }) => {
+      const rect = container.getBoundingClientRect()
+      const containerPoint = L.point(point.x - rect.left, point.y - rect.top)
+      map.fire('click', {
+        latlng: map.containerPointToLatLng(containerPoint),
+        layerPoint: map.containerPointToLayerPoint(containerPoint),
+        containerPoint,
+        originalEvent: new MouseEvent('click', {
+          clientX: point.x,
+          clientY: point.y,
+          button: 0,
+          buttons: 0,
+        }),
+      })
+    }
+    const tap = (dx: number, dy: number) => {
+      const point = pointAt(dx, dy)
+      emit('pointerdown', point.x, point.y, 1)
+      later(130, () => {
+        emit('pointerup', point.x, point.y, 0)
+        touchPoint.classList.remove('visible')
+      })
+    }
+    later(900, () => tap(0, 0))
+    later(2900, () => {
+      const start = pointAt(0, 0)
+      const end = pointAt(145, -72)
+      emit('pointerdown', start.x, start.y, 1)
+      for (let step = 1; step <= 12; step += 1) {
+        later(step * 70, () => emit('pointermove', start.x + (end.x - start.x) * step / 12, start.y + (end.y - start.y) * step / 12, 1))
+      }
+      later(930, () => {
+        emit('pointerup', end.x, end.y, 0)
+        touchPoint.classList.remove('visible')
+        fireLeafletClick(end)
+      })
+    })
+    later(5550, () => tap(emptyDx, emptyDy))
+    return () => {
+      timers.forEach(window.clearTimeout)
+      touchPoint.remove()
+    }
+  }, [cinematicTouchMap, isCinematicTouchPrinciples, mapId, updateMap, view])
+
+  useEffect(() => {
+    if (!isCinematicPawnMotion || !cinematicTouchMap || pawnMotionStartedRef.current) return
+    pawnMotionStartedRef.current = true
+    const map = cinematicTouchMap
+    const center = L.latLng(-117.455, 87.686)
+    const uid = 'cinematic_building_unit'
+    updateMap(mapId, (current) => ({
+      ...current,
+      wargame: { ...wargameOf(current), enabled: true },
+      buildings: {
+        ...buildingsBucketOf(current),
+        [view]: [{ uid, kind: 'fixed-machine-gun', name: '固定机枪', side: view, lat: center.lat, lng: center.lng, stageId: cinematicDemoStage ?? 'S1', rotation: 0 }],
+      },
+    }))
+
+    const container = map.getContainer()
+    const touchPoint = document.createElement('div')
+    touchPoint.className = 'app-touch-demo-point'
+    container.appendChild(touchPoint)
+    const timers: number[] = []
+    const later = (delay: number, action: () => void) => timers.push(window.setTimeout(action, delay))
+    const place = (x: number, y: number, contact = false) => {
+      const rect = container.getBoundingClientRect()
+      touchPoint.style.left = `${x - rect.left}px`
+      touchPoint.style.top = `${y - rect.top}px`
+      touchPoint.classList.add('visible')
+      if (contact) {
+        touchPoint.classList.remove('contact')
+        void touchPoint.offsetWidth
+        touchPoint.classList.add('contact')
+      }
+    }
+    const pointer = (target: EventTarget, type: string, x: number, y: number, buttons: number, pointerId: number) => {
+      place(x, y, type === 'pointerdown')
+      target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerType: 'touch', pointerId, isPrimary: true, clientX: x, clientY: y, button: 0, buttons }))
+    }
+    const waitForMarker = (attempt = 0) => {
+      const marker = container.querySelector<HTMLElement>('.building-unit-wrap')
+      if (!marker) {
+        if (attempt < 80) later(60, () => waitForMarker(attempt + 1))
+        return
+      }
+      const rect = marker.getBoundingClientRect()
+      const start = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+      const end = { x: start.x + 190, y: start.y - 70 }
+      pointer(marker, 'pointerdown', start.x, start.y, 1, 50)
+      pointer(marker, 'pointerup', start.x, start.y, 0, 50)
+      marker.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: start.x, clientY: start.y }))
+      touchPoint.classList.remove('visible')
+      later(650, () => pointer(marker, 'pointerdown', start.x, start.y, 1, 51))
+      for (let step = 1; step <= 14; step += 1) {
+        later(650 + step * 70, () => pointer(document, 'pointermove', start.x + (end.x - start.x) * step / 14, start.y + (end.y - start.y) * step / 14, 1, 51))
+      }
+      later(1740, () => {
+        pointer(document, 'pointerup', end.x, end.y, 0, 51)
+        touchPoint.classList.remove('visible')
+      })
+      later(2300, () => {
+        const moved = container.querySelector<HTMLElement>('.building-unit-wrap')
+        if (!moved) return
+        const rotate = container.querySelector<HTMLElement>('.building-rotate-control')
+        if (!rotate) return
+        const r = rotate.getBoundingClientRect()
+        const startRotate = { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+        const building = container.querySelector<HTMLElement>('.building-unit-wrap')
+        if (!building) return
+        const buildingRect = building.getBoundingClientRect()
+        const cx = buildingRect.left + buildingRect.width / 2
+        const cy = buildingRect.top + buildingRect.height / 2
+        const radius = Math.max(70, Math.hypot(startRotate.x - cx, startRotate.y - cy))
+        const startAngle = Math.atan2(startRotate.y - cy, startRotate.x - cx)
+        let finishRotate = startRotate
+        pointer(rotate, 'pointerdown', startRotate.x, startRotate.y, 1, 53)
+        for (let step = 1; step <= 24; step += 1) later(step * 62, () => {
+          const angle = startAngle + Math.PI * 1.35 * step / 24
+          finishRotate = { x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius }
+          pointer(document, 'pointermove', finishRotate.x, finishRotate.y, 1, 53)
+        })
+        later(1600, () => {
+          pointer(document, 'pointerup', finishRotate.x, finishRotate.y, 0, 53)
+          touchPoint.classList.remove('visible')
+        })
+      })
+    }
+    later(500, () => waitForMarker())
+    return () => { timers.forEach(window.clearTimeout); touchPoint.remove() }
+  }, [cinematicDemoStage, cinematicTouchMap, isCinematicPawnMotion, mapId, updateMap, view])
+
+  useEffect(() => {
+    if (!isCinematicUnitCards || !cinematicTouchMap || unitCardsStartedRef.current) return
+    unitCardsStartedRef.current = true
+    const map = cinematicTouchMap
+    const center = L.latLng(-117.455, 87.686)
+    const operatorUid = 'cinematic_unit_cards_operator'
+    const vehicleUid = 'cinematic_unit_cards_vehicle'
+    const buildingUid = 'cinematic_unit_cards_building'
+    updateMap(mapId, (current) => ({
+      ...current,
+      wargame: { ...wargameOf(current), enabled: true },
+      operators: {
+        ...operatorsBucketOf(current),
+        [view]: [{
+          uid: operatorUid, name: 'A1', side: view, team: 'A', operatorId: '10000', cls: 'assault', status: 'alive',
+          lat: center.lat, lng: center.lng - 14,
+        }],
+      },
+      vehicles: {
+        ...vehiclesBucketOf(current),
+        [view]: [{
+          uid: vehicleUid, name: 'M1A4主战坦克', category: 'tank', side: view, team: 'B', badge: '坦',
+          iconUrl: '/icons/vehicles/deploy_m1a4zztk.png', lat: center.lat, lng: center.lng, stageId: cinematicDemoStage ?? 'S1', rotation: 0, custom: true,
+        }],
+      },
+      buildings: {
+        ...buildingsBucketOf(current),
+        [view]: [{
+          uid: buildingUid, kind: 'fixed-machine-gun', name: '固定机枪', side: view, team: 'C',
+          lat: center.lat, lng: center.lng + 14, stageId: cinematicDemoStage ?? 'S1', rotation: 0,
+        }],
+      },
+    }))
+
+    const container = map.getContainer()
+    const touchPoint = document.createElement('div')
+    touchPoint.className = 'app-touch-demo-point'
+    container.appendChild(touchPoint)
+    const timers: number[] = []
+    const later = (delay: number, action: () => void) => timers.push(window.setTimeout(action, delay))
+    const placeTouchPoint = (x: number, y: number) => {
+      const rect = container.getBoundingClientRect()
+      touchPoint.style.left = `${x - rect.left}px`
+      touchPoint.style.top = `${y - rect.top}px`
+      touchPoint.classList.add('visible')
+    }
+    const pulseTouchPoint = () => {
+      touchPoint.classList.remove('contact')
+      void touchPoint.offsetWidth
+      touchPoint.classList.add('contact')
+    }
+    const tap = (selector: string) => {
+      const marker = container.querySelector<HTMLElement>(selector)
+      if (!marker) return
+      const rect = marker.getBoundingClientRect()
+      const x = rect.left + rect.width / 2
+      const y = rect.top + rect.height / 2
+      placeTouchPoint(x, y)
+      pulseTouchPoint()
+      later(130, () => {
+        const clickTarget = (document.elementFromPoint(x, y) as HTMLElement | null)?.closest<HTMLElement>('.leaflet-marker-icon') ?? marker
+        clickTarget.click()
+        touchPoint.classList.remove('visible')
+      })
+    }
+    const waitForUnits = (attempt = 0) => {
+      const selectors = ['.op-marker', '.veh-marker', '.building-unit']
+      if (selectors.some((selector) => !container.querySelector(selector))) {
+        if (attempt < 80) later(60, () => waitForUnits(attempt + 1))
+        return
+      }
+      later(700, () => tap(selectors[0]))
+      later(3700, () => tap(selectors[1]))
+      later(6700, () => tap(selectors[2]))
+    }
+    later(300, () => waitForUnits())
+    return () => {
+      timers.forEach(window.clearTimeout)
+      touchPoint.remove()
+    }
+  }, [cinematicDemoStage, cinematicTouchMap, isCinematicUnitCards, mapId, updateMap, view])
+
+  useEffect(() => {
+    if (!isCinematicRouteGrow || !cinematicTouchMap || routeGrowStartedRef.current) return
+    routeGrowStartedRef.current = true
+    const map = cinematicTouchMap
+    const center = L.latLng(-117.455, 87.686)
+    const operatorUid = 'cinematic_route_grow_operator'
+    updateMap(mapId, (current) => ({
+      ...current,
+      wargame: { ...wargameOf(current), enabled: true },
+      operators: {
+        ...operatorsBucketOf(current),
+        [view]: [{
+          uid: operatorUid, name: 'A1', side: view, team: 'A', operatorId: '10000', cls: 'assault', status: 'alive',
+          lat: center.lat, lng: center.lng - 22,
+        }],
+      },
+      routes: { ...routesBucketOf(current), [view]: [] },
+    }))
+
+    const container = map.getContainer()
+    const touchPoint = document.createElement('div')
+    touchPoint.className = 'app-touch-demo-point'
+    container.appendChild(touchPoint)
+    const timers: number[] = []
+    const later = (delay: number, action: () => void) => timers.push(window.setTimeout(action, delay))
+    const showTouch = (x: number, y: number) => {
+      const rect = container.getBoundingClientRect()
+      touchPoint.style.left = `${x - rect.left}px`
+      touchPoint.style.top = `${y - rect.top}px`
+      touchPoint.classList.add('visible')
+      touchPoint.classList.remove('contact')
+      void touchPoint.offsetWidth
+      touchPoint.classList.add('contact')
+    }
+    const clickElement = (selector: string) => {
+      const element = document.querySelector<HTMLElement>(selector)
+      if (!element) return false
+      const rect = element.getBoundingClientRect()
+      showTouch(rect.left + rect.width / 2, rect.top + rect.height / 2)
+      later(130, () => {
+        element.click()
+        touchPoint.classList.remove('visible')
+      })
+      return true
+    }
+    const clickMap = (dx: number, dy: number) => {
+      const point = map.latLngToContainerPoint(center).add([dx, dy])
+      const rect = container.getBoundingClientRect()
+      const x = rect.left + point.x
+      const y = rect.top + point.y
+      showTouch(x, y)
+      later(130, () => {
+        const target = document.elementFromPoint(x, y) ?? container
+        target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: 0, detail: 1 }))
+        touchPoint.classList.remove('visible')
+      })
+    }
+    const waitFor = (selector: string, action: () => void, attempt = 0) => {
+      if (document.querySelector(selector)) action()
+      else if (attempt < 80) later(60, () => waitFor(selector, action, attempt + 1))
+    }
+
+    later(500, () => waitFor('.op-marker', () => clickElement('.op-marker-wrap')))
+    later(1300, () => waitFor('.op-route', () => clickElement('.op-route')))
+    later(2200, () => clickMap(20, -18))
+    later(3400, () => clickMap(92, -62))
+    later(4600, () => clickMap(172, 18))
+    later(5800, () => waitFor('.route-mobile-actions .primary', () => clickElement('.route-mobile-actions .primary')))
+    later(7000, () => waitFor('.route-waypoint-wrap:not(.origin):not(.end)', () => {
+      const waypoint = document.querySelector<HTMLElement>('.route-waypoint-wrap:not(.origin):not(.end)')
+      if (!waypoint) return
+      const rect = waypoint.getBoundingClientRect()
+      const start = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+      const end = { x: start.x + 42, y: start.y + 50 }
+      showTouch(start.x, start.y)
+      waypoint.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: start.x, clientY: start.y, button: 0, buttons: 1 }))
+      for (let step = 1; step <= 12; step += 1) later(step * 65, () => {
+        const x = start.x + (end.x - start.x) * step / 12
+        const y = start.y + (end.y - start.y) * step / 12
+        touchPoint.style.left = `${x - container.getBoundingClientRect().left}px`
+        touchPoint.style.top = `${y - container.getBoundingClientRect().top}px`
+        document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: 1 }))
+      })
+      later(900, () => {
+        document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, clientX: end.x, clientY: end.y, button: 0, buttons: 0 }))
+        touchPoint.classList.remove('visible')
+      })
+    }))
+    later(9000, () => waitFor('.route-editor-trigger', () => {
+      const button = document.querySelector<HTMLElement>('.route-editor-trigger')
+      if (!button) return
+      const rect = button.getBoundingClientRect()
+      const x = rect.left + rect.width / 2
+      const y = rect.top + rect.height / 2
+      showTouch(x, y)
+      button.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 72, isPrimary: true, clientX: x, clientY: y, button: 0, buttons: 1 }))
+      later(130, () => {
+        button.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 72, isPrimary: true, clientX: x, clientY: y, button: 0, buttons: 0 }))
+        touchPoint.classList.remove('visible')
+      })
+    }))
+    return () => {
+      timers.forEach(window.clearTimeout)
+      touchPoint.remove()
+    }
+  }, [cinematicTouchMap, isCinematicRouteGrow, mapId, updateMap, view])
+
+  useEffect(() => {
+    if (!cinematicDefenseDemo || !cinematicTouchMap || defenseDemoStartedRef.current) return
+    defenseDemoStartedRef.current = true
+    const map = cinematicTouchMap
+    setUi((current) => ({
+      ...current,
+      draw: { ...current.draw, curve: cinematicDefenseDemo, color: '#00e39b', weight: 4, dash: 'solid' },
+    }))
+    setTool('defense')
+
+    const container = map.getContainer()
+    const touchPoint = document.createElement('div')
+    touchPoint.className = 'app-touch-demo-point'
+    container.appendChild(touchPoint)
+    const timers: number[] = []
+    const later = (delay: number, action: () => void) => timers.push(window.setTimeout(action, delay))
+    const bounds = container.getBoundingClientRect()
+    const start = { x: bounds.left + bounds.width / 2 - 105, y: bounds.top + bounds.height / 2 + 58 }
+    const end = { x: bounds.left + bounds.width / 2 + 105, y: bounds.top + bounds.height / 2 - 58 }
+    const show = (x: number, y: number, contact = false) => {
+      const currentBounds = container.getBoundingClientRect()
+      touchPoint.style.left = `${x - currentBounds.left}px`
+      touchPoint.style.top = `${y - currentBounds.top}px`
+      touchPoint.classList.add('visible')
+      if (contact) {
+        touchPoint.classList.remove('contact')
+        void touchPoint.offsetWidth
+        touchPoint.classList.add('contact')
+      }
+    }
+    const mouse = (target: EventTarget, type: string, x: number, y: number, buttons: number) => {
+      target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons }))
+    }
+    const mapMouse = (type: string, x: number, y: number, buttons: number) => {
+      container.dispatchEvent(new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: x,
+        clientY: y,
+        button: 0,
+        buttons,
+      }))
+    }
+    const steps = cinematicDefenseDemo === 'freehand' ? 22 : 14
+    later(850, () => { show(start.x, start.y, true); mapMouse('mousedown', start.x, start.y, 1) })
+    for (let step = 1; step <= steps; step += 1) later(850 + step * 55, () => {
+      const progress = step / steps
+      const wave = cinematicDefenseDemo === 'freehand' ? Math.sin(progress * Math.PI * 3) * 42 : 0
+      const x = start.x + (end.x - start.x) * progress
+      const y = start.y + (end.y - start.y) * progress + wave
+      show(x, y)
+      mapMouse('mousemove', x, y, 1)
+    })
+    later(900 + steps * 55, () => {
+      mapMouse('mouseup', end.x, end.y, 0)
+      touchPoint.classList.remove('visible')
+    })
+    const drawFinishedAt = 900 + steps * 55
+    if (cinematicDefenseDemo === 'smooth') later(drawFinishedAt + 350, () => {
+      const handle = container.querySelector<HTMLElement>('.curve-ctrl-wrap')
+      if (!handle) return
+      const handleRect = handle.getBoundingClientRect()
+      const handleStart = { x: handleRect.left + handleRect.width / 2, y: handleRect.top + handleRect.height / 2 }
+      const handleEnd = { x: handleStart.x, y: handleStart.y - 62 }
+      show(handleStart.x, handleStart.y, true)
+      mouse(handle, 'mousedown', handleStart.x, handleStart.y, 1)
+      for (let step = 1; step <= 10; step += 1) later(step * 60, () => {
+        const progress = step / 10
+        const x = handleStart.x + (handleEnd.x - handleStart.x) * progress
+        const y = handleStart.y + (handleEnd.y - handleStart.y) * progress
+        show(x, y)
+        mapMouse('mousemove', x, y, 1)
+      })
+      later(680, () => {
+        mapMouse('mouseup', handleEnd.x, handleEnd.y, 0)
+        document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: handleEnd.x, clientY: handleEnd.y, button: 0, buttons: 0 }))
+        touchPoint.classList.remove('visible')
+      })
+    })
+    const selectAt = drawFinishedAt + (cinematicDefenseDemo === 'smooth' ? 1500 : 450)
+    later(selectAt, () => {
+      setTool('pan')
+      later(220, () => {
+        const hitAreas = container.querySelectorAll<SVGPathElement>('.leaflet-draw-pane .draw-hit-area')
+        const shape = hitAreas[Math.floor(hitAreas.length / 2)]
+        if (!shape) return
+        const shapeRect = shape.getBoundingClientRect()
+        const x = shapeRect.left + shapeRect.width / 2
+        const y = shapeRect.top + shapeRect.height / 2
+        show(x, y, true)
+        later(120, () => {
+          shape.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: 1 }))
+          shape.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: 0 }))
+          shape.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: 0, detail: 1 }))
+          touchPoint.classList.remove('visible')
+        })
+      })
+    })
+    return () => {
+      timers.forEach(window.clearTimeout)
+      touchPoint.remove()
+    }
+  }, [cinematicDefenseDemo, cinematicTouchMap])
+
+  useEffect(() => {
+    if (!isCinematicStylePanelDemo || !cinematicTouchMap || stylePanelDemoStartedRef.current) return
+    stylePanelDemoStartedRef.current = true
+    const map = cinematicTouchMap
+    setUi((current) => ({
+      ...current,
+      draw: { ...current.draw, color: '#00e39b', fillColor: '#00e39b', fillEnabled: true, weight: 4, dash: 'solid' },
+    }))
+    setTool('rect')
+
+    const container = map.getContainer()
+    const touchPoint = document.createElement('div')
+    touchPoint.className = 'app-touch-demo-point'
+    container.appendChild(touchPoint)
+    const timers: number[] = []
+    const later = (delay: number, action: () => void) => timers.push(window.setTimeout(action, delay))
+    const bounds = container.getBoundingClientRect()
+    const start = { x: bounds.left + bounds.width / 2 - 100, y: bounds.top + bounds.height / 2 - 65 }
+    const end = { x: bounds.left + bounds.width / 2 + 85, y: bounds.top + bounds.height / 2 + 55 }
+    const show = (x: number, y: number, contact = false) => {
+      const currentBounds = container.getBoundingClientRect()
+      touchPoint.style.left = `${x - currentBounds.left}px`
+      touchPoint.style.top = `${y - currentBounds.top}px`
+      touchPoint.classList.add('visible')
+      if (contact) {
+        touchPoint.classList.remove('contact')
+        void touchPoint.offsetWidth
+        touchPoint.classList.add('contact')
+      }
+    }
+    const mouse = (target: EventTarget, type: string, x: number, y: number, buttons: number) => {
+      target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons }))
+    }
+    later(850, () => { show(start.x, start.y, true); mouse(container, 'mousedown', start.x, start.y, 1) })
+    for (let step = 1; step <= 12; step += 1) later(850 + step * 55, () => {
+      const progress = step / 12
+      const x = start.x + (end.x - start.x) * progress
+      const y = start.y + (end.y - start.y) * progress
+      show(x, y)
+      mouse(container, 'mousemove', x, y, 1)
+    })
+    later(1550, () => {
+      mouse(container, 'mouseup', end.x, end.y, 0)
+      touchPoint.classList.remove('visible')
+      setTool('pan')
+    })
+    later(1950, () => {
+      const hitAreas = container.querySelectorAll<SVGPathElement>('.leaflet-draw-pane .draw-hit-area')
+      const shape = hitAreas[hitAreas.length - 1]
+      if (!shape) return
+      const rect = shape.getBoundingClientRect()
+      const x = rect.left + rect.width / 2
+      const y = rect.top + rect.height / 2
+      show(x, y, true)
+      later(120, () => {
+        mouse(shape, 'mousedown', x, y, 1)
+        mouse(shape, 'mouseup', x, y, 0)
+        mouse(shape, 'click', x, y, 0)
+        touchPoint.classList.remove('visible')
+      })
+    })
+    later(2650, () => {
+      const button = container.querySelector<HTMLElement>('.edit-style-trigger')
+      if (!button) return
+      const rect = button.getBoundingClientRect()
+      const x = rect.left + rect.width / 2
+      const y = rect.top + rect.height / 2
+      show(x, y, true)
+      later(120, () => {
+        mouse(button, 'mousedown', x, y, 1)
+        mouse(button, 'mouseup', x, y, 0)
+        touchPoint.classList.remove('visible')
+      })
+    })
+    later(3450, () => {
+      const header = document.querySelector<HTMLElement>('.text-style-panel .tsp-head')
+      if (!header) return
+      const rect = header.getBoundingClientRect()
+      const from = { x: rect.left + 52, y: rect.top + rect.height / 2 }
+      const to = { x: Math.max(bounds.left + 95, from.x - 125), y: Math.min(bounds.bottom - 95, from.y + 70) }
+      const pointerId = 71
+      const pointer = (target: EventTarget, type: string, x: number, y: number, buttons: number) => target.dispatchEvent(new PointerEvent(type, {
+        bubbles: true, cancelable: true, pointerId, pointerType: 'touch', isPrimary: true, clientX: x, clientY: y, button: 0, buttons,
+      }))
+      show(from.x, from.y, true)
+      pointer(header, 'pointerdown', from.x, from.y, 1)
+      for (let step = 1; step <= 12; step += 1) later(step * 55, () => {
+        const progress = step / 12
+        const x = from.x + (to.x - from.x) * progress
+        const y = from.y + (to.y - from.y) * progress
+        show(x, y)
+        pointer(header, 'pointermove', x, y, 1)
+      })
+      later(720, () => {
+        pointer(header, 'pointerup', to.x, to.y, 0)
+        touchPoint.classList.remove('visible')
+      })
+    })
+    return () => {
+      timers.forEach(window.clearTimeout)
+      touchPoint.remove()
+    }
+  }, [cinematicTouchMap, isCinematicStylePanelDemo])
+
   // 撤回/恢复按钮状态：从当前 地图+视角 的栈长度直接派生
   // histVersion 在此处被读取，驱动栈变化后的按钮置灰状态重渲染
   void histVersion
@@ -548,6 +1189,7 @@ export default function App() {
 
   // 自动持久化（v14：载具队伍 + 行动指令 V2 + 干员独立任务；旧版本由 storage 统一迁移）
   useEffect(() => {
+    if (isCinematicDemoFrame) return
     const snapshot = { version: 16 as const, lastMapId: mapId, lastView: view, maps, progress, plans, ui }
     // 桌面端连续编辑时合并密集写入；Android 保留已验收的持久化行为。
     if (platform.kind === 'android') {
@@ -556,11 +1198,12 @@ export default function App() {
     }
     const timer = window.setTimeout(() => saveState(snapshot), 250)
     return () => window.clearTimeout(timer)
-  }, [maps, mapId, view, progress, plans, ui])
+  }, [isCinematicDemoFrame, maps, mapId, view, progress, plans, ui])
 
   useEffect(() => {
+    if (isCinematicDemoFrame) return
     saveModeConfigStore(modeStore)
-  }, [modeStore])
+  }, [isCinematicDemoFrame, modeStore])
 
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
@@ -619,7 +1262,8 @@ export default function App() {
 
   const handleMapReady = useCallback((m: L.Map) => {
     mapRef.current = m
-  }, [])
+    if (isCinematicTouchPrinciples || isCinematicPawnMotion || isCinematicUnitCards || isCinematicRouteGrow || cinematicDefenseDemo || isCinematicStylePanelDemo) setCinematicTouchMap(m)
+  }, [cinematicDefenseDemo, isCinematicPawnMotion, isCinematicRouteGrow, isCinematicStylePanelDemo, isCinematicTouchPrinciples, isCinematicUnitCards])
 
   const handleLayerChange = useCallback((key: keyof LayerVisibility, value: boolean) => {
     setUi((u) => {
@@ -1889,7 +2533,7 @@ export default function App() {
   }, [activeModeMap, handleSelectModeStage, mapId, stages])
 
   return (
-    <div className={`app platform-${device.platform} ${device.mobileLayout ? 'mobile-layout' : 'desktop-layout'} ${ui.paletteOpen ? 'left-panel-open' : 'left-panel-closed'}`} style={{ '--left-panel-width': `${ui.leftPanelWidth}px` } as CSSProperties}>
+    <div className={`app platform-${device.platform} ${device.mobileLayout ? 'mobile-layout' : 'desktop-layout'} ${ui.paletteOpen ? 'left-panel-open' : 'left-panel-closed'} ${isCinematicMapOnly ? 'cinematic-map-only' : ''} ${isCinematicLayerTour ? 'cinematic-layer-tour' : ''} ${isCinematicBattleCompare ? `cinematic-battle-${cinematicDemoStage?.toLowerCase()}` : ''} ${isCinematicC1Highlight ? `cinematic-c1-${cinematicDemoStage?.toLowerCase()}` : ''}`} style={{ '--left-panel-width': `${ui.leftPanelWidth}px` } as CSSProperties}>
       <Toolbar
         mapId={mapId}
         onMapId={setMapId}
@@ -1922,8 +2566,10 @@ export default function App() {
         onClearVehicles={handleClearVehicles}
         onClearAll={handleClearAll}
         onOpenTactical={() => setTacticalOpen(true)}
+        cinematicModeSwitch={isCinematicModeSwitch}
       />
       <div className="main">
+        {isCinematicLayerTour && <div className="cinematic-stage-indicator"><small>当前阶段</small><b>S1 · 外围争夺</b></div>}
         <LeftPanel
           mapId={mapId}
           open={ui.paletteOpen}
@@ -1975,6 +2621,7 @@ export default function App() {
         <MapView
           key={`${gameDataPlatform}:${mapId}`}
           config={config}
+          mobileLayout={device.mobileLayout}
           modeData={activeOfficialModeMap}
           modeStageId={activeModeStageId}
           view={view}
@@ -2040,6 +2687,13 @@ export default function App() {
           onCreateRoute={handleCreateRoute}
           onUpdateRoute={handleUpdateRoute}
           onDeleteRoute={handleDeleteRoute}
+          cinematicInitialView={isCinematicDemoFrame && (isCinematicMobileFrame || Number.isFinite(cinematicFocusLat) && Number.isFinite(cinematicFocusLng))
+            ? {
+                center: Number.isFinite(cinematicFocusLat) && Number.isFinite(cinematicFocusLng) ? [cinematicFocusLat, cinematicFocusLng] : [-117.455, 87.686],
+                zoom: Number.isFinite(cinematicFocusZoom) ? cinematicFocusZoom : isCinematicMobileFrame ? 4.2 : 4.8,
+              }
+            : null}
+          cinematicBattleCompare={isCinematicBattleCompare ? cinematicDemoStage : null}
         />
         <PointPanel
           stages={pointPanelStages}
