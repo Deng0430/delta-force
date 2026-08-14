@@ -24,6 +24,20 @@ const DRAW_PANE_SELECTOR = '.leaflet-draw-pane'
 const HIT_PADDING_PX = 10
 const CLICK_DRAG_THRESHOLD_PX = 5
 
+/** 锁定图形被删除/擦除时的提示文案 */
+const LOCKED_TOAST_MSG = '该图样已经锁定，请解锁后再删除'
+
+// 锁定/解锁图标（美术资源/锁定.svg、解锁.svg，iconfont 1024×1024 填充式；
+// gizmo 浮动按钮为 Leaflet DOM，只能以 innerHTML 内联 SVG 字符串注入）。
+const LOCK_BODY_PATH =
+  'M758.5 931h-497c-50.453 0-91.5-41.047-91.5-91.5v-335c0-50.453 41.047-91.5 91.5-91.5h497c50.453 0 91.5 41.047 91.5 91.5v335c0 50.453-41.047 91.5-91.5 91.5z m-497-454c-15.164 0-27.5 12.336-27.5 27.5v335c0 15.163 12.336 27.5 27.5 27.5h497c15.163 0 27.5-12.337 27.5-27.5v-335c0-15.164-12.337-27.5-27.5-27.5h-497z'
+const LOCK_SHACKLE_PATH =
+  'M512.1 791c-17.673 0-32-14.327-32-32V588.999c0-17.673 14.327-32 32-32 17.673 0 32 14.327 32 32V759c0 17.673-14.328 32-32 32zM297.472 446.595c-17.673 0-32-14.327-32-32 0-109.504 25.127-192.098 74.684-245.486 22.309-24.034 49.483-42.036 80.767-53.505 27.139-9.95 57.454-14.995 90.101-14.995 76.909 0 134.36 20.286 175.638 62.018 51.002 51.562 75.166 134.096 73.874 252.317-0.191 17.552-14.481 31.649-31.99 31.65-0.12 0-0.237 0-0.357-0.002-17.672-0.193-31.842-14.676-31.648-32.348 1.08-98.854-17.552-168.368-55.379-206.611-28.637-28.952-71.205-43.025-130.137-43.025-52.665 0-94.371 16.163-123.96 48.04-38.214 41.169-57.59 109.113-57.59 201.946-0.003 17.674-14.329 32.001-32.003 32.001z'
+const UNLOCK_SHACKLE_PATH =
+  'M512.1 791c-17.673 0-32-14.327-32-32V588.999c0-17.673 14.327-32 32-32 17.673 0 32 14.327 32 32V759c0 17.673-14.328 32-32 32zM297.472 446.595c-17.673 0-32-14.327-32-32 0-109.504 25.127-192.098 74.684-245.486 22.309-24.034 49.483-42.036 80.767-53.505 27.139-9.95 57.454-14.995 90.101-14.995 64.215 0 114.448 14.036 153.567 42.911 22.108 16.319 40.617 37.577 55.012 63.183 14.526 25.841 25.306 56.97 32.037 92.523 3.288 17.365-8.124 34.106-25.488 37.395-17.363 3.291-34.106-8.123-37.395-25.488-19.446-102.703-72.6-146.523-177.733-146.523-52.665 0-94.371 16.163-123.96 48.04-38.214 41.169-57.59 109.113-57.59 201.946-0.002 17.674-14.329 31.999-32.002 31.999z'
+const LOCK_ICON_SVG = `<svg viewBox="0 0 1024 1024" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="${LOCK_BODY_PATH}"/><path d="${LOCK_SHACKLE_PATH}"/></svg>`
+const UNLOCK_ICON_SVG = `<svg viewBox="0 0 1024 1024" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="${LOCK_BODY_PATH}"/><path d="${UNLOCK_SHACKLE_PATH}"/></svg>`
+
 function offsetGeoCoordinates(value: unknown, dLng: number, dLat: number): unknown {
   if (!Array.isArray(value)) return value
   if (value.length >= 2 && typeof value[0] === 'number' && typeof value[1] === 'number') {
@@ -51,6 +65,8 @@ interface LayerManagerProps {
   onCommitDraw: (before: string, after: string) => void
   /** 删除选中信号（第十二轮：App 点击"删除选中"按钮 +1） */
   deleteSelectedTick: number
+  /** 清空本层绘制信号（锁定图形保留，只清空未锁定图形；App 确认后 +1） */
+  clearDrawTick: number
   /** 是否有选中图形上报（第十二轮：驱动"删除选中"按钮置灰/可用） */
   onDeleteSelCount: (n: number) => void
   onDrawSaved: (side: Side, geoJson: string) => void
@@ -327,6 +343,8 @@ function ensureProps(feature: Feature): Record<string, unknown> {
   // 导致套索选中/高亮无法区分箭杆与箭头。还原时检测到这种格式就重新分配独立 uid，
   // 与新版绘制逻辑保持一致（group 仍用于关联整组）。
   if (p.group && p.uid === p.group) p.uid = genUid('draw')
+  // 锁定标记默认 false：锁定图形不可移动/编辑/删除（选中框只留"解锁"按钮）
+  if (p.locked == null) p.locked = false
   return p
 }
 
@@ -536,6 +554,7 @@ export default function LayerManager({
   draw,
   onCommitDraw,
   deleteSelectedTick,
+  clearDrawTick,
   onDeleteSelCount,
   onDrawSaved,
   onStartEdit,
@@ -648,6 +667,33 @@ export default function LayerManager({
     },
     [snapshotNow],
   )
+
+  // ---- 绘制组件锁定：locked 标记 + 轻量提示 ----
+  /** 轻量提示（锁定图形被删除/擦除时）：底部居中，2 秒自动消失 */
+  const [toast, setToast] = useState<{ msg: string; key: number } | null>(null)
+  const toastTimerRef = useRef<number | null>(null)
+  const showToast = useCallback((msg: string) => {
+    if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current)
+    setToast({ msg, key: Date.now() })
+    toastTimerRef.current = window.setTimeout(() => {
+      toastTimerRef.current = null
+      setToast(null)
+    }, 2000)
+  }, [])
+  const showToastRef = useRef(showToast)
+  showToastRef.current = showToast
+
+  /** 当前已锁定的逻辑键集合（group||uid；组内任一 feature 锁定即整组锁定） */
+  const lockedKeys = useCallback((): Set<string> => {
+    const keys = new Set<string>()
+    fgRef.current?.eachLayer((l) => {
+      const p = ((l as AnyWithFeature).feature?.properties ?? {}) as Record<string, unknown>
+      if (p.locked === true) keys.add(String(p.group ?? p.uid ?? ''))
+    })
+    return keys
+  }, [])
+  const lockedKeysRef = useRef(lockedKeys)
+  lockedKeysRef.current = lockedKeys
 
   // 绘制/套索/橡皮擦模式下禁用地图拖动，避免误拖
   useEffect(() => {
@@ -946,6 +992,8 @@ export default function LayerManager({
   const openEditor = useCallback(
     (marker: MarkerWithFeature) => {
       const props = (marker.feature?.properties ?? {}) as Record<string, unknown>
+      // 锁定图形不可编辑文字（双击不触发编辑会话）
+      if (lockedKeysRef.current().has(String(props.group ?? props.uid ?? ''))) return
       const latlng = marker.getLatLng()
       const uid = String(props.uid ?? genUid('text'))
       if (props.uid !== uid) props.uid = uid
@@ -1132,11 +1180,15 @@ export default function LayerManager({
     (e: L.LeafletMouseEvent) => {
       dragMovedRef.current = false
       const base = new Map<string, unknown>()
+      // 锁定图形不随套索整体移动（避免被连带拖走）
+      const locked = lockedKeysRef.current()
       fgRef.current?.eachLayer((l) => {
         const fl = l as AnyWithFeature
         if (!fl.feature) return
-        const u = String((fl.feature.properties as Record<string, unknown>).uid)
+        const fp = fl.feature.properties as Record<string, unknown>
+        const u = String(fp.uid)
         if (!selectedRef.current.has(u)) return
+        if (locked.has(String(fp.group ?? u))) return
         if (l instanceof L.Marker || l instanceof L.Circle) base.set(u, (l as L.Marker).getLatLng())
         else if (l instanceof L.Polyline || l instanceof L.Polygon) base.set(u, (l as L.Polyline).getLatLngs())
       })
@@ -1328,22 +1380,30 @@ export default function LayerManager({
     const before = snapshotNow()
     // 删除选中的绘制图形（含箭头组）
     if (hasDraw && g) {
+      // 锁定图形不可删除（组内任一锁定即整组跳过），并提示解锁后再删除
+      const locked = lockedKeysRef.current()
+      let blockedLocked = false
       const doomed: AnyWithFeature[] = []
       g.eachLayer((l) => {
         const fl = l as AnyWithFeature
         const fp = (fl.feature?.properties ?? {}) as Record<string, unknown>
         const u = String(fp.uid)
         const grp = String(fp.group ?? '')
-        if (selectedRef.current.has(u) || (grp && selectedRef.current.has(grp))) doomed.push(fl)
+        if (!(selectedRef.current.has(u) || (grp && selectedRef.current.has(grp)))) return
+        if (locked.has(grp || u)) {
+          blockedLocked = true
+          return
+        }
+        doomed.push(fl)
       })
+      if (blockedLocked) showToastRef.current(LOCKED_TOAST_MSG)
       for (const d of doomed) {
         const u = String((d.feature?.properties as Record<string, unknown>)?.uid ?? '')
         selectedRef.current.delete(u)
         highlight(u, false)
         g.removeLayer(d)
       }
-      selectedRef.current.clear()
-      commitDraw(before)
+      if (doomed.length > 0) commitDraw(before)
     }
     // 删除选中的载具（第十四轮：套索框选后整体删除）
     if (hasVeh) {
@@ -1376,14 +1436,50 @@ export default function LayerManager({
     }
   }, [deleteSelectedTick, deleteSelected])
 
+  // 监听"清空本层绘制"信号：锁定图形保留，只清空未锁定图形；有锁定图形被保留时提示
+  const prevClearDrawTick = useRef(clearDrawTick)
+  useEffect(() => {
+    if (clearDrawTick === prevClearDrawTick.current) return
+    prevClearDrawTick.current = clearDrawTick
+    const g = fgRef.current
+    if (!g) return
+    const locked = lockedKeys()
+    const doomed: AnyWithFeature[] = []
+    g.eachLayer((l) => {
+      const fl = l as AnyWithFeature
+      if (!fl.feature) return
+      const p = fl.feature.properties as Record<string, unknown>
+      if (!locked.has(String(p.group ?? p.uid ?? ''))) doomed.push(fl)
+    })
+    if (doomed.length > 0) {
+      const before = snapshotNow()
+      for (const d of doomed) {
+        const u = String((d.feature?.properties as Record<string, unknown> | undefined)?.uid ?? '')
+        selectedRef.current.delete(u)
+        highlight(u, false)
+        g.removeLayer(d)
+      }
+      commitDraw(before)
+      updateLassoBoxRef.current()
+      buildGizmoRef.current()
+      notifySelection()
+    }
+    if (locked.size > 0) showToast(LOCKED_TOAST_MSG)
+  }, [clearDrawTick, lockedKeys, snapshotNow, commitDraw, highlight, notifySelection, showToast])
+
   /** 删除图形（橡皮擦）：箭头按 group 整体删除（问题4；重构：上报 App 入历史栈） */
   const deleteFeature = useCallback(
     (layer: AnyWithFeature) => {
       const g = fgRef.current
       if (!g) return
-      const before = snapshotNow()
       const props = (layer.feature?.properties ?? {}) as Record<string, unknown>
       const key = String(props.group ?? props.uid)
+      // 锁定图形不可擦除：提示解锁后再删除
+      if (lockedKeysRef.current().has(key)) {
+        showToastRef.current(LOCKED_TOAST_MSG)
+        return
+      }
+      const before = snapshotNow()
       const doomed: AnyWithFeature[] = []
       g.eachLayer((l) => {
         const fl = l as AnyWithFeature
@@ -2193,6 +2289,14 @@ export default function LayerManager({
       props: Record<string, unknown>
     }[] = []
     let strokeLiveLayers = new Set<L.Layer>()
+    // 锁定图形不参与擦除；每轮擦除（按下→抬起）命中锁定图形时只提示一次
+    let strokeLockedSources: { points: L.LatLng[] }[] = []
+    let lockedEraseNotified = false
+    const notifyLockedErase = () => {
+      if (lockedEraseNotified) return
+      lockedEraseNotified = true
+      showToastRef.current(LOCKED_TOAST_MSG)
+    }
 
     // 收集图形所有顶点对应的容器坐标
     const collectPts = (l: L.Polyline): L.Point[] => {
@@ -2247,6 +2351,15 @@ export default function LayerManager({
         const p = (d.feature?.properties ?? {}) as Record<string, unknown>
         return String(p.group ?? p.uid ?? '')
       }))
+      if (keys.size === 0) return
+      // 锁定图形整组跳过，并提示一次
+      const locked = lockedKeysRef.current()
+      for (const k of [...keys]) {
+        if (locked.has(k)) {
+          keys.delete(k)
+          notifyLockedErase()
+        }
+      }
       if (keys.size === 0) return
       const doomed: AnyWithFeature[] = []
       fg.eachLayer((candidate) => {
@@ -2337,6 +2450,19 @@ export default function LayerManager({
           strokeLiveLayers.add(fragment)
         })
       }
+      // 锁定图形不裁断；笔迹触碰到时提示一次（保留原样显示）
+      if (!lockedEraseNotified) {
+        for (const entry of strokeLockedSources) {
+          const hitLocked = entry.points.some((ll) => {
+            const pixel = map.latLngToContainerPoint(ll)
+            return trail.some((trailPoint) => pixel.distanceTo(trailPoint) <= ERASE_R)
+          })
+          if (hitLocked) {
+            notifyLockedErase()
+            break
+          }
+        }
+      }
       changed = anyTouched
     }
 
@@ -2344,18 +2470,27 @@ export default function LayerManager({
       erasing = true
       before = snapshotNow()
       changed = false
+      lockedEraseNotified = false
       lastPt = map.latLngToContainerPoint(e.latlng)
       strokeTrail = draw.eraserMode === 'stroke' ? [lastPt] : []
       if (draw.eraserMode === 'stroke') {
         strokeSources = []
+        strokeLockedSources = []
         strokeLiveLayers = new Set<L.Layer>()
+        const locked = lockedKeysRef.current()
         fg.eachLayer((candidate) => {
           if (!(candidate instanceof L.Polyline) || candidate instanceof L.Polygon) return
           const layer = candidate as PathWithFeature
+          const p = (layer.feature?.properties ?? {}) as Record<string, unknown>
+          // 锁定图形不参与笔迹裁断，只记录用于触碰提示
+          if (locked.has(String(p.group ?? p.uid ?? ''))) {
+            strokeLockedSources.push({ points: flatLatLngs(layer).map((ll) => L.latLng(ll.lat, ll.lng)) })
+            return
+          }
           strokeSources.push({
             layer,
             points: flatLatLngs(layer).map((ll) => L.latLng(ll.lat, ll.lng)),
-            props: { ...((layer.feature?.properties ?? {}) as Record<string, unknown>) },
+            props: { ...p },
           })
           strokeLiveLayers.add(layer)
         })
@@ -2393,6 +2528,7 @@ export default function LayerManager({
       changed = false
       strokeTrail = []
       strokeSources = []
+      strokeLockedSources = []
       strokeLiveLayers = new Set<L.Layer>()
     }
 
@@ -3110,6 +3246,8 @@ export default function LayerManager({
   /** 由选中框右侧按钮打开属性面板；选择图形本身不再自动弹出。 */
   const openSelPanel = useCallback(
     (key: string) => {
+      // 锁定图形不可修改组件信息：属性面板不打开
+      if (lockedKeysRef.current().has(key)) return
       const layers = targetLayersOf(key)
       const first = layers[0]
       if (!first) return
@@ -3227,6 +3365,28 @@ export default function LayerManager({
   const closeSelPanelRef = useRef(closeSelPanel)
   closeSelPanelRef.current = closeSelPanel
 
+  /** 锁定/解锁一组图形（按 group||uid 整组生效；入历史栈可撤销）。锁定后选中框只留"解锁"按钮。 */
+  const setKeyLocked = useCallback(
+    (key: string, locked: boolean) => {
+      const targets = targetLayersOf(key)
+      if (targets.length === 0) return
+      // 已是目标状态（如 pointerup 与 click 重复触发）则不再重复入栈
+      const current = targets.some((t) => ((t.feature?.properties ?? {}) as Record<string, unknown>).locked === true)
+      if (current === locked) return
+      const before = snapshotNow()
+      for (const target of targets) {
+        ;(((target as AnyWithFeature).feature?.properties ?? {}) as Record<string, unknown>).locked = locked
+      }
+      // 锁定前关闭属性面板（不提交：锁定本身才是本次历史记录）
+      if (locked) closeSelPanelRef.current(false)
+      commitDraw(before)
+      buildGizmoRef.current()
+    },
+    [targetLayersOf, snapshotNow, commitDraw],
+  )
+  const setKeyLockedRef = useRef(setKeyLocked)
+  setKeyLockedRef.current = setKeyLocked
+
   /** 构建选中手柄组（选中框 + 各类手柄；支持多选：仅单选时显示端点/曲线/拉伸手柄） */
   const buildGizmo = useCallback(() => {
     const gz = gizmoRef.current
@@ -3237,6 +3397,8 @@ export default function LayerManager({
     if (layers.length === 0) return
     const single = keys.length === 1
     const first = layers[0]
+    // 锁定图形（单选）：隐藏样式/删除按钮与全部编辑手柄，只保留"解锁"按钮
+    const lockedSel = single && layers.some((l) => ((l.feature?.properties ?? {}) as Record<string, unknown>).locked === true)
     const props = (first.feature?.properties ?? {}) as Record<string, unknown>
     const isCircle = props.type === 'circle'
     const isText = props.type === 'text'
@@ -3304,7 +3466,7 @@ export default function LayerManager({
     selectionBox.on('mouseup', () => finishShapePointerRef.current())
     selectionBox.on('click', (e: L.LeafletMouseEvent) => L.DomEvent.stopPropagation(e))
     selectionBox.addTo(gz)
-    if (single) {
+    if (single && !lockedSel) {
       const eastCenter = L.latLng(bounds.getCenter().lat, bounds.getEast())
       const stylePos = map.containerPointToLatLng(map.latLngToContainerPoint(eastCenter).add([34, 0]))
       const styleButton = L.marker(stylePos, {
@@ -3370,6 +3532,75 @@ export default function LayerManager({
           deleteSelected()
         })
       }
+
+      // 锁定按钮（排在删除旁）：点击后同组图形锁定，不可移动/编辑/删除
+      const lockPos = map.containerPointToLatLng(map.latLngToContainerPoint(eastCenter).add([34, 64]))
+      const lockButton = L.marker(lockPos, {
+        icon: L.divIcon({
+          className: 'edit-lock-trigger-wrap',
+          html: `<button type="button" class="edit-lock-trigger" title="锁定图形" aria-label="锁定图形">${LOCK_ICON_SVG}</button>`,
+          iconSize: [30, 26],
+          iconAnchor: [15, 13],
+        }),
+        pane: DRAW_PANE,
+        interactive: true,
+        keyboard: false,
+        zIndexOffset: 1100,
+      })
+      lockButton.on('mousedown', (e: L.LeafletMouseEvent) => {
+        L.DomEvent.stop(e.originalEvent as MouseEvent)
+        L.DomEvent.stopPropagation(e)
+      })
+      lockButton.on('click', (e: L.LeafletMouseEvent) => {
+        L.DomEvent.stop(e.originalEvent as MouseEvent)
+        L.DomEvent.stopPropagation(e)
+        setKeyLockedRef.current(keys[0], true)
+      })
+      lockButton.addTo(gz)
+      const lockButtonElement = lockButton.getElement()?.querySelector<HTMLElement>('.edit-lock-trigger')
+      if (lockButtonElement) {
+        L.DomEvent.on(lockButtonElement, 'pointerdown', (event: Event) => L.DomEvent.stop(event))
+        L.DomEvent.on(lockButtonElement, 'pointerup', (event: Event) => {
+          L.DomEvent.stop(event)
+          setKeyLockedRef.current(keys[0], true)
+        })
+      }
+    }
+    if (lockedSel) {
+      // 已锁定：只显示"解锁"按钮（样式/删除按钮与编辑手柄全部隐藏）
+      const eastCenter = L.latLng(bounds.getCenter().lat, bounds.getEast())
+      const unlockPos = map.containerPointToLatLng(map.latLngToContainerPoint(eastCenter).add([34, 0]))
+      const unlockButton = L.marker(unlockPos, {
+        icon: L.divIcon({
+          className: 'edit-lock-trigger-wrap',
+          html: `<button type="button" class="edit-unlock-trigger" title="解锁图形" aria-label="解锁图形">${UNLOCK_ICON_SVG}</button>`,
+          iconSize: [30, 26],
+          iconAnchor: [15, 13],
+        }),
+        pane: DRAW_PANE,
+        interactive: true,
+        keyboard: false,
+        zIndexOffset: 1100,
+      })
+      unlockButton.on('mousedown', (e: L.LeafletMouseEvent) => {
+        L.DomEvent.stop(e.originalEvent as MouseEvent)
+        L.DomEvent.stopPropagation(e)
+      })
+      unlockButton.on('click', (e: L.LeafletMouseEvent) => {
+        L.DomEvent.stop(e.originalEvent as MouseEvent)
+        L.DomEvent.stopPropagation(e)
+        setKeyLockedRef.current(keys[0], false)
+      })
+      unlockButton.addTo(gz)
+      const unlockButtonElement = unlockButton.getElement()?.querySelector<HTMLElement>('.edit-unlock-trigger')
+      if (unlockButtonElement) {
+        L.DomEvent.on(unlockButtonElement, 'pointerdown', (event: Event) => L.DomEvent.stop(event))
+        L.DomEvent.on(unlockButtonElement, 'pointerup', (event: Event) => {
+          L.DomEvent.stop(event)
+          setKeyLockedRef.current(keys[0], false)
+        })
+      }
+      return
     }
     const mk = (pos: L.LatLng, kind: string, cls: string, radius = 6) => {
       const h = L.marker(pos, {
@@ -3515,7 +3746,9 @@ export default function LayerManager({
   /** 启动整体移动（按住已选中的图形本体 → 整个选中集合一起移动） */
   const startBodyMove = useCallback(
     (key: string, e: L.LeafletMouseEvent) => {
-      const keys = selectedKeys()
+      // 锁定图形不可移动：从移动集合中剔除（单击选中不受影响）
+      const locked = lockedKeysRef.current()
+      const keys = selectedKeys().filter((k) => !locked.has(k))
       const layers = layersOfKeys(keys)
       if (layers.length === 0) return
       interactRef.current = {
@@ -3550,6 +3783,9 @@ export default function LayerManager({
   /** 启动手柄拖拽（缩放/旋转/拉伸/端点/曲线） */
   const startHandleDrag = useCallback(
     (kind: string, keys: string[], e: L.LeafletMouseEvent) => {
+      // 锁定图形不参与手柄编辑（组内任一锁定即整组跳过）
+      const locked = lockedKeysRef.current()
+      keys = keys.filter((k) => !locked.has(k))
       const layers = layersOfKeys(keys)
       if (layers.length === 0) return
       const first = layers[0]
@@ -3632,7 +3868,9 @@ export default function LayerManager({
     if (platform.kind !== 'android') return false
     // 结束第一根手指刚建立的普通点击/拖动候选会话，再切换为双指缩放。
     finishShapePointerRef.current()
-    const keys = selectedKeys()
+    // 锁定图形不参与捏合缩放
+    const locked = lockedKeysRef.current()
+    const keys = selectedKeys().filter((k) => !locked.has(k))
     const layers = layersOfKeys(keys)
     if (layers.length === 0) return false
     const startDistance = a.distanceTo(b)
@@ -4042,6 +4280,13 @@ export default function LayerManager({
         }
       }
     }
+    // 滚轮/手势缩放：选中框（经纬度边界）随地图缩放，但样式/删除/锁定按钮与编辑手柄
+    // 是按屏幕像素偏移算出的 Marker，缩放后会脱离图形——缩放过程中持续按新比例重建 gizmo
+    const onZoom = () => {
+      if (selectedRef.current.size > 0) buildGizmoRef.current()
+    }
+    map.on('zoom', onZoom)
+    map.on('zoomend', onZoom)
     map.on('mousemove', onMove)
     map.on('mouseup', onUp)
     map.on('click', onClick)
@@ -4050,6 +4295,8 @@ export default function LayerManager({
     document.addEventListener('mouseup', onUp)
     document.addEventListener('keydown', onKey)
     return () => {
+      map.off('zoom', onZoom)
+      map.off('zoomend', onZoom)
       map.off('mousemove', onMove)
       map.off('mouseup', onUp)
       map.off('click', onClick)
@@ -4423,5 +4670,20 @@ export default function LayerManager({
       document.body,
     )
 
-  return selPanelUI
+  // 轻量提示（锁定图形被删除/擦除时）：Portal 到 body，fixed 定位底部居中
+  const toastUI =
+    toast &&
+    createPortal(
+      <div key={toast.key} className="draw-toast" role="status">
+        {toast.msg}
+      </div>,
+      document.body,
+    )
+
+  return (
+    <>
+      {selPanelUI}
+      {toastUI}
+    </>
+  )
 }
