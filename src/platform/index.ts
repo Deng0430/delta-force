@@ -37,8 +37,28 @@ async function toggleFullscreen(): Promise<void> {
 }
 
 async function downloadText(filename: string, text: string, mime?: string): Promise<void> {
-  // Android 接入 Capacitor Filesystem/Share 后只需替换本实现；当前 Web 下载可继续用于浏览器和桌面端。
   const contentType = mime ?? (filename.toLowerCase().endsWith('.json') ? 'application/json' : 'text/html')
+  // Android 原生端：WebView 不支持 <a download> 浏览器式下载，点击无响应。
+  // 改为写入应用缓存目录后调起系统分享面板，由用户在文件管理器中选择导出位置。
+  if (kind === 'android' && capacitorBridge()?.isNativePlatform?.() === true) {
+    try {
+      const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem')
+      const { Share } = await import('@capacitor/share')
+      const result = await Filesystem.writeFile({
+        path: `exports/${Date.now()}_${filename}`,
+        data: text,
+        directory: Directory.Cache,
+        encoding: Encoding.UTF8,
+        recursive: true,
+      })
+      await Share.share({ title: filename, url: result.uri, dialogTitle: '导出到' })
+    } catch (err) {
+      // 用户取消分享属于正常操作；其余错误打印日志便于排查。
+      if (!/cancel/i.test(String(err))) console.error('导出失败', err)
+    }
+    return
+  }
+  // Web / 桌面端：浏览器下载。
   const blob = new Blob([text], { type: `${contentType};charset=utf-8` })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
