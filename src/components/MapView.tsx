@@ -74,6 +74,8 @@ interface MapViewProps {
   onCommitDraw: (before: string, after: string) => void
   /** 删除选中信号（第十二轮） */
   deleteSelectedTick: number
+  /** 清空本层绘制信号（锁定图形保留，只清未锁定图形） */
+  clearDrawTick: number
   /** 是否有选中图形上报（第十二轮） */
   onDeleteSelCount: (n: number) => void
   onMapReady: (map: L.Map) => void
@@ -346,6 +348,7 @@ export default function MapView({
   draw,
   onCommitDraw,
   deleteSelectedTick,
+  clearDrawTick,
   onDeleteSelCount,
   onMapReady,
   onMoveVehicle,
@@ -876,6 +879,7 @@ export default function MapView({
           draw={draw}
           onCommitDraw={onCommitDraw}
           deleteSelectedTick={deleteSelectedTick}
+          clearDrawTick={clearDrawTick}
           onDeleteSelCount={onDeleteSelCount}
           onDrawSaved={onDrawSaved}
           onStartEdit={handleStartEdit}

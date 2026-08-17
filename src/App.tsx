@@ -1173,6 +1173,8 @@ export default function App() {
   const [deleteSelectedTick, setDeleteSelectedTick] = useState(0)
   const [deleteSelCount, setDeleteSelCount] = useState(0)
   const handleDeleteSelected = useCallback(() => setDeleteSelectedTick((t) => t + 1), [])
+  // 清空本层绘制信号（LayerManager 执行：锁定图形保留，只清未锁定图形）
+  const [clearDrawTick, setClearDrawTick] = useState(0)
 
   useEffect(() => {
     const onBackspace = (event: KeyboardEvent) => {
@@ -1627,14 +1629,9 @@ export default function App() {
   )
 
   const clearCurrentDraw = useCallback(() => {
-    // 清空入历史栈（可撤回）
-    const cur = mapsRef.current[mapId] ?? createEmptyMapState()
-    pushEntry(cloneState(cur), { ...cloneState(cur), drawings: { ...cur.drawings, [view]: emptyGeoJson() } })
-    updateMap(mapId, (s) => ({
-      ...s,
-      drawings: { ...s.drawings, [view]: emptyGeoJson() },
-    }))
-  }, [updateMap, mapId, view, cloneState, pushEntry])
+    // 由 LayerManager 执行清空并提交入历史栈（可撤回）：锁定图形保留，只清未锁定图形
+    setClearDrawTick((t) => t + 1)
+  }, [])
 
   const handleClearDraw = useCallback(() => {
     if (platform.kind === 'android') {
@@ -2641,6 +2638,7 @@ export default function App() {
           legendOpen={ui.legendOpen}
           onToggleLegend={handleToggleLegend}
           deleteSelectedTick={deleteSelectedTick}
+          clearDrawTick={clearDrawTick}
           onDeleteSelCount={setDeleteSelCount}
           onMapReady={handleMapReady}
           onMoveVehicle={handleMoveVehicle}
