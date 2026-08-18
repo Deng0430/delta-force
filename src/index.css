@@ -3235,6 +3235,12 @@ body {
   cursor: crosshair !important;
 }
 
+/* 中键拖动地图光标（覆盖绘制光标） */
+.mid-pan,
+.mid-pan * {
+  cursor: grabbing !important;
+}
+
 /* 橡皮擦光标（问题4） */
 .eraser-cursor,
 .eraser-cursor * {

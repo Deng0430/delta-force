@@ -26,6 +26,7 @@ const CLICK_DRAG_THRESHOLD_PX = 5
 
 /** 锁定图形被删除/擦除时的提示文案 */
 const LOCKED_TOAST_MSG = '该图样已经锁定，请解锁后再删除'
+const LOCKED_MOVE_TOAST_MSG = '存在图例处于锁定状态，请先解锁'
 
 // 锁定/解锁图标（美术资源/锁定.svg、解锁.svg，iconfont 1024×1024 填充式；
 // gizmo 浮动按钮为 Leaflet DOM，只能以 innerHTML 内联 SVG 字符串注入）。
@@ -614,6 +615,7 @@ export default function LayerManager({
   }>({})
   // 套索包围矩形（第十五轮：圈中图形后显示矩形区域，区域内按住可整体移动）
   const lassoBoxRef = useRef<L.Rectangle | null>(null)
+  const lassoBoxBtnRef = useRef<L.Marker | null>(null)
   const drawClipboardRef = useRef<Feature[]>([])
 
   const save = useCallback(() => {
@@ -711,6 +713,42 @@ export default function LayerManager({
       container.classList.remove('draw-cursor')
     }
   }, [map, tool])
+
+  // 鼠标中键拖动平移地图（任意工具下可用）。绘制模式下 Leaflet dragging 被禁用，
+  // 这里捕获阶段拦截中键并自行 panBy；stopPropagation 避免中键误触发绘制/套索等左键逻辑。
+  useEffect(() => {
+    const container = map.getContainer()
+    let last: L.Point | null = null
+    const onDown = (e: MouseEvent) => {
+      if (e.button !== 1) return
+      e.preventDefault()
+      e.stopPropagation()
+      last = L.point(e.clientX, e.clientY)
+      container.classList.add('mid-pan')
+    }
+    const onMove = (e: MouseEvent) => {
+      if (!last) return
+      e.preventDefault()
+      const now = L.point(e.clientX, e.clientY)
+      const delta = last.subtract(now)
+      if (delta.x !== 0 || delta.y !== 0) map.panBy(delta, { animate: false })
+      last = now
+    }
+    const onUp = (e: MouseEvent) => {
+      if (e.button !== 1) return
+      last = null
+      container.classList.remove('mid-pan')
+    }
+    container.addEventListener('mousedown', onDown, true)
+    document.addEventListener('mousemove', onMove, true)
+    document.addEventListener('mouseup', onUp, true)
+    return () => {
+      container.removeEventListener('mousedown', onDown, true)
+      document.removeEventListener('mousemove', onMove, true)
+      document.removeEventListener('mouseup', onUp, true)
+      container.classList.remove('mid-pan')
+    }
+  }, [map])
 
   // Android WebView 的触控不会稳定地产生 Leaflet mousedown/mousemove/mouseup，
   // 而现有绘制器以这组三段事件为统一协议。仅在 Android 绘制模式下桥接触控指针，
@@ -1182,6 +1220,19 @@ export default function LayerManager({
       const base = new Map<string, unknown>()
       // 锁定图形不随套索整体移动（避免被连带拖走）
       const locked = lockedKeysRef.current()
+      // 选中集合含锁定图形：整个移动会话不启动，并提示需先解锁
+      let hitLocked = false
+      fgRef.current?.eachLayer((l) => {
+        const fl = l as AnyWithFeature
+        if (!fl.feature) return
+        const fp = fl.feature.properties as Record<string, unknown>
+        const u = String(fp.uid)
+        if (selectedRef.current.has(u) && locked.has(String(fp.group ?? u))) hitLocked = true
+      })
+      if (hitLocked) {
+        showToastRef.current(LOCKED_MOVE_TOAST_MSG)
+        return
+      }
       fgRef.current?.eachLayer((l) => {
         const fl = l as AnyWithFeature
         if (!fl.feature) return
@@ -1238,6 +1289,9 @@ export default function LayerManager({
     const existing = lassoBoxRef.current
     lassoBoxRef.current = null
     if (existing) existing.remove()
+    const existingBtn = lassoBoxBtnRef.current
+    lassoBoxBtnRef.current = null
+    if (existingBtn) existingBtn.remove()
     if (toolRef.current !== 'lasso') return
     const bounds = computeSelectionBounds()
     if (!bounds) return
@@ -1262,15 +1316,91 @@ export default function LayerManager({
       startMoveSelectedRef.current(e)
       L.DomEvent.stopPropagation(e)
     })
-    // 矩形内点击不取消选中（地图空白点击逻辑对 drawPane 内的元素本就不处理，双保险）
+    // 区域内点击不取消选中（地图空白点击逻辑对 drawPane 内的元素本就不处理，双保险）
     box.on('click', (e: L.LeafletMouseEvent) => L.DomEvent.stopPropagation(e))
     box.addTo(map)
     lassoBoxRef.current = box
+    // 锁定/解锁按钮：选中集合含锁定图形时显示"解锁"，否则显示"锁定"
+    const selLocked = selectionHasLockedRef.current()
+    const btnPos = map.containerPointToLatLng(
+      map.latLngToContainerPoint(box.getBounds().getNorthEast()).add([20, -20]),
+    )
+    const btn = L.marker(btnPos, {
+      icon: L.divIcon({
+        className: 'edit-lock-trigger-wrap',
+        html: `<button type="button" class="${selLocked ? 'edit-unlock-trigger' : 'edit-lock-trigger'}" title="${selLocked ? '解锁图形' : '锁定图形'}" aria-label="${selLocked ? '解锁图形' : '锁定图形'}">${selLocked ? UNLOCK_ICON_SVG : LOCK_ICON_SVG}</button>`,
+        iconSize: [30, 26],
+        iconAnchor: [15, 13],
+      }),
+      pane: DRAW_PANE,
+      interactive: true,
+      keyboard: false,
+      zIndexOffset: 1100,
+    })
+    btn.on('mousedown', (e: L.LeafletMouseEvent) => {
+      L.DomEvent.stop(e.originalEvent as MouseEvent)
+      L.DomEvent.stopPropagation(e)
+    })
+    btn.on('click', (e: L.LeafletMouseEvent) => {
+      L.DomEvent.stop(e.originalEvent as MouseEvent)
+      L.DomEvent.stopPropagation(e)
+      setLassoLockedRef.current(!selectionHasLockedRef.current())
+    })
+    btn.addTo(map)
+    lassoBoxBtnRef.current = btn
   }, [map, computeSelectionBounds])
 
   // 供 early 定义的回调（clearSelection 等）调用最新版
   const updateLassoBoxRef = useRef(updateLassoBox)
   updateLassoBoxRef.current = updateLassoBox
+
+  /** 套索选中集合中是否包含锁定图形（按 group||uid 组键判定） */
+  const selectionHasLocked = useCallback(() => {
+    const locked = lockedKeysRef.current()
+    let found = false
+    fgRef.current?.eachLayer((l) => {
+      const fl = l as AnyWithFeature
+      if (!fl.feature) return
+      const fp = fl.feature.properties as Record<string, unknown>
+      const u = String(fp.uid)
+      if (selectedRef.current.has(u) && locked.has(String(fp.group ?? u))) found = true
+    })
+    return found
+  }, [])
+  const selectionHasLockedRef = useRef(selectionHasLocked)
+  selectionHasLockedRef.current = selectionHasLocked
+
+  /** 套索选中集合的锁定/解锁：整组生效、一次历史记录，完成后刷新包围矩形按钮 */
+  const setLassoLocked = useCallback(
+    (locked: boolean) => {
+      const lockedSet = lockedKeysRef.current()
+      const targetKeys = new Set<string>()
+      fgRef.current?.eachLayer((l) => {
+        const fl = l as AnyWithFeature
+        if (!fl.feature) return
+        const fp = fl.feature.properties as Record<string, unknown>
+        const u = String(fp.uid)
+        if (!selectedRef.current.has(u)) return
+        const key = String(fp.group ?? u)
+        if (lockedSet.has(key) !== locked) targetKeys.add(key)
+      })
+      if (targetKeys.size === 0) return
+      const before = snapshotNow()
+      fgRef.current?.eachLayer((l) => {
+        const fl = l as AnyWithFeature
+        if (!fl.feature) return
+        const fp = fl.feature.properties as Record<string, unknown>
+        if (targetKeys.has(String(fp.group ?? fp.uid))) fp.locked = locked
+      })
+      // 锁定前关闭属性面板（不提交：锁定本身才是本次历史记录）
+      if (locked) closeSelPanelRef.current(false)
+      commitDraw(before)
+      updateLassoBoxRef.current()
+    },
+    [snapshotNow, commitDraw],
+  )
+  const setLassoLockedRef = useRef(setLassoLocked)
+  setLassoLockedRef.current = setLassoLocked
 
   const clearSelection = useCallback(() => {
     for (const uid of selectedRef.current) highlight(uid, false)
@@ -2105,12 +2235,18 @@ export default function LayerManager({
       }
     }
 
+    // 套索包围矩形与锁定/解锁按钮基于屏幕像素外扩/定位，缩放后按新比例重建
+    const onZoom = () => updateLassoBoxRef.current()
+    map.on('zoom', onZoom)
+    map.on('zoomend', onZoom)
     map.on('mousedown', onMouseDown)
     map.on('mousemove', onMouseMove)
     map.on('mouseup', onMouseUp)
     map.on('click', onClick)
     document.addEventListener('keydown', onKey)
     return () => {
+      map.off('zoom', onZoom)
+      map.off('zoomend', onZoom)
       map.off('mousedown', onMouseDown)
       map.off('mousemove', onMouseMove)
       map.off('mouseup', onMouseUp)
@@ -4284,6 +4420,8 @@ export default function LayerManager({
     // 是按屏幕像素偏移算出的 Marker，缩放后会脱离图形——缩放过程中持续按新比例重建 gizmo
     const onZoom = () => {
       if (selectedRef.current.size > 0) buildGizmoRef.current()
+      // 套索包围矩形与锁定/解锁按钮同样基于屏幕像素外扩/定位，缩放后需重建
+      updateLassoBoxRef.current()
     }
     map.on('zoom', onZoom)
     map.on('zoomend', onZoom)
