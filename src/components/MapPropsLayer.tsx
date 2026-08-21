@@ -9,6 +9,7 @@ import { POINT_ICON_BASE } from '../config/points'
 const PROP_THEME: Record<string, { color: string; size: number }> = {
   载具补给站: { color: '#2f6fed', size: 28 },
   固定防空炮: { color: '#e0453a', size: 28 },
+  密集阵: { color: '#32b8c6', size: 28 },
   固定机枪: { color: '#f08c2a', size: 26 },
   岸防炮: { color: '#d63f3f', size: 28 },
   滑索: { color: '#2ec4b6', size: 24 },

@@ -60,14 +60,16 @@ function borderOf(item, convert) {
   return (item.border || []).map(parseXY).filter(Boolean).map(([x, y]) => convert(x, y))
 }
 
-function stageOf(items, index, convert) {
+function stageOf(items, index, convert, initItems = items) {
   const points = items.filter((item) => /^q_jd_/.test(item.icon || '')).map((item) => {
     const [lat, lng] = pointOf(item, convert)
     return { name: item.name, lat, lng, note: item['自定义区域'] === '-' ? '' : (item['自定义区域'] || ''), icon: item.icon, capturable: borderOf(item, convert) }
   })
   const zoneItem = items.find((item) => item.name === '区域' || item.icon === 'g_qy')
-  const attackBases = items.filter((item) => item.name === '进攻方基地' || item.icon === 'g_jdbsd_r')
-  const defenseBases = items.filter((item) => item.name === '防守方基地' || item.icon === 'f_jdbsd_g')
+  // 基地区域优先读取 init.typeList。腾讯当前 map_dg.js 的 mapArticle
+  // 把断轨 S4 守方 border 错误复制成攻方 border，而 init 中仍是正确数据。
+  const attackBases = initItems.filter((item) => item.name === '进攻方基地' || item.icon === 'g_jdbsd_r')
+  const defenseBases = initItems.filter((item) => item.name === '防守方基地' || item.icon === 'f_jdbsd_g')
   const ignored = new Set([...points.map((point) => point.icon), 'g_qy', 'g_jdbsd_r', 'f_jdbsd_g'])
   const vehicleItems = items.filter((item) => !ignored.has(item.icon) && !PROP_NAMES.has(item.name))
   const vehicles = {}
@@ -98,7 +100,7 @@ for (const [mapId, officialKey, fileStem] of SPECS) {
   const info = window[officialKey].info
   const convert = converter(info)
   const mobile = window[`${officialKey}_mobile`]
-  output.maps[mapId] = mobile.mapArticle.map((items, index) => stageOf(items, index, convert))
+  output.maps[mapId] = mobile.mapArticle.map((items, index) => stageOf(items, index, convert, mobile.init[index]?.typeList ?? items))
   output.props[mapId] = mobile.mapArticle.flatMap((items, index) => items
     .filter((item) => PROP_NAMES.has(item.name))
     .map((item) => {

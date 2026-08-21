@@ -2,6 +2,31 @@
 ; 升级时可能被误认为主程序并反复关闭，最终误报“应用无法关闭”。
 ; 这里只精确关闭真正的应用进程，随后仍由 electron-builder 的标准流程
 ; 静默运行旧版卸载器（保留用户数据）并继续安装新版。
+!ifndef BUILD_UNINSTALLER
+  Var /GLOBAL launchAppAfterGuiExit
+
+  ; 不使用 electron-builder 的完成页启动回调。该回调会在安装器窗口仍然
+  ; 可见时启动 Electron，冷启动或安全软件扫描期间容易让用户误以为“完成”
+  ; 按钮卡住。安装成功后先关闭安装器 GUI，再异步启动应用。
+  !macro customFinishPage
+    Function DeferStartAppUntilGuiExit
+      StrCpy $launchAppAfterGuiExit "1"
+    FunctionEnd
+
+    !define MUI_FINISHPAGE_RUN
+    !define MUI_FINISHPAGE_RUN_FUNCTION "DeferStartAppUntilGuiExit"
+    !insertmacro MUI_PAGE_FINISH
+  !macroend
+
+  !macro customHeader
+    Function .onGUIEnd
+      ${If} $launchAppAfterGuiExit == "1"
+        ${StdUtils.ExecShellAsUser} $0 "$INSTDIR\${APP_EXECUTABLE_FILENAME}" "open" ""
+      ${EndIf}
+    FunctionEnd
+  !macroend
+!endif
+
 !macro customCheckAppRunning
   nsExec::ExecToStack `"$SYSDIR\taskkill.exe" /IM "${APP_EXECUTABLE_FILENAME}"`
   Pop $0

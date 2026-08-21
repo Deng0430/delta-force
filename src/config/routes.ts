@@ -52,9 +52,13 @@ export function routeVisual(route: TacticalRoute, selected = false) {
   const completed = route.status === 'completed'
   const cancelled = route.status === 'cancelled'
   const executing = route.status === 'executing'
+  const baseWeight = typeof route.strokeWidth === 'number' && Number.isFinite(route.strokeWidth)
+    ? Math.max(1, Math.min(10, route.strokeWidth))
+    : 3.5
   return {
     color: completed ? '#7f888f' : cancelled ? '#656b70' : route.color,
-    weight: selected ? 5 : executing ? 5 : 3.5,
+    // 选中态由元素选择框表达，路线本身始终保留用户设置的实际粗细。
+    weight: selected ? baseWeight : executing ? Math.max(baseWeight + 1, 5) : baseWeight,
     opacity: Math.max(0.12, Math.min(1, route.opacity)) * (completed ? 0.58 : cancelled ? 0.35 : route.status === 'planned' ? 0.72 : 1),
     dashArray: routeDashArray(route.lineStyle, route.orderType),
   }

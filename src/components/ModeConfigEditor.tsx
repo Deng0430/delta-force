@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import type {
   GameModeProfile,
-  ModeConfigStore,
   ModeConfigVerification,
   ModeEditorSession,
   ModeEditorSelection,
@@ -10,6 +9,7 @@ import type {
   ModeMapOverride,
   ModeObjectivePoint,
   ModeSpawnPoint,
+  ModeVehicleRefreshPoint,
   ModeZone,
   ModeZoneKind,
   ModeZoneRole,
@@ -17,6 +17,13 @@ import type {
 import { genUid } from '../utils/geo'
 import { DEPLOY_VEHICLE_CATALOG, type DeployVehicleEntry } from '../config/deployVehicles'
 import { POINT_ICON_BASE } from '../config/points'
+import { refreshTriggerLabel } from '../utils/vehicleRefreshRules'
+import type { ModePaletteAsset } from './ModeAssetPalette'
+import TacticalCheckbox from './TacticalCheckbox'
+
+type ModeEditorPanel = 'properties' | 'objects' | 'vehicle-refresh' | 'settings'
+type VehicleRuleFilter = 'pending' | 'all' | 'completed'
+type VehicleImportMode = 'single' | 'batch'
 
 const ZONE_KIND_OPTIONS: { value: ModeZoneKind; label: string; color: string }[] = [
   { value: 'own', label: '己方区域', color: '#01ff84' },
@@ -43,6 +50,7 @@ const PROP_OPTIONS = [
   { name: '固定弹药箱', icon: 'q_gddyx' },
   { name: '载具补给站', icon: 'q_zjbjz' },
   { name: '固定防空炮', icon: 'q_gdaap' },
+  { name: '密集阵', icon: 'q_mjz' },
   { name: '固定机枪', icon: 'q_gdjq' },
   { name: '岸防炮', icon: 'q_afp' },
   { name: '滑索', icon: 'q_hs' },
@@ -118,20 +126,21 @@ interface ModeConfigEditorProps {
     selection: ModeEditorSelection,
     options?: { additive?: boolean; range?: boolean; order?: ModeEditorSelectionItem[] },
   ) => void
-  onSelectProfile: (id: string) => void
   onCreateProfile: (name: string) => void
   onDeleteProfile: (id: string) => void
   onUpdateProfile: (id: string, patch: Partial<Pick<GameModeProfile, 'name' | 'description'>>) => void
   onMapConfigChange: (config: ModeMapOverride) => void
-  onExport: () => void
-  onExportOfficial: () => void
-  onSyncOfficial: () => void
-  syncStatus: string
-  onImport: (store: ModeConfigStore) => void
   onSyncAttackDefense: () => void
+  selectedVehicleRefreshRuleIds: string[]
+  onSelectedVehicleRefreshRuleIdsChange: (uids: string[]) => void
+  onImportVehicleRefreshRules: (text: string) => { imported: number; ignored: number; errors: string[] }
+  onFinishZoneDraft: () => void
+  onDeleteSelection: () => void
+  onRequestConfirm: (title: string, message: string, onConfirm: () => void) => void
+  onRequestPrompt: (title: string, initialValue: string, onSubmit: (value: string) => void) => void
+  requestedPaletteAsset: ModePaletteAsset | null
   collapsed: boolean
   onToggleCollapsed: () => void
-  onClose: () => void
 }
 
 export default function ModeConfigEditor({
@@ -144,22 +153,22 @@ export default function ModeConfigEditor({
   session,
   onSessionChange,
   onSelectItem,
-  onSelectProfile,
   onCreateProfile,
   onDeleteProfile,
   onUpdateProfile,
   onMapConfigChange,
-  onExport,
-  onExportOfficial,
-  onSyncOfficial,
-  syncStatus,
-  onImport,
   onSyncAttackDefense,
+  selectedVehicleRefreshRuleIds,
+  onSelectedVehicleRefreshRuleIdsChange,
+  onImportVehicleRefreshRules,
+  onFinishZoneDraft,
+  onDeleteSelection,
+  onRequestConfirm,
+  onRequestPrompt,
+  requestedPaletteAsset,
   collapsed,
   onToggleCollapsed,
-  onClose,
 }: ModeConfigEditorProps) {
-  const importRef = useRef<HTMLInputElement>(null)
   const copyZoneStageRef = useRef<HTMLSelectElement>(null)
   const selectedZone =
     session.selected?.kind === 'zone'
@@ -177,6 +186,10 @@ export default function ModeConfigEditor({
     session.selected?.kind === 'prop'
       ? mapConfig.props.find((prop) => prop.uid === session.selected?.uid) ?? null
       : null
+  const selectedVehicleRefreshPoint =
+    session.selected?.kind === 'vehicle-refresh-point'
+      ? mapConfig.vehicleRefreshPoints.find((point) => point.uid === session.selected?.uid) ?? null
+      : null
   const stageZones = mapConfig.zones.filter((zone) => zone.stageId === session.stageId)
   const stageSpawns = mapConfig.spawns.filter((spawn) => spawn.stageId === session.stageId)
   const stageObjectives = mapConfig.objectives.filter((point) => point.stageId === session.stageId)
@@ -186,9 +199,11 @@ export default function ModeConfigEditor({
     ...stageObjectives.map((item) => ({ kind: 'objective' as const, uid: item.uid })),
     ...stageSpawns.map((item) => ({ kind: 'spawn' as const, uid: item.uid })),
     ...stageProps.map((item) => ({ kind: 'prop' as const, uid: item.uid })),
+    ...mapConfig.vehicleRefreshPoints.map((item) => ({ kind: 'vehicle-refresh-point' as const, uid: item.uid })),
   ]
   const selectedItemKeys = new Set((session.selectedItems.length > 0 ? session.selectedItems : session.selected ? [session.selected] : []).map((item) => `${item.kind}:${item.uid}`))
   const selectListItem = (event: ReactMouseEvent<HTMLButtonElement>, selection: ModeEditorSelectionItem) => {
+    setActivePanel('properties')
     onSelectItem(selection, {
       additive: event.ctrlKey || event.metaKey,
       range: event.shiftKey,
@@ -197,12 +212,49 @@ export default function ModeConfigEditor({
   }
   const currentStageLabel = mapConfig.stages.find((stage) => stage.id === session.stageId)?.label ?? ''
   const [stageLabelDraft, setStageLabelDraft] = useState(currentStageLabel)
+  const [vehicleRefreshTableDraft, setVehicleRefreshTableDraft] = useState('')
+  const [vehicleImportMode, setVehicleImportMode] = useState<VehicleImportMode>('single')
+  const [singleVehicleRule, setSingleVehicleRule] = useState({
+    objective: 'A',
+    side: '攻',
+    trigger: '',
+    vehicle: DEPLOY_VEHICLE_CATALOG[0]?.name ?? '',
+    note: '',
+  })
+  const [activePanel, setActivePanel] = useState<ModeEditorPanel>('properties')
+  const supportsVehicleRefresh = profile.id !== 'attack-defense'
+
+  useEffect(() => {
+    if (!supportsVehicleRefresh && activePanel === 'vehicle-refresh') setActivePanel('properties')
+  }, [activePanel, supportsVehicleRefresh])
+  const [vehicleRuleFilter, setVehicleRuleFilter] = useState<VehicleRuleFilter>('pending')
+  const [vehicleImportFeedback, setVehicleImportFeedback] = useState<{ tone: 'success' | 'warning'; title: string; detail: string } | null>(null)
+  const selectedIdentity = session.selected ? `${session.selected.kind}:${session.selected.uid}` : ''
+  const completedVehicleRuleCount = mapConfig.vehicleRefreshRules.filter((rule) => rule.action === 'disable' || Boolean(rule.refreshPointUid)).length
+  const pendingVehicleRuleCount = mapConfig.vehicleRefreshRules.length - completedVehicleRuleCount
+  const selectedLocatedVehicleRuleCount = mapConfig.vehicleRefreshRules.filter((rule) =>
+    selectedVehicleRefreshRuleIds.includes(rule.uid) && rule.action === 'refresh' && Boolean(rule.refreshPointUid),
+  ).length
+  const visibleVehicleRefreshRules = mapConfig.vehicleRefreshRules.filter((rule) => {
+    const completed = rule.action === 'disable' || Boolean(rule.refreshPointUid)
+    if (vehicleRuleFilter === 'pending') return !completed
+    if (vehicleRuleFilter === 'completed') return completed
+    return true
+  })
 
   // 阶段名称先在输入框内本地编辑，失焦时再提交到整份地图配置。
   // 避免每个输入字符都重建历史、保存并重绘整张地图，尤其可防止中文输入法组合文本抖动。
   useEffect(() => {
     setStageLabelDraft(currentStageLabel)
   }, [currentStageLabel, mapId, profile.id, session.stageId])
+
+  useEffect(() => {
+    if (selectedIdentity) setActivePanel('properties')
+  }, [selectedIdentity])
+
+  useEffect(() => {
+    if (session.tool === 'vehicle-refresh' || requestedPaletteAsset?.kind === 'vehicle-refresh') setActivePanel('vehicle-refresh')
+  }, [requestedPaletteAsset, session.tool])
 
   const commitStageLabel = useCallback(() => {
     if (stageLabelDraft === currentStageLabel) return
@@ -245,62 +297,12 @@ export default function ModeConfigEditor({
     })
   }
 
-  const finishZone = () => {
-    if (session.zoneDraft.length < 3) return
-    const roleMeta = ZONE_ROLE_OPTIONS.find((item) => item.value === session.zoneRole) ?? ZONE_ROLE_OPTIONS[4]
-    const zone: ModeZone = {
-      uid: genUid('mode_zone'),
-      stageId: session.stageId,
-      name: `区域 ${stageZones.length + 1}`,
-      kind: roleMeta.kind,
-      role: roleMeta.value,
-      color: roleMeta.color,
-      points: session.zoneDraft,
-      verification: 'draft',
-    }
-    onMapConfigChange({ ...mapConfig, zones: [...mapConfig.zones, zone], updatedAt: Date.now() })
-    onSessionChange({ tool: 'select', selected: { kind: 'zone', uid: zone.uid }, selectedItems: [{ kind: 'zone', uid: zone.uid }], zoneDraft: [] })
-  }
-
-  const deleteSelection = () => {
-    const selections = session.selectedItems.length > 0
-      ? session.selectedItems
-      : session.selected ? [session.selected] : []
-    if (selections.length === 0) return
-
-    const zoneIds = new Set(selections
-      .filter((item) => item.kind === 'zone' && mapConfig.zones.some((zone) => zone.uid === item.uid && zone.verification === 'draft'))
-      .map((item) => item.uid))
-    const spawnIds = new Set(selections
-      .filter((item) => item.kind === 'spawn' && mapConfig.spawns.some((spawn) => spawn.uid === item.uid && spawn.verification === 'draft'))
-      .map((item) => item.uid))
-    const objectiveIds = new Set(selections
-      .filter((item) => item.kind === 'objective' && mapConfig.objectives.some((point) => point.uid === item.uid && point.verification === 'draft'))
-      .map((item) => item.uid))
-    const propIds = new Set(selections
-      .filter((item) => item.kind === 'prop' && mapConfig.props.some((prop) => prop.uid === item.uid && prop.verification === 'draft'))
-      .map((item) => item.uid))
-
-    // Deleting an objective keeps the existing editor behavior: its draft capture zone is removed too.
-    for (const point of mapConfig.objectives) {
-      if (!objectiveIds.has(point.uid) || !point.captureZoneUid) continue
-      const captureZone = mapConfig.zones.find((zone) => zone.uid === point.captureZoneUid)
-      if (captureZone?.verification === 'draft') zoneIds.add(captureZone.uid)
-    }
-    const deletedCount = zoneIds.size + spawnIds.size + objectiveIds.size + propIds.size
-    if (deletedCount === 0) return
-
+  const replaceVehicleRefreshPoint = (uid: string, patch: Partial<ModeVehicleRefreshPoint>) => {
     onMapConfigChange({
       ...mapConfig,
-      zones: mapConfig.zones.filter((zone) => !zoneIds.has(zone.uid)),
-      spawns: mapConfig.spawns.filter((spawn) => !spawnIds.has(spawn.uid)),
-      objectives: mapConfig.objectives
-        .filter((point) => !objectiveIds.has(point.uid))
-        .map((point) => zoneIds.has(point.captureZoneUid) ? { ...point, captureZoneUid: '' } : point),
-      props: mapConfig.props.filter((prop) => !propIds.has(prop.uid)),
+      vehicleRefreshPoints: mapConfig.vehicleRefreshPoints.map((point) => point.uid === uid ? { ...point, ...patch } : point),
       updatedAt: Date.now(),
     })
-    onSessionChange({ selected: null, selectedItems: [] })
   }
 
   useEffect(() => {
@@ -310,11 +312,11 @@ export default function ModeConfigEditor({
       if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
       if (!session.selected && session.selectedItems.length === 0) return
       event.preventDefault()
-      deleteSelection()
+      onDeleteSelection()
     }
     window.addEventListener('keydown', onBackspace)
     return () => window.removeEventListener('keydown', onBackspace)
-  })
+  }, [onDeleteSelection, session.selected, session.selectedItems.length])
 
   const toggleDeployVehicle = (entry: DeployVehicleEntry) => {
     if (!selectedSpawn) return
@@ -403,41 +405,132 @@ export default function ModeConfigEditor({
     })
   }, [mapConfig, onMapConfigChange, onSessionChange, selectedZone, stageOptions])
 
+  const toggleVehicleRefreshRuleSelection = (uid: string) => {
+    if (mapConfig.vehicleRefreshRules.find((rule) => rule.uid === uid)?.action === 'disable') return
+    onSelectedVehicleRefreshRuleIdsChange(selectedVehicleRefreshRuleIds.includes(uid)
+      ? selectedVehicleRefreshRuleIds.filter((item) => item !== uid)
+      : [...selectedVehicleRefreshRuleIds, uid])
+  }
+
+  const deleteSelectedVehicleRefreshRules = () => {
+    if (selectedVehicleRefreshRuleIds.length === 0) return
+    const selectedIds = new Set(selectedVehicleRefreshRuleIds)
+    // 规则列表中的删除是明确操作；即使规则来自已固化数据，也必须允许移除。
+    // 否则 confirmed 规则没有解锁入口，会出现按钮可点但规则永远删不掉的假操作。
+    const rules = mapConfig.vehicleRefreshRules.filter((rule) => !selectedIds.has(rule.uid))
+    const usedPointIds = new Set(rules.map((rule) => rule.refreshPointUid).filter(Boolean))
+    onMapConfigChange({
+      ...mapConfig,
+      vehicleRefreshRules: rules,
+      // 刷新位置没有独立语义；最后一条引用规则删除后同步移除，避免留下无法选中的空 Marker。
+      vehicleRefreshPoints: mapConfig.vehicleRefreshPoints.filter((point) => usedPointIds.has(point.uid)),
+      updatedAt: Date.now(),
+    })
+    onSelectedVehicleRefreshRuleIdsChange([])
+    onSessionChange({ tool: 'select' })
+  }
+
+  const unbindSelectedVehicleRefreshRules = () => {
+    if (selectedLocatedVehicleRuleCount === 0) return
+    const selectedIds = new Set(selectedVehicleRefreshRuleIds)
+    const rules = mapConfig.vehicleRefreshRules.map((rule) =>
+      selectedIds.has(rule.uid) && rule.action === 'refresh' && rule.refreshPointUid
+        ? { ...rule, refreshPointUid: '' }
+        : rule,
+    )
+    const usedPointIds = new Set(rules.map((rule) => rule.refreshPointUid).filter(Boolean))
+    onMapConfigChange({
+      ...mapConfig,
+      vehicleRefreshRules: rules,
+      // 共用位置仍被其他规则引用时保留；无人引用的草稿位置自动清理。
+      vehicleRefreshPoints: mapConfig.vehicleRefreshPoints.filter((point) =>
+        point.verification === 'confirmed' || usedPointIds.has(point.uid),
+      ),
+      updatedAt: Date.now(),
+    })
+    onSelectedVehicleRefreshRuleIdsChange([])
+    onSessionChange({ tool: 'select', selected: null, selectedItems: [] })
+    setVehicleRuleFilter('pending')
+  }
+
+  const importVehicleRefreshTable = () => {
+    if (!vehicleRefreshTableDraft.trim()) return
+    const result = onImportVehicleRefreshRules(vehicleRefreshTableDraft)
+    const summary = [
+      result.imported ? `新增 ${result.imported} 条` : '',
+      result.ignored ? `忽略 ${result.ignored} 条重复项` : '',
+      result.errors.length ? `${result.errors.length} 行需要检查` : '',
+    ].filter(Boolean).join('，') || '没有可导入的规则'
+    setVehicleImportFeedback({
+      tone: result.errors.length > 0 ? 'warning' : 'success',
+      title: result.imported > 0 ? '表格导入完成' : '未导入新规则',
+      detail: result.errors.length > 0 ? `${summary}。${result.errors.slice(0, 3).join('；')}` : `${summary}。`,
+    })
+    if (result.imported > 0) setVehicleRefreshTableDraft('')
+  }
+
+  const importSingleVehicleRefreshRule = () => {
+    const objective = singleVehicleRule.objective.trim().toUpperCase()
+    const trigger = singleVehicleRule.trigger.trim()
+    if (!objective || !trigger || !singleVehicleRule.vehicle) return
+    const row = [mapName, '胜者为王', objective, singleVehicleRule.side, trigger, singleVehicleRule.vehicle, singleVehicleRule.note.trim()].join('\t')
+    const result = onImportVehicleRefreshRules(row)
+    const detail = result.errors.length > 0
+      ? result.errors.join('；')
+      : result.imported > 0 ? `已向“${mapName}”新增 1 条刷新规则。` : '该规则已存在，未重复导入。'
+    setVehicleImportFeedback({
+      tone: result.errors.length > 0 ? 'warning' : 'success',
+      title: result.imported > 0 ? '单条规则已导入' : result.errors.length > 0 ? '无法导入这条规则' : '规则已经存在',
+      detail,
+    })
+    if (result.imported > 0) {
+      setSingleVehicleRule((current) => ({ ...current, objective: '', trigger: '', note: '' }))
+    }
+  }
+
   const addStage = () => {
     const maxNumber = mapConfig.stages.reduce((max, stage) => {
       const match = /^S(\d+)$/i.exec(stage.id)
       return match ? Math.max(max, Number(match[1])) : max
     }, 0)
     const id = `S${maxNumber + 1}`
-    const label = window.prompt('新阶段名称', `第${maxNumber + 1}阶段`)?.trim()
-    if (!label) return
-    onMapConfigChange({ ...mapConfig, stages: [...mapConfig.stages, { id, label }], updatedAt: Date.now() })
-    onSessionChange({ stageId: id, tool: 'select', selected: null, selectedItems: [], zoneDraft: [] })
+    onRequestPrompt('新阶段名称', `第${maxNumber + 1}阶段`, (value) => {
+      const label = value.trim()
+      if (!label) return
+      onMapConfigChange({ ...mapConfig, stages: [...mapConfig.stages, { id, label }], updatedAt: Date.now() })
+      onSessionChange({ stageId: id, tool: 'select', selected: null, selectedItems: [], zoneDraft: [] })
+    })
   }
 
   const deleteCurrentStage = () => {
     if (mapConfig.stages.length <= 1) return
     const stage = mapConfig.stages.find((item) => item.id === session.stageId)
-    if (!stage || !window.confirm(`删除“${stage.id} · ${stage.label}”及其全部区域、据点、复活点和阶段道具？`)) return
-    const nextStages = mapConfig.stages.filter((item) => item.id !== stage.id)
-    onMapConfigChange({
-      ...mapConfig,
-      stages: nextStages,
-      zones: mapConfig.zones.filter((zone) => zone.stageId !== stage.id),
-      objectives: mapConfig.objectives.filter((point) => point.stageId !== stage.id),
-      spawns: mapConfig.spawns.filter((spawn) => spawn.stageId !== stage.id),
-      props: mapConfig.props.filter((prop) => prop.stageId === '*' || prop.stageId !== stage.id),
-      updatedAt: Date.now(),
+    if (!stage) return
+    onRequestConfirm('删除当前阶段', `删除“${stage.id} · ${stage.label}”及其全部区域、据点、复活点和阶段道具？`, () => {
+      const nextStages = mapConfig.stages.filter((item) => item.id !== stage.id)
+      onMapConfigChange({
+        ...mapConfig,
+        stages: nextStages,
+        zones: mapConfig.zones.filter((zone) => zone.stageId !== stage.id),
+        objectives: mapConfig.objectives.filter((point) => point.stageId !== stage.id),
+        spawns: mapConfig.spawns.filter((spawn) => spawn.stageId !== stage.id),
+        props: mapConfig.props.filter((prop) => prop.stageId === '*' || prop.stageId !== stage.id),
+        updatedAt: Date.now(),
+      })
+      onSessionChange({ stageId: nextStages[0]?.id ?? 'S1', tool: 'select', selected: null, selectedItems: [], zoneDraft: [] })
     })
-    onSessionChange({ stageId: nextStages[0]?.id ?? 'S1', tool: 'select', selected: null, selectedItems: [], zoneDraft: [] })
   }
 
   return (
+    <>
+    {collapsed ? <button className="collapse-float right mode-config-panel-float" type="button" onClick={onToggleCollapsed} title="展开右侧工具栏" aria-label="展开右侧工具栏">
+      <i className="fa-solid fa-chevron-left" aria-hidden="true" />
+    </button> : null}
     <section className={`mode-config-editor${collapsed ? ' collapsed' : ''}`} aria-label="模式配置编辑器" onMouseDown={(event) => event.stopPropagation()}>
       <header className="mode-config-editor-head">
         <div>
-          <strong>模式配置编辑器</strong>
-          <span>{mapName} · 差异覆盖层</span>
+          <strong>编辑地图内容</strong>
+          <span>{mapName} · {session.stageId} · {profile.name}</span>
         </div>
         <div className="mode-config-editor-head-actions">
           <button
@@ -449,120 +542,139 @@ export default function ModeConfigEditor({
           >
             <i className={`fa-solid ${collapsed ? 'fa-chevron-left' : 'fa-chevron-right'}`} />
           </button>
-          <button className="mode-config-editor-close" onClick={onClose} title="关闭编辑器" aria-label="关闭模式配置编辑器">×</button>
         </div>
       </header>
 
-      <div className="mode-config-profile-row">
-        <select value={profile.id} onChange={(event) => onSelectProfile(event.target.value)}>
-          {profiles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select>
-        <button
-          onClick={() => {
-            const name = window.prompt('新模式名称', '新模式')?.trim()
-            if (name) onCreateProfile(name)
-          }}
-          title="新建模式"
-        >＋</button>
-        <button
-          className="danger"
-          disabled={profiles.length <= 1}
-          onClick={() => {
-            if (window.confirm(`删除模式“${profile.name}”及其全部地图配置？`)) onDeleteProfile(profile.id)
-          }}
-          title="删除当前模式"
-        >−</button>
-      </div>
+      <nav className="mode-config-editor-tabs" aria-label="编辑面板">
+        <button className={activePanel === 'properties' ? 'active' : ''} onClick={() => setActivePanel('properties')}><i className="fa-solid fa-sliders" /><span>属性</span></button>
+        <button className={activePanel === 'objects' ? 'active' : ''} onClick={() => setActivePanel('objects')}><i className="fa-solid fa-list" /><span>对象</span><b>{listSelectionOrder.length}</b></button>
+        {supportsVehicleRefresh ? <button className={activePanel === 'vehicle-refresh' ? 'active' : ''} onClick={() => setActivePanel('vehicle-refresh')}><i className="fa-solid fa-truck-fast" /><span>载具规则</span>{pendingVehicleRuleCount > 0 ? <b className="warning">{pendingVehicleRuleCount}</b> : null}</button> : null}
+        <button className={activePanel === 'settings' ? 'active' : ''} onClick={() => setActivePanel('settings')}><i className="fa-solid fa-gear" /><span>设置</span></button>
+      </nav>
 
-      <label className="mode-config-field">
-        <span>模式名称</span>
-        <CommitTextInput value={profile.name} onCommit={(name) => onUpdateProfile(profile.id, { name })} />
-      </label>
-      <label className="mode-config-field">
-        <span>模式说明</span>
-        <CommitTextarea
-          value={profile.description}
-          placeholder="记录规则、数据来源或待核对内容"
-          onCommit={(description) => onUpdateProfile(profile.id, { description })}
-        />
-      </label>
-
-      <div className="mode-config-tools">
-        <button
-          className={session.tool === 'select' ? 'active' : ''}
-          onClick={() => onSessionChange({ tool: 'select', zoneDraft: [] })}
-        ><i className="fa-solid fa-mouse-pointer" />选择</button>
-        <button
-          className={session.tool === 'zone' ? 'active' : ''}
-          onClick={() => onSessionChange({ tool: 'zone', selected: null, selectedItems: [], zoneDraft: [] })}
-        ><i className="fa-solid fa-draw-polygon" />绘制区域</button>
-        <button
-          className={session.tool === 'prop' ? 'active' : ''}
-          onClick={() => onSessionChange({ tool: 'prop', selected: null, selectedItems: [], zoneDraft: [] })}
-        ><i className="fa-solid fa-toolbox" />地图道具</button>
-      </div>
-
-      {session.tool === 'zone' ? (
-        <label className="mode-config-field mode-config-zone-role">
-          <span>区域用途</span>
-          <select
-            value={session.zoneRole}
-            onChange={(event) => onSessionChange({ zoneRole: event.target.value as ModeZoneRole, zoneDraft: [] })}
-          >
-            {ZONE_ROLE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-          </select>
-        </label>
-      ) : null}
-
-      <div className="mode-config-stage-row">
-        <label>
-          <span>配置阶段</span>
-          <select
-            value={session.stageId}
-            onChange={(event) => onSessionChange({ stageId: event.target.value, selected: null, selectedItems: [], zoneDraft: [] })}
-          >
-            {stageOptions.map((stage) => <option key={stage.id} value={stage.id}>{stage.id} · {stage.label}</option>)}
-          </select>
-        </label>
-        <button
-          onClick={() => {
-            if (window.confirm(`重新从攻防模式同步“${mapName}”的全部阶段？当前地图的模式配置将被覆盖。`)) onSyncAttackDefense()
-          }}
-        ><i className="fa-solid fa-rotate" />重置为攻防底稿</button>
-      </div>
-      <div className="mode-config-stage-manage">
-        <label>
-          <span>阶段名称</span>
-          <input
-            value={stageLabelDraft}
-            onChange={(event) => setStageLabelDraft(event.target.value)}
-            onBlur={commitStageLabel}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.nativeEvent.isComposing) event.currentTarget.blur()
-            }}
-          />
-        </label>
-        <button onClick={addStage} title="新增阶段"><i className="fa-solid fa-plus" />新增阶段</button>
-        <button className="danger" disabled={mapConfig.stages.length <= 1} onClick={deleteCurrentStage} title="删除当前阶段"><i className="fa-solid fa-trash" /></button>
-      </div>
-
-      {session.tool === 'zone' ? (
-        <div className="mode-config-draft-bar">
-          <span>已标记 {session.zoneDraft.length} 个顶点</span>
-          <button disabled={session.zoneDraft.length < 3} onClick={finishZone}>完成区域</button>
-          <button onClick={() => onSessionChange({ zoneDraft: [] })}>重画</button>
+      {activePanel === 'settings' ? (
+        <div className="mode-config-panel mode-config-settings-panel">
+          <div className="mode-config-panel-intro"><i className="fa-solid fa-gear" /><span><strong>模式与阶段设置</strong><small>低频管理操作集中在这里，地图和阶段可在顶部快速切换。</small></span></div>
+          <section className="mode-config-settings-card">
+            <header><strong>当前模式</strong><span>{profile.id}</span></header>
+            <div className="mode-config-profile-actions">
+              <button onClick={() => onRequestPrompt('新模式名称', '新模式', (value) => { const name = value.trim(); if (name) onCreateProfile(name) })}><i className="fa-solid fa-plus" />新建模式</button>
+              <button className="danger" disabled={profiles.length <= 1 || profile.id === 'attack-defense'} onClick={() => onRequestConfirm('删除模式', `删除模式“${profile.name}”及其全部地图配置？`, () => onDeleteProfile(profile.id))}><i className="fa-solid fa-trash" />删除模式</button>
+            </div>
+            <label className="mode-config-field"><span>模式名称</span><CommitTextInput value={profile.name} onCommit={(name) => onUpdateProfile(profile.id, { name })} /></label>
+            <label className="mode-config-field"><span>模式说明</span><CommitTextarea value={profile.description} placeholder="记录规则、数据来源或待核对内容" onCommit={(description) => onUpdateProfile(profile.id, { description })} rows={3} /></label>
+          </section>
+          <section className="mode-config-settings-card">
+            <header><strong>当前阶段</strong><span>{session.stageId}</span></header>
+            <label className="mode-config-field"><span>阶段名称</span><input value={stageLabelDraft} onChange={(event) => setStageLabelDraft(event.target.value)} onBlur={commitStageLabel} onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) event.currentTarget.blur() }} /></label>
+            <div className="mode-config-stage-actions">
+              <button onClick={addStage}><i className="fa-solid fa-plus" />新增阶段</button>
+              <button className="danger" disabled={mapConfig.stages.length <= 1} onClick={deleteCurrentStage}><i className="fa-solid fa-trash" />删除当前阶段</button>
+            </div>
+            <button className="mode-config-secondary-action" onClick={() => onRequestConfirm('重新生成底稿', `重新从攻防模式同步“${mapName}”的全部阶段？当前地图的模式配置将被覆盖。`, onSyncAttackDefense)}><i className="fa-solid fa-rotate" />从攻防模式重新生成底稿</button>
+          </section>
+          <section className="mode-config-settings-card">
+            <header><strong>地图备注</strong><span>{mapName}</span></header>
+            <CommitTextarea value={mapConfig.notes} onCommit={(notes) => onMapConfigChange({ ...mapConfig, notes, updatedAt: Date.now() })} placeholder="记录数据来源、核对状态或发布说明" rows={4} />
+          </section>
         </div>
       ) : null}
 
-      <div className="mode-config-summary">
-        <span><b>{stageZones.length}</b> 个区域</span>
-        <span><b>{stageSpawns.length}</b> 个复活点</span>
-        <span><b>{stageObjectives.length}</b> 个据点</span>
-        <span><b>{stageProps.length}</b> 个道具</span>
-      </div>
+      {session.tool === 'zone' ? (
+        <div className="mode-config-active-task">
+          <div><i className="fa-solid fa-draw-polygon" /><span><strong>正在绘制区域</strong><small>依次点击地图添加顶点，至少需要 3 个顶点。</small></span></div>
+          <label><span>区域用途</span><select value={session.zoneRole} onChange={(event) => onSessionChange({ zoneRole: event.target.value as ModeZoneRole, zoneDraft: [] })}>{ZONE_ROLE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+          <div className="mode-config-draft-bar"><span>已标记 <b>{session.zoneDraft.length}</b> 个顶点</span><button className="primary" disabled={session.zoneDraft.length < 3} onClick={onFinishZoneDraft}>完成区域</button><button onClick={() => onSessionChange({ zoneDraft: [] })}>重新绘制</button><button onClick={() => onSessionChange({ tool: 'select', zoneDraft: [] })}>取消</button></div>
+        </div>
+      ) : null}
 
-      <div className="mode-config-list">
-        <div className="mode-config-list-title">当前地图对象</div>
+      {supportsVehicleRefresh && activePanel === 'vehicle-refresh' ? (
+        <div className="mode-config-panel mode-vehicle-refresh-editor">
+          <div className="mode-config-panel-intro vehicle"><i className="fa-solid fa-truck-fast" /><span><strong>胜者为王载具刷新</strong><small>导入规则、标注地图位置，再检查未完成项。</small></span><div className="mode-vehicle-progress"><b>{completedVehicleRuleCount}</b><span>/ {mapConfig.vehicleRefreshRules.length}</span></div></div>
+
+          <details className="mode-config-workflow-step" open={mapConfig.vehicleRefreshRules.length === 0}>
+            <summary><b>1</b><span><strong>导入规则表</strong><small>单条填写，或从 Excel / CSV 批量导入</small></span><i className="fa-solid fa-chevron-down" /></summary>
+            <div className="mode-vehicle-refresh-import">
+              <div className="mode-vehicle-import-tabs" role="tablist" aria-label="规则导入方式">
+                <button role="tab" aria-selected={vehicleImportMode === 'single'} className={vehicleImportMode === 'single' ? 'active' : ''} onClick={() => setVehicleImportMode('single')}><i className="fa-solid fa-plus" />单个导入</button>
+                <button role="tab" aria-selected={vehicleImportMode === 'batch'} className={vehicleImportMode === 'batch' ? 'active' : ''} onClick={() => setVehicleImportMode('batch')}><i className="fa-solid fa-table" />批量导入</button>
+              </div>
+              {vehicleImportMode === 'single' ? (
+                <div className="mode-vehicle-single-import" role="tabpanel">
+                  <label className="wide mode-vehicle-current-map"><span>当前地图</span><strong>{mapName}</strong></label>
+                  <label><span>点位</span><input value={singleVehicleRule.objective} onChange={(event) => setSingleVehicleRule((current) => ({ ...current, objective: event.target.value }))} placeholder="A / B / C" /></label>
+                  <label><span>阵营</span><select value={singleVehicleRule.side} onChange={(event) => setSingleVehicleRule((current) => ({ ...current, side: event.target.value }))}><option value="攻">进攻方</option><option value="守">防守方</option></select></label>
+                  <label className="wide"><span>兵力/时间</span><input value={singleVehicleRule.trigger} onChange={(event) => setSingleVehicleRule((current) => ({ ...current, trigger: event.target.value }))} placeholder="如 125、18:00、倒计时10s" /></label>
+                  <label className="wide"><span>刷新载具</span><select value={singleVehicleRule.vehicle} onChange={(event) => setSingleVehicleRule((current) => ({ ...current, vehicle: event.target.value }))}>{DEPLOY_VEHICLE_CATALOG.map((vehicle) => <option key={vehicle.name} value={vehicle.name}>{vehicle.name}</option>)}</select></label>
+                  <label className="wide"><span>备注</span><input value={singleVehicleRule.note} onChange={(event) => setSingleVehicleRule((current) => ({ ...current, note: event.target.value }))} placeholder="可选：位置、延迟时间或停止部署条件" /></label>
+                  <button className="primary wide" disabled={!singleVehicleRule.objective.trim() || !singleVehicleRule.trigger.trim() || !singleVehicleRule.vehicle} onClick={importSingleVehicleRefreshRule}><i className="fa-solid fa-file-circle-plus" />导入这条规则</button>
+                </div>
+              ) : (
+                <div className="mode-vehicle-batch-import" role="tabpanel">
+                  <textarea rows={5} value={vehicleRefreshTableDraft} onChange={(event) => { setVehicleRefreshTableDraft(event.target.value); setVehicleImportFeedback(null) }} placeholder={'地图名\t类型\t点位\t阵营\t兵力/时间\t刷新载具\t备注'} />
+                  <button className="primary" disabled={!vehicleRefreshTableDraft.trim()} onClick={importVehicleRefreshTable}><i className="fa-solid fa-table" />导入粘贴内容</button>
+                  <small>支持 Excel、TSV 和 CSV，可一次导入多张地图；重复规则自动忽略。</small>
+                </div>
+              )}
+              {vehicleImportFeedback ? <div className={`mode-config-feedback ${vehicleImportFeedback.tone}`} role="status" aria-live="polite"><i className={`fa-solid ${vehicleImportFeedback.tone === 'success' ? 'fa-circle-check' : 'fa-triangle-exclamation'}`} aria-hidden="true" /><span><strong>{vehicleImportFeedback.title}</strong><small>{vehicleImportFeedback.detail}</small></span><button onClick={() => setVehicleImportFeedback(null)} aria-label="关闭提示">×</button></div> : null}
+            </div>
+          </details>
+
+          <section className="mode-config-workflow-step open">
+            <header><b>2</b><span><strong>选择并标注规则</strong><small>{pendingVehicleRuleCount > 0 ? `还有 ${pendingVehicleRuleCount} 条需要地图位置` : '当前规则均已完成'}</small></span></header>
+            {mapConfig.vehicleRefreshRules.length > 0 ? (
+              <>
+                <div className="mode-vehicle-refresh-toolbar">
+                  <div className="mode-vehicle-filter" aria-label="规则筛选">
+                    <button className={vehicleRuleFilter === 'pending' ? 'active' : ''} onClick={() => setVehicleRuleFilter('pending')}>待标注 <b>{pendingVehicleRuleCount}</b></button>
+                    <button className={vehicleRuleFilter === 'all' ? 'active' : ''} onClick={() => setVehicleRuleFilter('all')}>全部 <b>{mapConfig.vehicleRefreshRules.length}</b></button>
+                    <button className={vehicleRuleFilter === 'completed' ? 'active' : ''} onClick={() => setVehicleRuleFilter('completed')}>已完成 <b>{completedVehicleRuleCount}</b></button>
+                  </div>
+                  <button onClick={() => onSelectedVehicleRefreshRuleIdsChange(mapConfig.vehicleRefreshRules.filter((rule) => rule.action === 'refresh' && !rule.refreshPointUid).map((rule) => rule.uid))}>选择全部待标注</button>
+                  {selectedVehicleRefreshRuleIds.length > 0 ? <button onClick={() => onSelectedVehicleRefreshRuleIdsChange([])}>清除选择</button> : null}
+                </div>
+                <div className="mode-vehicle-refresh-rule-header"><span>规则</span><span>地图位置</span></div>
+                <div className="mode-vehicle-refresh-rule-list">
+                  {visibleVehicleRefreshRules.map((rule) => {
+                    const point = mapConfig.vehicleRefreshPoints.find((item) => item.uid === rule.refreshPointUid)
+                    return (
+                      <label key={rule.uid} className={`${selectedVehicleRefreshRuleIds.includes(rule.uid) ? 'selected' : ''}${rule.action === 'disable' || point ? ' located' : ' pending'}`}>
+                        <TacticalCheckbox
+                          checked={selectedVehicleRefreshRuleIds.includes(rule.uid)}
+                          disabled={rule.action === 'disable'}
+                          ariaLabel={`选择规则：${rule.objective}点 · ${rule.vehicle.name}`}
+                          onChange={() => toggleVehicleRefreshRuleSelection(rule.uid)}
+                        />
+                        <img src={rule.vehicle.iconUrl} alt="" />
+                        <span><strong>{rule.objective}点 · {rule.side === 'attack' ? '进攻方' : '防守方'} · {rule.vehicle.name}</strong><small>{rule.action === 'disable' ? '停止部署 · ' : ''}{refreshTriggerLabel(rule.trigger)}{rule.note ? ` · ${rule.note}` : ''}</small></span>
+                        <em className={rule.action === 'disable' || point ? 'done' : ''}>{rule.action === 'disable' ? '无需坐标' : point ? point.name : '待标注'}</em>
+                      </label>
+                    )
+                  })}
+                  {visibleVehicleRefreshRules.length === 0 ? <div className="mode-vehicle-refresh-empty"><i className="fa-solid fa-circle-check" /><span>这个筛选条件下没有规则</span></div> : null}
+                </div>
+                <div className="mode-vehicle-refresh-primary-actions">
+                  <button className="primary" disabled={selectedVehicleRefreshRuleIds.length === 0} onClick={() => onSessionChange({ tool: 'vehicle-refresh', selected: null, selectedItems: [], zoneDraft: [] })}><i className="fa-solid fa-location-crosshairs" />在地图上标注或绑定<span>{selectedVehicleRefreshRuleIds.length > 0 ? `（${selectedVehicleRefreshRuleIds.length}）` : ''}</span></button>
+                  <button disabled={selectedLocatedVehicleRuleCount === 0} onClick={unbindSelectedVehicleRefreshRules} title="解除规则与地图位置的绑定，规则本身会保留"><i className="fa-solid fa-link-slash" />取消标注{selectedLocatedVehicleRuleCount > 0 ? `（${selectedLocatedVehicleRuleCount}）` : ''}</button>
+                  <button className="danger" disabled={selectedVehicleRefreshRuleIds.length === 0} onClick={deleteSelectedVehicleRefreshRules}><i className="fa-solid fa-trash" />删除选中规则</button>
+                </div>
+                {session.tool === 'vehicle-refresh' && selectedVehicleRefreshRuleIds.length > 0 ? <div className="mode-vehicle-refresh-hint"><i className="fa-solid fa-location-dot" /><span><strong>现在点击地图</strong><small>点击空白处创建共享位置，或点击已有刷新点进行绑定；完成后返回选择模式。</small></span><button onClick={() => onSessionChange({ tool: 'select' })}>退出标注</button></div> : null}
+              </>
+            ) : <div className="mode-vehicle-refresh-empty"><i className="fa-solid fa-table" /><span>先在步骤 1 粘贴并导入载具刷新规则</span></div>}
+          </section>
+
+          <section className="mode-config-workflow-step open compact">
+            <header><b>3</b><span><strong>检查刷新位置</strong><small>已建立 {mapConfig.vehicleRefreshPoints.length} 个位置，拖动地图标记可以修正坐标。</small></span></header>
+            <button className="mode-config-secondary-action" onClick={() => setActivePanel('objects')}><i className="fa-solid fa-list-check" />查看全部刷新位置</button>
+          </section>
+        </div>
+      ) : null}
+
+      {activePanel === 'objects' ? <div className="mode-config-panel mode-config-objects-panel">
+        <div className="mode-config-panel-intro"><i className="fa-solid fa-layer-group" /><span><strong>当前阶段对象</strong><small>点击对象进入属性编辑；按 Ctrl 或 Shift 可以多选。</small></span></div>
+        <div className="mode-config-summary"><span><b>{stageZones.length}</b>区域</span><span><b>{stageSpawns.length}</b>复活点</span><span><b>{stageObjectives.length}</b>据点</span><span><b>{stageProps.length}</b>道具</span><span><b>{mapConfig.vehicleRefreshPoints.length}</b>刷新点</span></div>
+        <div className="mode-config-list">
+        <div className="mode-config-list-title">地图对象</div>
         <details open><summary>区域 <b>{stageZones.length}</b></summary>
           {stageZones.map((zone) => (
             <button key={zone.uid} className={selectedItemKeys.has(`zone:${zone.uid}`) ? 'active' : ''} onClick={(event) => selectListItem(event, { kind: 'zone', uid: zone.uid })}>
@@ -591,10 +703,28 @@ export default function ModeConfigEditor({
             </button>
           ))}
         </details>
+        <details><summary>载具刷新位置 <b>{mapConfig.vehicleRefreshPoints.length}</b></summary>
+          {mapConfig.vehicleRefreshPoints.map((point) => (
+            <button key={point.uid} className={selectedItemKeys.has(`vehicle-refresh-point:${point.uid}`) ? 'active' : ''} onClick={(event) => selectListItem(event, { kind: 'vehicle-refresh-point', uid: point.uid })}>
+              <i className="fa-solid fa-truck-fast" /><span>{point.name}</span><em>{mapConfig.vehicleRefreshRules.filter((rule) => rule.refreshPointUid === point.uid).length} 条规则</em>
+            </button>
+          ))}
+        </details>
         {stageZones.length === 0 && stageSpawns.length === 0 && stageObjectives.length === 0 && stageProps.length === 0 ? (
-          <p>选择上方放置工具，然后直接点击地图录入对象。</p>
+          <p>从左侧“添加元素”选择对象，然后点击地图放置。</p>
         ) : null}
       </div>
+      </div> : null}
+
+      {activePanel === 'properties' ? <div className="mode-config-panel mode-config-properties-panel">
+      {!selectedZone && !selectedSpawn && !selectedObjective && !selectedProp && !selectedVehicleRefreshPoint ? (
+        <div className="mode-config-empty-state">
+          <span className="icon"><i className={session.tool === 'select' ? 'fa-solid fa-arrow-pointer' : 'fa-solid fa-location-crosshairs'} /></span>
+          <strong>{session.tool === 'select' ? '选择一个地图对象' : '在地图上完成放置'}</strong>
+          <p>{session.tool === 'select' ? '点击地图上的元素，或在“对象”页签中选择，即可在这里编辑名称、阵营、阶段和其他属性。' : '当前已进入放置模式。点击地图创建对象，完成后会自动打开属性面板。'}</p>
+          {session.tool === 'select' ? <button onClick={() => setActivePanel('objects')}><i className="fa-solid fa-list" />浏览当前对象</button> : <button onClick={() => onSessionChange({ tool: 'select', zoneDraft: [] })}>取消放置</button>}
+        </div>
+      ) : null}
 
       {selectedZone ? (
         <div className="mode-config-properties">
@@ -622,7 +752,7 @@ export default function ModeConfigEditor({
               <label className="mode-config-field"><span>绑定据点</span><select value={selectedZone.objectiveUid ?? ''} onChange={(event) => bindCaptureZone(selectedZone.uid, event.target.value)}><option value="">暂不绑定</option>{stageObjectives.map((point) => <option key={point.uid} value={point.uid}>{point.name}</option>)}</select></label>
             ) : null}
             <label className="mode-config-field compact"><span>颜色</span><input type="color" value={selectedZone.color} onChange={(event) => replaceZone(selectedZone.uid, { color: event.target.value })} /></label>
-            <button className="mode-config-delete" onClick={deleteSelection}>删除区域</button>
+            <button className="mode-config-delete" onClick={onDeleteSelection}>删除区域</button>
           </fieldset>
         </div>
       ) : null}
@@ -634,7 +764,7 @@ export default function ModeConfigEditor({
           <fieldset disabled={selectedSpawn.verification === 'confirmed'}>
             <label className="mode-config-field"><span>名称/备注</span><CommitTextInput value={selectedSpawn.name} onCommit={(name) => replaceSpawn(selectedSpawn.uid, { name })} /></label>
             <label className="mode-config-field"><span>阵营</span><select value={selectedSpawn.side} onChange={(event) => replaceSpawn(selectedSpawn.uid, { side: event.target.value as ModeSpawnPoint['side'] })}><option value="attack">进攻方</option><option value="defense">防守方</option></select></label>
-            <label className="mode-config-check"><input type="checkbox" checked={selectedSpawn.vehicleDeploy} onChange={(event) => replaceSpawn(selectedSpawn.uid, { vehicleDeploy: event.target.checked })} />允许部署载具</label>
+            <label className="mode-config-check"><TacticalCheckbox checked={selectedSpawn.vehicleDeploy} onChange={(vehicleDeploy) => replaceSpawn(selectedSpawn.uid, { vehicleDeploy })} />允许部署载具</label>
             {selectedSpawn.vehicleDeploy ? (
               <>
                 <div className="mode-config-vehicle-grid detailed">
@@ -646,14 +776,14 @@ export default function ModeConfigEditor({
                       <img src={vehicle.iconUrl} alt="" /><strong>{vehicle.name}</strong>
                       <label>CD<input type="number" min="0" value={vehicle.cd} onChange={(event) => replaceDeployVehicle(vehicle.name, { cd: Number(event.target.value) })} /></label>
                       <label>数量<input type="number" min="1" value={vehicle.num} onChange={(event) => replaceDeployVehicle(vehicle.name, { num: Math.max(1, Number(event.target.value)) })} /></label>
-                      <label className="check"><input type="checkbox" checked={vehicle.allowTeammate} onChange={(event) => replaceDeployVehicle(vehicle.name, { allowTeammate: event.target.checked })} />友方可用</label>
+                      <label className="check"><TacticalCheckbox checked={vehicle.allowTeammate} onChange={(allowTeammate) => replaceDeployVehicle(vehicle.name, { allowTeammate })} />友方可用</label>
                     </div>
                   ))}
                 </div>
               </>
             ) : null}
             <div className="mode-config-coords">{selectedSpawn.lat.toFixed(3)}, {selectedSpawn.lng.toFixed(3)}</div>
-            <button className="mode-config-delete" onClick={deleteSelection}>删除复活点</button>
+            <button className="mode-config-delete" onClick={onDeleteSelection}>删除复活点</button>
           </fieldset>
         </div>
       ) : null}
@@ -668,7 +798,7 @@ export default function ModeConfigEditor({
             <label className="mode-config-field"><span>正式图标</span><select value={selectedObjective.icon} onChange={(event) => replaceObjective(selectedObjective.uid, { icon: event.target.value })}>{OBJECTIVE_ICON_OPTIONS.map((icon) => <option key={icon} value={icon}>{icon.replace('q_jd_', '').toUpperCase()}</option>)}</select></label>
             <label className="mode-config-field"><span>占领区</span><select value={selectedObjective.captureZoneUid} onChange={(event) => bindCaptureZone(event.target.value, selectedObjective.uid)}><option value="">未绑定</option>{stageZones.filter((zone) => zone.role === 'capture').map((zone) => <option key={zone.uid} value={zone.uid}>{zone.name}</option>)}</select></label>
             <div className="mode-config-coords">{selectedObjective.lat.toFixed(3)}, {selectedObjective.lng.toFixed(3)}</div>
-            <button className="mode-config-delete" onClick={deleteSelection}>删除据点及占领区</button>
+            <button className="mode-config-delete" onClick={onDeleteSelection}>删除据点及占领区</button>
           </fieldset>
         </div>
       ) : null}
@@ -681,36 +811,25 @@ export default function ModeConfigEditor({
             <label className="mode-config-field"><span>类型</span><select value={`${selectedProp.name}:${selectedProp.icon}`} onChange={(event) => { const option = PROP_OPTIONS.find((item) => `${item.name}:${item.icon}` === event.target.value); if (option) replaceProp(selectedProp.uid, { name: option.name, icon: option.icon }) }}>{PROP_OPTIONS.map((item) => <option key={item.icon} value={`${item.name}:${item.icon}`}>{item.name}</option>)}</select></label>
             <label className="mode-config-field"><span>显示阶段</span><select value={selectedProp.stageId} onChange={(event) => replaceProp(selectedProp.uid, { stageId: event.target.value })}><option value="*">全部阶段</option>{stageOptions.map((stage) => <option key={stage.id} value={stage.id}>{stage.id} · {stage.label}</option>)}</select></label>
             <div className="mode-config-coords">{selectedProp.lat.toFixed(3)}, {selectedProp.lng.toFixed(3)}</div>
-            <button className="mode-config-delete" onClick={deleteSelection}>删除地图道具</button>
+            <button className="mode-config-delete" onClick={onDeleteSelection}>删除地图道具</button>
           </fieldset>
         </div>
       ) : null}
 
-      <label className="mode-config-field">
-        <span>{mapName}备注</span>
-        <CommitTextarea value={mapConfig.notes} onCommit={(notes) => onMapConfigChange({ ...mapConfig, notes, updatedAt: Date.now() })} />
-      </label>
-
-      <footer className="mode-config-editor-foot">
-        <button className="mode-config-sync" onClick={onSyncOfficial}><i className="fa-solid fa-cloud-arrow-up" />同步到正式版</button>
-        <button onClick={onExportOfficial}><i className="fa-solid fa-code" />导出正式数据</button>
-        <button onClick={onExport}><i className="fa-solid fa-box-archive" />备份配置</button>
-        <button onClick={() => importRef.current?.click()}><i className="fa-solid fa-file-import" />导入 JSON</button>
-        <input
-          ref={importRef}
-          type="file"
-          accept="application/json,.json"
-          hidden
-          onChange={(event) => {
-            const file = event.target.files?.[0]
-            event.currentTarget.value = ''
-            if (!file) return
-            void file.text().then((text) => onImport(JSON.parse(text) as ModeConfigStore)).catch(() => window.alert('无法读取该配置文件。'))
-          }}
-        />
-        <span>{syncStatus || mapId}</span>
-        <small>自动保存仅限当前浏览器；发布到 GitHub 前请导出正式数据并写入项目配置。选中对象后按 Ctrl+V 可复制。</small>
-      </footer>
+      {selectedVehicleRefreshPoint ? (
+        <div className="mode-config-properties">
+          <div className="mode-config-properties-title">载具刷新位置</div>
+          <PermissionControl value={selectedVehicleRefreshPoint.verification} onChange={(verification) => replaceVehicleRefreshPoint(selectedVehicleRefreshPoint.uid, { verification })} />
+          <fieldset disabled={selectedVehicleRefreshPoint.verification === 'confirmed'}>
+            <label className="mode-config-field"><span>位置名称</span><CommitTextInput value={selectedVehicleRefreshPoint.name} onCommit={(name) => replaceVehicleRefreshPoint(selectedVehicleRefreshPoint.uid, { name })} /></label>
+            <div className="mode-config-coords">{selectedVehicleRefreshPoint.lat.toFixed(3)}, {selectedVehicleRefreshPoint.lng.toFixed(3)}</div>
+            <small>已绑定 {mapConfig.vehicleRefreshRules.filter((rule) => rule.refreshPointUid === selectedVehicleRefreshPoint.uid).length} 条刷新规则；拖动地图标记可修正坐标。</small>
+            <button className="mode-config-delete" onClick={onDeleteSelection}>删除位置并取消规则绑定</button>
+          </fieldset>
+        </div>
+      ) : null}
+      </div> : null}
     </section>
+    </>
   )
 }

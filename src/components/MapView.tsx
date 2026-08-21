@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, MutableRefObject } from 'react'
-import { MapContainer, Marker, TileLayer, useMap } from 'react-leaflet'
+import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import * as L from 'leaflet'
+import 'leaflet-rotate'
 import type {
   ActiveTextEdit,
   BuildingUnit,
@@ -10,6 +11,8 @@ import type {
   MapConfig,
   MapProp,
   MapState,
+  ModeVehicleRefreshPoint,
+  ModeVehicleRefreshRule,
   OperatorConnection,
   OperatorUnit,
   PointStatus,
@@ -17,6 +20,8 @@ import type {
   StageConfig,
   TacticalRoute,
   TeamMarker,
+  TacticalBattleContext,
+  TacticalObjectiveState,
   ToolMode,
   VehicleItem,
   WargameState,
@@ -28,21 +33,226 @@ import BuildingLayer from './BuildingLayer'
 import OperatorLayer from './OperatorLayer'
 import TeamLayer from './TeamLayer'
 import RouteLayer from './RouteLayer'
+import UnitFireLineLayer from './UnitFireLineLayer'
 import type { RouteDraftSource, RouteSnapTarget } from './RouteLayer'
 import RouteEditorPanel from './RouteEditorPanel'
 import ConnectionLayer from './ConnectionLayer'
+import FieldSupportLayer from './FieldSupportLayer'
+import OperatorSkillLayer from './OperatorSkillLayer'
 import OpBubble from './OpBubble'
 import OpRenameBar from './OpRenameBar'
-import PointMarkers from './PointMarkers'
+import PointMarkers, { defaultObjectiveState, objectiveProgressColor, objectiveStateColor } from './PointMarkers'
 import SpawnMarkers from './SpawnMarkers'
 import ActivityZones from './ActivityZones'
 import MapPropsLayer from './MapPropsLayer'
 import type { LayerVisibility, PropVisibility } from '../types'
 import { platform } from '../platform'
+import VehicleRefreshLayer, { type RuntimeVehicleRefreshPoint, type RuntimeVehicleRefreshRule } from './VehicleRefreshLayer'
+import type { StageDeploy } from '../config/deployVehicles'
 
 interface OfficialModeMapData {
   stages: StageConfig[]
   props: MapProp[]
+  vehicleRefreshPoints: Omit<ModeVehicleRefreshPoint, 'verification'>[]
+  vehicleRefreshRules: Omit<ModeVehicleRefreshRule, 'verification'>[]
+  deploy: Record<string, StageDeploy>
+}
+
+function SkillActionPlacement({ active, onPlace, onCancel }: { active: boolean; onPlace: (lat: number, lng: number) => void; onCancel: () => void }) {
+  const map = useMapEvents({ click: (event) => { if (active) onPlace(event.latlng.lat, event.latlng.lng) }, contextmenu: () => { if (active) onCancel() } })
+  useEffect(() => {
+    if (!active) return
+    const container = map.getContainer()
+    container.classList.add('placing-operator-skill')
+    const keydown = (event: KeyboardEvent) => { if (event.key === 'Escape') onCancel() }
+    window.addEventListener('keydown', keydown)
+    return () => { container.classList.remove('placing-operator-skill'); window.removeEventListener('keydown', keydown) }
+  }, [active, map, onCancel])
+  return null
+}
+
+/**
+ * Leaflet starts map panning from a container-level mousedown listener. Waiting
+ * until a marker/path dragstart is too late: after map rotation, events can pass
+ * through different panes and both drag handlers may already be active.
+ *
+ * Lock panning in the capture phase while still allowing the target layer to
+ * receive the event. Restore exactly the state that existed before the press,
+ * including when the pointer is released outside the map.
+ */
+function InteractiveLayerPanGuard() {
+  const map = useMap()
+  useEffect(() => {
+    const container = map.getContainer()
+    let active = false
+    let restoreDragging = false
+
+    const isLayerInteraction = (event: Event) => {
+      const target = event.target
+      if (!(target instanceof Element)) return false
+      return Boolean(target.closest([
+        '.leaflet-marker-draggable',
+        '.route-hit-area',
+        '.draw-hit-area',
+        '.draw-text-hit-wrap',
+        '.edit-selection-box',
+      ].join(', ')))
+    }
+    const lock = (event: Event) => {
+      if (active || !isLayerInteraction(event)) return
+      active = true
+      restoreDragging = map.dragging.enabled()
+      if (restoreDragging) map.dragging.disable()
+    }
+    const release = () => {
+      if (!active) return
+      active = false
+      if (restoreDragging && !map.dragging.enabled()) map.dragging.enable()
+      restoreDragging = false
+    }
+
+    // Capture runs before Leaflet's map dragging listener. Do not stop the
+    // event: markers, route handles and drawing gizmos still need the press.
+    container.addEventListener('pointerdown', lock, true)
+    container.addEventListener('mousedown', lock, true)
+    container.addEventListener('touchstart', lock, { capture: true, passive: true })
+    document.addEventListener('pointerup', release, true)
+    document.addEventListener('pointercancel', release, true)
+    document.addEventListener('mouseup', release, true)
+    document.addEventListener('touchend', release, true)
+    document.addEventListener('touchcancel', release, true)
+    window.addEventListener('blur', release)
+    return () => {
+      release()
+      container.removeEventListener('pointerdown', lock, true)
+      container.removeEventListener('mousedown', lock, true)
+      container.removeEventListener('touchstart', lock, true)
+      document.removeEventListener('pointerup', release, true)
+      document.removeEventListener('pointercancel', release, true)
+      document.removeEventListener('mouseup', release, true)
+      document.removeEventListener('touchend', release, true)
+      document.removeEventListener('touchcancel', release, true)
+      window.removeEventListener('blur', release)
+    }
+  }, [map])
+  return null
+}
+
+function MapRotationControl() {
+  const map = useMap()
+  useEffect(() => {
+    const control = new L.Control({ position: 'topleft' })
+    control.onAdd = () => {
+      const container = L.DomUtil.create('div', `leaflet-control leaflet-bar map-rotation-control${platform.kind === 'android' ? ' collapsed' : ''}`)
+      L.DomEvent.disableClickPropagation(container)
+      L.DomEvent.disableScrollPropagation(container)
+      const makeButton = (label: string, title: string, onClick: () => void, parent: HTMLElement = container) => {
+        const button = L.DomUtil.create('button', '', parent) as HTMLButtonElement
+        button.type = 'button'
+        button.textContent = label
+        button.title = title
+        L.DomEvent.disableClickPropagation(button)
+        L.DomEvent.on(button, 'click', (event) => {
+          L.DomEvent.stop(event)
+          onClick()
+        })
+        return button
+      }
+      const rotateLeft = makeButton('↶', '地图逆时针旋转 15°', () => map.setBearing(map.getBearing() - 15))
+      rotateLeft.className = 'map-rotation-step'
+      const compassColumn = L.DomUtil.create('div', 'map-bearing-column', container)
+      const reset = makeButton('N', '恢复正北朝上', () => map.setBearing(0), compassColumn)
+      reset.className = 'map-bearing-reset'
+      const compass = L.DomUtil.create('button', 'map-bearing-compass', compassColumn) as HTMLButtonElement
+      compass.type = 'button'
+      compass.title = '按住并拖动指南针，无级调整地图角度'
+      compass.innerHTML = '<i class="map-bearing-dial"><span class="north">N</span><span class="east">E</span><span class="south">S</span><span class="west">W</span></i><span class="map-bearing-needle"><b></b><em></em></span><span class="map-bearing-pivot"></span>'
+
+      const inputWrap = L.DomUtil.create('label', 'map-bearing-input', compassColumn)
+      inputWrap.title = '直接输入地图旋转角度（0–359.9）'
+      const input = L.DomUtil.create('input', '', inputWrap) as HTMLInputElement
+      input.type = 'number'
+      input.min = '0'
+      input.max = '359.9'
+      input.step = '0.1'
+      input.setAttribute('aria-label', '地图旋转角度')
+      const degree = L.DomUtil.create('span', '', inputWrap)
+      degree.textContent = '°'
+      const rotateRight = makeButton('↷', '地图顺时针旋转 15°', () => map.setBearing(map.getBearing() + 15))
+      rotateRight.className = 'map-rotation-step'
+      const collapse = makeButton('', '收起地图旋转控件', () => {
+        const collapsed = container.classList.toggle('collapsed')
+        collapse.innerHTML = collapsed
+          ? '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="m6 3 5 5-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+          : '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="m10 3-5 5 5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+        collapse.title = collapsed ? '展开地图旋转控件' : '收起地图旋转控件'
+      })
+      collapse.className = 'map-rotation-collapse'
+      collapse.innerHTML = platform.kind === 'android'
+        ? '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="m6 3 5 5-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+        : '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="m10 3-5 5 5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+      collapse.title = platform.kind === 'android' ? '展开地图旋转控件' : '收起地图旋转控件'
+
+      let dragging = false
+      const setBearingFromPointer = (event: PointerEvent) => {
+        const rect = compass.getBoundingClientRect()
+        const x = event.clientX - (rect.left + rect.width / 2)
+        const y = event.clientY - (rect.top + rect.height / 2)
+        map.setBearing(Math.atan2(x, -y) * 180 / Math.PI)
+      }
+      const onPointerMove = (event: PointerEvent) => {
+        if (!dragging) return
+        event.preventDefault()
+        setBearingFromPointer(event)
+      }
+      const finishPointer = () => {
+        dragging = false
+        document.removeEventListener('pointermove', onPointerMove)
+        document.removeEventListener('pointerup', finishPointer)
+        document.removeEventListener('pointercancel', finishPointer)
+      }
+      compass.addEventListener('pointerdown', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        dragging = true
+        setBearingFromPointer(event)
+        document.addEventListener('pointermove', onPointerMove, { passive: false })
+        document.addEventListener('pointerup', finishPointer)
+        document.addEventListener('pointercancel', finishPointer)
+      })
+      input.addEventListener('input', () => {
+        const value = Number(input.value)
+        if (Number.isFinite(value)) map.setBearing(value)
+      })
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') input.blur()
+      })
+
+      const onRotate = () => {
+        const bearing = ((map.getBearing() % 360) + 360) % 360
+        if (document.activeElement !== input) input.value = bearing.toFixed(1).replace(/\.0$/, '')
+        const needle = compass.querySelector<HTMLElement>('.map-bearing-needle')
+        if (needle) needle.style.transform = `rotate(${bearing}deg)`
+        compass.setAttribute('aria-label', `地图当前旋转 ${bearing.toFixed(1)} 度`)
+      }
+      map.on('rotate', onRotate)
+      ;(container as HTMLElement & { _rotationCleanup?: () => void })._rotationCleanup = () => {
+        finishPointer()
+        map.off('rotate', onRotate)
+      }
+      onRotate()
+      return container
+    }
+    control.onRemove = () => {
+      const container = control.getContainer() as (HTMLElement & { _rotationCleanup?: () => void }) | undefined
+      container?._rotationCleanup?.()
+    }
+    control.addTo(map)
+    return () => {
+      control.remove()
+    }
+  }, [map])
+  return null
 }
 
 interface MapViewProps {
@@ -74,23 +284,28 @@ interface MapViewProps {
   onCommitDraw: (before: string, after: string) => void
   /** 删除选中信号（第十二轮） */
   deleteSelectedTick: number
+  clearDrawTick: number
   /** 是否有选中图形上报（第十二轮） */
   onDeleteSelCount: (n: number) => void
   onMapReady: (map: L.Map) => void
   onMoveVehicle: (uid: string, lat: number, lng: number) => void
   onRotateVehicle: (uid: string, rotation: number) => void
+  onToggleVehicleFireLine: (uid: string) => void
   onDeleteVehicle: (uid: string) => void
+  onLocateVehicleRefreshSource: (vehicle: VehicleItem) => void
   /** 快捷切换载具阵营（攻↔守） */
   onToggleVehicleSide: (uid: string) => void
   onChangeVehicleTeam: (uid: string, team?: import('../types').OperatorTeam) => void
   buildings: BuildingUnit[]
   onMoveBuilding: (uid: string, lat: number, lng: number) => void
   onRotateBuilding: (uid: string, rotation: number) => void
+  onToggleBuildingFireLine: (uid: string) => void
   onToggleBuildingSide: (uid: string) => void
   onChangeBuildingTeam: (uid: string, team?: import('../types').OperatorTeam) => void
   onDeleteBuilding: (uid: string) => void
   onDrawSaved: (side: Side, geoJson: string) => void
   onSelectPoint: (point: CapturePoint, stageId: string) => void
+  onObjectiveStateChange: (pointName: string, state: TacticalObjectiveState) => void
   onCloseDetail: () => void
   /** 点击出生点（弹出底部载具部署栏） */
   onSpawnSelect: (spawn: { stageId: string; side: Side; pos: [number, number]; baseName: string | null }) => void
@@ -115,6 +330,8 @@ interface MapViewProps {
   /** 干员实时坐标注册表（联线端点跟随） */
   operatorPosRef: MutableRefObject<Record<string, [number, number]>>
   onMoveOperator: (uid: string, lat: number, lng: number) => void
+  onRotateOperator: (uid: string, rotation: number) => void
+  onToggleOperatorFireLine: (uid: string) => void
   onClearOperatorDeploy: (uid: string) => void
   onConnectClick: (uid: string) => void
   onRemoveConnection: (id: string) => void
@@ -124,6 +341,13 @@ interface MapViewProps {
   onOperatorChange: (uid: string, operatorId: string) => void
   /** 气泡切换状态（存活/重伤/阵亡） */
   onOperatorStatusChange: (uid: string, status: OperatorUnit['status']) => void
+  onOperatorSkillUse: (uid: string, slot?: 1 | 2 | 3 | 4) => void
+  skillActionDraft: { operator: OperatorUnit; skill: import('../config/operatorSkills').OperatorSkillDefinition } | null
+  onPlaceSkillAction: (lat: number, lng: number) => void
+  onCancelSkillAction: () => void
+  onSelectSkillTarget: (uid: string) => void
+  onDeleteSkillAction: (uid: string) => void
+  onUpdateSkillActionGeometry: (uid: string, geometry: import('../types').OperatorSkillActionGeometry) => void
   /** 双击代号快捷编辑昵称 */
   onOperatorRename: (uid: string, name: string) => void
   // ---- 兵棋队标（第二十三轮：简化部署单位） ----
@@ -131,12 +355,22 @@ interface MapViewProps {
   /** 队标实时坐标注册表（套索框选/整体移动） */
   teamPosRef: MutableRefObject<Record<string, [number, number]>>
   onMoveTeamMarker: (uid: string, lat: number, lng: number) => void
+  onRotateTeamMarker: (uid: string, rotation: number) => void
+  onToggleTeamFireLine: (uid: string) => void
   onDeleteTeamMarker: (uid: string) => void
   /** 批量移动队标（套索整体移动） */
   onMoveTeamMarkers: (updates: Record<string, [number, number]>) => void
   /** 批量删除队标（套索删除） */
   onDeleteTeamMarkers: (uids: string[]) => void
   routes: TacticalRoute[]
+  fieldSupports: import('../types').FieldSupportInstance[]
+  onMoveFieldSupport: (uid: string, lat: number, lng: number) => void
+  onDeleteFieldSupport: (uid: string) => void
+  battleContext: TacticalBattleContext
+  usedVehicleRefreshRuleIds: string[]
+  onDeployVehicleRefresh: (rule: RuntimeVehicleRefreshRule, point: RuntimeVehicleRefreshPoint, force: boolean) => void
+  onRestoreVehicleRefresh: (ruleUid: string) => void
+  onLocateVehicleRefresh: (ruleUid: string) => void
   onCreateRoute: (route: TacticalRoute) => void
   onUpdateRoute: (uid: string, patch: Partial<TacticalRoute>) => void
   onDeleteRoute: (uid: string) => void
@@ -323,12 +557,6 @@ function RouteEditorTrigger({ route, onOpen, onDelete }: { route: TacticalRoute;
   )
 }
 
-const STATUS_TEXT: Record<PointStatus, string> = {
-  active: '争夺中',
-  captured: '已攻下',
-  locked: '未激活',
-}
-
 export default function MapView({
   config,
   mobileLayout,
@@ -346,21 +574,26 @@ export default function MapView({
   draw,
   onCommitDraw,
   deleteSelectedTick,
+  clearDrawTick,
   onDeleteSelCount,
   onMapReady,
   onMoveVehicle,
   onRotateVehicle,
+  onToggleVehicleFireLine,
   onDeleteVehicle,
+  onLocateVehicleRefreshSource,
   onToggleVehicleSide,
   onChangeVehicleTeam,
   buildings,
   onMoveBuilding,
   onRotateBuilding,
+  onToggleBuildingFireLine,
   onToggleBuildingSide,
   onChangeBuildingTeam,
   onDeleteBuilding,
   onDrawSaved,
   onSelectPoint,
+  onObjectiveStateChange,
   onCloseDetail,
   onSpawnSelect,
   onTool,
@@ -378,20 +611,39 @@ export default function MapView({
   pendingConnect,
   operatorPosRef,
   onMoveOperator,
+  onRotateOperator,
+  onToggleOperatorFireLine,
   onClearOperatorDeploy,
   onConnectClick,
   onRemoveConnection,
   onCancelConnect,
   onOperatorChange,
   onOperatorStatusChange,
+  onOperatorSkillUse,
+  skillActionDraft,
+  onPlaceSkillAction,
+  onCancelSkillAction,
+  onSelectSkillTarget,
+  onDeleteSkillAction,
+  onUpdateSkillActionGeometry,
   onOperatorRename,
   teams,
   teamPosRef,
   onMoveTeamMarker,
+  onRotateTeamMarker,
+  onToggleTeamFireLine,
   onDeleteTeamMarker,
   onMoveTeamMarkers,
   onDeleteTeamMarkers,
   routes,
+  fieldSupports,
+  onMoveFieldSupport,
+  onDeleteFieldSupport,
+  battleContext,
+  usedVehicleRefreshRuleIds,
+  onDeployVehicleRefresh,
+  onRestoreVehicleRefresh,
+  onLocateVehicleRefresh,
   onCreateRoute,
   onUpdateRoute,
   onDeleteRoute,
@@ -496,12 +748,12 @@ export default function MapView({
     }
   }, [editing])
 
-  // ---- 干员更换气泡（问题3：点击干员 → 就近气泡 → 选职业） ----
+  // ---- 干员悬浮级联菜单（点击干员 → 悬浮入口 → 选择最终操作） ----
   const [opBubble, setOpBubble] = useState<{ uid: string; x: number; y: number } | null>(null)
   const bubbleOp = opBubble ? operators.find((o) => o.uid === opBubble.uid) ?? null : null
 
   const handleOpBubbleEdit = useCallback((uid: string, cp: { x: number; y: number }) => {
-    // 点击棋子打开三级菜单：同时关闭可能残留的改名浮层（互斥）
+    // 点击棋子打开级联菜单：同时关闭可能残留的改名浮层（互斥）
     setRenameOp(null)
     setOpBubble({ uid, x: cp.x, y: cp.y })
   }, [])
@@ -569,6 +821,14 @@ export default function MapView({
       lng: vehicle.lng,
       binding: { side: vehicle.side, team: vehicle.team ?? 'A', operatorIds: [], vehicleIds: [vehicle.uid] },
     })
+    for (const building of buildings) targets.push({
+      kind: 'building',
+      uid: building.uid,
+      label: building.name,
+      lat: building.lat,
+      lng: building.lng,
+      binding: { side: building.side, team: building.team ?? 'A', operatorIds: [], vehicleIds: [] },
+    })
     for (const stage of runtimeStages) {
       for (const point of stage.points) targets.push({ kind: 'point', uid: `${stage.id}:${point.name}`, label: point.name, lat: point.lat, lng: point.lng })
     }
@@ -589,7 +849,7 @@ export default function MapView({
       }))
     }
     return targets
-  }, [teams, operators, vehicles, runtimeStages, routes])
+  }, [teams, operators, vehicles, buildings, runtimeStages, routes])
 
   const selectedRoute = useMemo(
     () => routes.find((route) => route.uid === selectedRouteUid) ?? null,
@@ -626,6 +886,11 @@ export default function MapView({
     if (idx === runtimeStageIndex) return 'active'
     return 'locked'
   }, [runtimeStageIndex, runtimeStages, selectedStage])
+  const selectedObjectiveState = selectedPoint && selectedStatus
+    ? battleContext.objectiveStates[selectedPoint.point.name] ?? defaultObjectiveState(selectedStatus)
+    : null
+  const selectedObjectiveColor = selectedObjectiveState ? objectiveStateColor(selectedObjectiveState, view) : '#f4cf67'
+  const selectedObjectiveProgressColor = selectedObjectiveState ? objectiveProgressColor(selectedObjectiveState, view) : '#f4cf67'
 
   // 右键切回查看工具：延后一轮执行，让 LayerManager 先把待确认的曲线草稿提交落盘。
   const handleMapContextMenu = useCallback(
@@ -683,11 +948,18 @@ export default function MapView({
         zoomSnap={mobileLayout ? 0.5 : 1}
         zoomControl={true}
         touchZoom={true}
+        rotate={true}
+        bearing={0}
+        rotateControl={false}
+        touchRotate={false}
         attributionControl={false}
         // 绘制工具激活时进入绘制模式：CSS 物理屏蔽非绘制图层鼠标事件
-        className={`tactical-map${drawing ? ' drawing-mode' : ''}`}
+        className={`tactical-map${drawing ? ' drawing-mode' : ''}${skillActionDraft ? ' skill-action-mode' : ''}`}
         style={{ width: '100%', height: '100%' }}
       >
+        <InteractiveLayerPanGuard />
+        <MapRotationControl />
+        <SkillActionPlacement active={skillActionDraft != null && skillActionDraft.skill.placementMode !== 'target-unit' && skillActionDraft.skill.placementMode !== 'ally-unit'} onPlace={onPlaceSkillAction} onCancel={onCancelSkillAction} />
         <TileLayer
           url={config.tileUrl}
           bounds={bounds}
@@ -723,6 +995,7 @@ export default function MapView({
           frontlineVisible={layers.pointsFrontline}
           interactive={interactive}
           onSelect={onSelectPoint}
+          objectiveStates={battleContext.objectiveStates}
         />
         <SpawnMarkers
           stages={runtimeStages}
@@ -730,6 +1003,7 @@ export default function MapView({
           view={view}
           visible={layers.spawns}
           interactive={interactive}
+          deployByStage={modeData?.deploy}
           onSelect={onSpawnSelect}
         />
         <ActivityZones
@@ -738,14 +1012,34 @@ export default function MapView({
           view={view}
           visible={layers.zones}
         />
+        <VehicleRefreshLayer
+          points={modeData?.vehicleRefreshPoints ?? []}
+          rules={modeData?.vehicleRefreshRules ?? []}
+          context={battleContext}
+          stages={runtimeStages}
+          currentStageIndex={runtimeStageIndex}
+          usedRuleIds={usedVehicleRefreshRuleIds}
+          deployedRuleIds={vehicles.map((vehicle) => vehicle.sourceRuleUid).filter((uid): uid is string => Boolean(uid))}
+          visible={layers.vehicleRefresh}
+          interactive={interactive}
+          onDeploy={onDeployVehicleRefresh}
+          onRestore={onRestoreVehicleRefresh}
+          onLocateVehicle={onLocateVehicleRefresh}
+        />
+        {wargame.enabled && <UnitFireLineLayer view={view} visible={wargame.showFireLines} operators={operators} teams={teams} vehicles={vehicles} buildings={buildings} />}
+        {wargame.enabled && <FieldSupportLayer supports={fieldSupports} view={view} interactive={interactive} onMove={onMoveFieldSupport} onDelete={onDeleteFieldSupport} />}
+        {wargame.enabled && <OperatorSkillLayer actions={state.skillActions ?? []} operators={operators} view={view} onDelete={onDeleteSkillAction} onUpdateGeometry={onUpdateSkillActionGeometry} />}
         <VehicleLayer
           vehicles={vehicles}
           view={view}
           canDrag={interactive}
           interactive={interactive}
+          allowSelect={platform.kind === 'android' || !wargame.enabled}
           onMove={onMoveVehicle}
           onRotate={onRotateVehicle}
+          onToggleFireLine={onToggleVehicleFireLine}
           onDelete={onDeleteVehicle}
+          onLocateRefreshSource={onLocateVehicleRefreshSource}
           onToggleSide={onToggleVehicleSide}
           onChangeTeam={onChangeVehicleTeam}
           onStartRoute={(uid) => {
@@ -764,6 +1058,7 @@ export default function MapView({
             interactive={interactive}
             onMove={onMoveBuilding}
             onRotate={onRotateBuilding}
+            onToggleFireLine={onToggleBuildingFireLine}
             onToggleSide={onToggleBuildingSide}
             onChangeTeam={onChangeBuildingTeam}
             onDelete={onDeleteBuilding}
@@ -787,6 +1082,8 @@ export default function MapView({
             pendingConnect={pendingConnect}
             interactive={interactive}
             onMove={onMoveOperator}
+            onRotate={onRotateOperator}
+            onToggleFireLine={onToggleOperatorFireLine}
             onClearDeploy={onClearOperatorDeploy}
             onStartRoute={(uid) => {
               onTool('pan')
@@ -798,6 +1095,8 @@ export default function MapView({
             onConnectClick={onConnectClick}
             onEditClick={handleOpBubbleEdit}
             onRenameClick={handleOpRenameClick}
+            skillTargeting={skillActionDraft?.skill.placementMode === 'target-unit' || skillActionDraft?.skill.placementMode === 'ally-unit'}
+            onSkillTarget={onSelectSkillTarget}
           />
         )}
         {/* 兵棋推演：通用队标层，只表达队伍字母与归属；右键删除。 */}
@@ -814,6 +1113,7 @@ export default function MapView({
             selectedUid={selectedRouteUid}
             branchPicking={branchPickRouteUid === selectedRouteUid && selectedRouteUid != null}
             interactive={interactive}
+            showRouteLabels={wargame.showRouteLabels}
             onSelect={handleSelectRoute}
             onBranchPoint={(waypointIndex) => {
               if (!selectedRouteUid) return
@@ -824,6 +1124,12 @@ export default function MapView({
             onCreate={onCreateRoute}
             onPatch={onUpdateRoute}
             onDelete={onDeleteRoute}
+            onMoveAnchor={(route, lat, lng) => {
+              if (route.anchorMode === 'operator' && route.anchorOperatorUid) onMoveOperator(route.anchorOperatorUid, lat, lng)
+              else if (route.anchorMode === 'vehicle' && route.anchorVehicleUid) onMoveVehicle(route.anchorVehicleUid, lat, lng)
+              else if (route.anchorMode === 'building' && route.anchorBuildingUid) onMoveBuilding(route.anchorBuildingUid, lat, lng)
+              else if (route.anchorMode === 'team' && route.teamMarkerUid) onMoveTeamMarker(route.teamMarkerUid, lat, lng)
+            }}
           />
         )}
         {selectedRoute && !routeDrawing && !routeEditorOpen && (
@@ -847,6 +1153,8 @@ export default function MapView({
             canDrag={interactive}
             interactive={interactive}
             onMove={onMoveTeamMarker}
+            onRotate={onRotateTeamMarker}
+            onToggleFireLine={onToggleTeamFireLine}
             onDelete={onDeleteTeamMarker}
             onStartRoute={(uid) => {
               onTool('pan')
@@ -876,9 +1184,11 @@ export default function MapView({
           draw={draw}
           onCommitDraw={onCommitDraw}
           deleteSelectedTick={deleteSelectedTick}
+          clearDrawTick={clearDrawTick}
           onDeleteSelCount={onDeleteSelCount}
           onDrawSaved={onDrawSaved}
           onStartEdit={handleStartEdit}
+          onExitDraw={() => onTool('pan')}
           vehicles={vehicles}
           vehiclePosRef={vehiclePosRef}
           onMoveVehicles={onMoveVehicles}
@@ -893,6 +1203,7 @@ export default function MapView({
           onDeleteTeams={onDeleteTeamMarkers}
         />
       </MapContainer>
+      {skillActionDraft && <div className="skill-action-hint"><img src={skillActionDraft.skill.iconUrl} alt="" /><span>部署：{skillActionDraft.skill.name}</span><small>{skillActionDraft.skill.placementMode === 'ally-unit' ? '选择己方干员' : skillActionDraft.skill.placementMode === 'target-unit' ? '选择敌方干员' : '点击地图确定位置'}</small><button type="button" onClick={onCancelSkillAction} title="取消部署" aria-label="取消部署"><i className="fa-solid fa-xmark" /></button></div>}
 
       {selectedRoute && !routeDrawing && routeEditorOpen && (
         <RouteEditorPanel
@@ -947,13 +1258,14 @@ export default function MapView({
         />
       )}
 
-      {/* 干员更换气泡（问题3：点击干员就近弹出，仅文字；选职业后关闭） */}
+      {/* 干员操作级联菜单：桌面悬浮展开，触屏点击进入 */}
       {bubbleOp && opBubble && (
         <OpBubble
           op={bubbleOp}
           position={opBubble}
           onOperatorChange={onOperatorChange}
           onStatusChange={onOperatorStatusChange}
+          onSkillUse={onOperatorSkillUse}
           onClose={handleCloseOpBubble}
         />
       )}
@@ -1005,31 +1317,36 @@ export default function MapView({
 
       {/* 选中点位详情卡 */}
       {selectedPoint && selectedStage && (
-        <div className="point-detail">
+        <div className="point-detail objective-state-editor" style={{ '--objective-state-color': selectedObjectiveColor, '--objective-progress-color': selectedObjectiveProgressColor } as CSSProperties}>
           <div className="point-detail-head">
             <span className="point-detail-name">{selectedPoint.point.name}</span>
-            <span
-              className={`point-detail-status ${selectedStatus ?? 'locked'}`}
-            >
-              {selectedStatus ? STATUS_TEXT[selectedStatus] : ''}
-            </span>
+            <span className="point-detail-status objective-owner">{selectedObjectiveState?.owner === 'neutral' ? '中立争夺' : selectedObjectiveState?.owner === view ? '我方占领' : '敌方占领'}</span>
           </div>
           <div className="point-detail-row">
             <span className="dim">阶段</span>
             <span>{selectedStage.id} · {selectedStage.label}</span>
           </div>
-          <div className="point-detail-row">
-            <span className="dim">当前状态</span>
-            <span>
-              {selectedStatus === 'active'
-                ? view === 'attack'
-                  ? '进攻方目标：占领此区域'
-                  : '防守方目标：坚守此区域'
-                : selectedStatus === 'captured'
-                  ? '已被进攻方占领'
-                  : '尚未开放，需先攻下前序区域'}
-            </span>
-          </div>
+          {selectedObjectiveState ? <div className="objective-state-controls">
+            <span className="objective-control-label">据点归属</span>
+            <div className="objective-owner-segments">
+              <button type="button" className={selectedObjectiveState.owner === view ? 'active own' : ''} onClick={() => onObjectiveStateChange(selectedPoint.point.name, { owner: view, capturingSide: null, progress: 100 })}>我方</button>
+              <button type="button" className={selectedObjectiveState.owner === 'neutral' ? 'active neutral' : ''} onClick={() => onObjectiveStateChange(selectedPoint.point.name, { owner: 'neutral', capturingSide: selectedObjectiveState.capturingSide ?? view, progress: selectedObjectiveState.owner === 'neutral' ? selectedObjectiveState.progress : 0 })}>中立</button>
+              <button type="button" className={selectedObjectiveState.owner !== 'neutral' && selectedObjectiveState.owner !== view ? 'active enemy' : ''} onClick={() => onObjectiveStateChange(selectedPoint.point.name, { owner: view === 'attack' ? 'defense' : 'attack', capturingSide: null, progress: 100 })}>敌方</button>
+            </div>
+            {selectedObjectiveState.owner === 'neutral' ? <>
+              <span className="objective-control-label">正在占领</span>
+              <div className="objective-capturing-segments">
+                <button type="button" className={selectedObjectiveState.capturingSide === view ? 'active own' : ''} onClick={() => onObjectiveStateChange(selectedPoint.point.name, { ...selectedObjectiveState, capturingSide: view })}>我方读条</button>
+                <button type="button" className={selectedObjectiveState.capturingSide && selectedObjectiveState.capturingSide !== view ? 'active enemy' : ''} onClick={() => onObjectiveStateChange(selectedPoint.point.name, { ...selectedObjectiveState, capturingSide: view === 'attack' ? 'defense' : 'attack' })}>敌方读条</button>
+              </div>
+            </> : <button type="button" className={`objective-contested-toggle ${selectedObjectiveState.capturingSide ? 'active' : ''}`} onClick={() => onObjectiveStateChange(selectedPoint.point.name, { ...selectedObjectiveState, capturingSide: selectedObjectiveState.capturingSide ? null : selectedObjectiveState.owner === 'attack' ? 'defense' : 'attack', progress: 100 })}>
+              <i className={`fa-solid ${selectedObjectiveState.capturingSide ? 'fa-toggle-on' : 'fa-toggle-off'}`} />{selectedObjectiveState.capturingSide ? '正在被另一方占领' : '当前无人读条'}
+            </button>}
+            {selectedObjectiveState.capturingSide ? <label className="objective-progress-control">
+              <span>占领进度 <b>{Math.round(selectedObjectiveState.progress)}%</b></span>
+              <input type="range" min="0" max="100" step="1" value={selectedObjectiveState.progress} onChange={(event) => onObjectiveStateChange(selectedPoint.point.name, { ...selectedObjectiveState, progress: Number(event.target.value) })} />
+            </label> : null}
+          </div> : null}
           {selectedPoint.point.note && (
             <div className="point-detail-row">
               <span className="dim">备注</span>
@@ -1046,6 +1363,12 @@ export default function MapView({
         <div
           ref={textEditorRef}
           className="text-editor"
+          onPointerDown={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+          onTouchStart={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.stopPropagation()}
           // 第十三轮：编辑器跟随文字标注位置显示（容器坐标），不再固定在顶部被横幅遮挡。
           // 地图容器尺寸取窗口估算，向右/向下超出边缘时向内收，避免溢出视口。
           style={textEditorPosition

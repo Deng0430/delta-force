@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Marker, useMap } from 'react-leaflet'
+import { Marker, Tooltip, useMap } from 'react-leaflet'
 import * as L from 'leaflet'
 import type { OperatorUnit, Side } from '../types'
 import { operatorClassOf, teamOf } from '../config/operators'
@@ -21,6 +21,8 @@ interface OperatorLayerProps {
   pendingConnect: string | null
   interactive: boolean
   onMove: (uid: string, lat: number, lng: number) => void
+  onRotate: (uid: string, rotation: number) => void
+  onToggleFireLine: (uid: string) => void
   onClearDeploy: (uid: string) => void
   onStartRoute: (uid: string) => void
   /** 关系编辑点击回调（App 决定建立/解除关系） */
@@ -29,6 +31,8 @@ interface OperatorLayerProps {
   onEditClick: (uid: string, containerPoint: { x: number; y: number }) => void
   /** 双击代号回调：快捷编辑昵称 */
   onRenameClick: (uid: string, containerPoint: { x: number; y: number }) => void
+  skillTargeting?: boolean
+  onSkillTarget?: (uid: string) => void
 }
 
 /** 干员状态样式映射 */
@@ -80,7 +84,11 @@ function buildOperatorIcon(op: OperatorUnit, view: Side, connectMode: boolean, p
     .filter(Boolean)
     .join(' ')
   const interactionHint = platform.kind === 'android' ? '点击选中，拖动调整位置' : '右键清除部署'
+  const activeSkill = op.activeSkillSlot
+    ? `<span class="op-active-skill" title="技能 ${op.activeSkillSlot}"><img src="/icons/operators/skills/${op.operatorId}/skill_${op.activeSkillSlot}.png" alt="" draggable="false" /></span>`
+    : ''
   const renameHint = platform.kind === 'android' ? '选中兵棋后点击修改名称' : '点击编辑昵称'
+  const fireLineClick = ''
   return L.divIcon({
     className: 'op-marker-wrap',
     html: `
@@ -92,8 +100,13 @@ function buildOperatorIcon(op: OperatorUnit, view: Side, connectMode: boolean, p
         <span class="op-code" title="${renameHint}">${op.name}</span>
         <span class="op-name">${profile.name}</span>
         <span class="op-status-dot" style="background:${op.status === 'alive' ? 'var(--green)' : op.status === 'injured' ? '#f4cf67' : '#7a8185'}"></span>
-        <button class="op-route" title="为${op.name}创建行动路线" aria-label="创建干员行动路线"><i class="fa-solid fa-route" aria-hidden="true"></i></button>
-        <button class="op-delete" title="撤回部署" aria-label="撤回部署"><i class="fa-regular fa-trash-can" aria-hidden="true"></i></button>
+        ${activeSkill}
+        <span class="op-action-fan" aria-hidden="true"></span>
+        <button class="op-route" title="为${op.name}创建兵线" aria-label="创建兵线"><i class="fa-solid fa-route" aria-hidden="true"></i></button>
+        <button class="op-fireline${op.fireLineEnabled ? ' active' : ''}" data-fireline-length="${op.fireLineLength ?? 56}" title="${op.fireLineEnabled ? '关闭' : '开启'}枪线；长按调整长度" aria-label="切换枪线，长按调整长度" onwheel="event.stopPropagation();event.preventDefault();window.dispatchEvent(new CustomEvent('unit-fireline-length',{detail:{kind:'operator',uid:'${op.uid}',delta:event.deltaY>0?-4:4}}))" onpointerdown="window.__unitFireLineDragStart?.(event,'operator','${op.uid}')" ${fireLineClick}><i class="fa-solid fa-crosshairs" aria-hidden="true"></i></button>
+        <button class="op-info" title="干员信息" aria-label="打开干员信息"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>
+        ${platform.kind === 'android' ? `<button type="button" class="op-delete" title="撤回部署" aria-label="撤回单兵部署"><i class="fa-regular fa-trash-can" aria-hidden="true"></i></button>` : ''}
+        ${platform.kind === 'android' ? `<button type="button" class="op-rotate-control unit-rotate-drag" aria-label="按住并拖动旋转单兵枪线" onmousedown="event.stopPropagation();event.preventDefault()" ontouchstart="event.stopPropagation();event.preventDefault()" onpointerdown="window.__opRotateStart(event,'${op.uid}')"><i class="fa-solid fa-rotate" aria-hidden="true"></i></button>` : ''}
       </div>`,
     iconSize: [22, 22],
     iconAnchor: [11, 11],
@@ -110,11 +123,15 @@ function OperatorMarker({
   interactive,
   posRef,
   onMove,
+  onRotate,
+  onToggleFireLine,
   onClearDeploy,
   onStartRoute,
   onConnectClick,
   onEditClick,
   onRenameClick,
+  skillTargeting,
+  onSkillTarget,
 }: {
   op: OperatorUnit
   view: Side
@@ -124,19 +141,129 @@ function OperatorMarker({
   interactive: boolean
   posRef: React.MutableRefObject<Record<string, [number, number]>>
   onMove: (uid: string, lat: number, lng: number) => void
+  onRotate: (uid: string, rotation: number) => void
+  onToggleFireLine: (uid: string) => void
   onClearDeploy: (uid: string) => void
   onStartRoute: (uid: string) => void
   onConnectClick: (uid: string) => void
   onEditClick: (uid: string, containerPoint: { x: number; y: number }) => void
   /** 双击代号快捷编辑昵称 */
   onRenameClick: (uid: string, containerPoint: { x: number; y: number }) => void
+  skillTargeting?: boolean
+  onSkillTarget?: (uid: string) => void
 }) {
   const ref = useRef<L.Marker | null>(null)
   const [expanded, setExpanded] = useState(false)
   const map = useMap()
+  const rotationRef = useRef(op.rotation ?? 0)
+  rotationRef.current = op.rotation ?? 0
+
+  // 兵棋图标的原生指针事件不能继续冒泡到 Leaflet 地图，否则拖动图标会同时平移地图。
+  useEffect(() => {
+    let element: HTMLElement | null = null
+    let timer: number | undefined
+    const stopPointer = (event: Event) => {
+      if (event.target instanceof HTMLElement && event.target.closest('button')) {
+        event.stopPropagation()
+        return
+      }
+      event.stopPropagation()
+    }
+    const bind = () => {
+      element = ref.current?.getElement() ?? null
+      if (!element) {
+        timer = window.setTimeout(bind, 40)
+        return
+      }
+      L.DomEvent.disableScrollPropagation(element)
+      for (const name of ['pointerdown', 'mousedown', 'touchstart', 'dragstart']) element.addEventListener(name, stopPointer)
+    }
+    bind()
+    return () => {
+      if (timer) window.clearTimeout(timer)
+      if (element) for (const name of ['pointerdown', 'mousedown', 'touchstart', 'dragstart']) element.removeEventListener(name, stopPointer)
+    }
+  }, [op.uid, expanded])
+
+  useEffect(() => {
+    let element: HTMLElement | null = null
+    let timer: number | undefined
+    let disposed = false
+    const handleWheel = (event: WheelEvent) => {
+      if ((event.target as HTMLElement | null)?.closest?.('.op-fireline')) return
+      event.preventDefault()
+      event.stopPropagation()
+      const next = (rotationRef.current + (event.deltaY > 0 ? 15 : -15) + 360) % 360
+      rotationRef.current = next
+      onRotate(op.uid, next)
+    }
+
+    const tryBind = () => {
+      if (disposed) return
+      element = ref.current?.getElement() ?? null
+      if (!element) {
+        timer = window.setTimeout(tryBind, 40)
+        return
+      }
+      element.addEventListener('wheel', handleWheel, { passive: false })
+    }
+
+    tryBind()
+    return () => {
+      disposed = true
+      if (timer) window.clearTimeout(timer)
+      element?.removeEventListener('wheel', handleWheel)
+    }
+  }, [op.uid, onRotate, expanded])
 
   useEffect(() => {
     if (platform.kind !== 'android') return
+    const w = window as unknown as {
+      __opRotateStart?: (event: PointerEvent, uid: string) => void
+      __opRotateStartHandlers?: Record<string, (event: PointerEvent) => void>
+    }
+    if (!w.__opRotateStart) w.__opRotateStart = (event, uid) => w.__opRotateStartHandlers?.[uid]?.(event)
+    if (!w.__opRotateStartHandlers) w.__opRotateStartHandlers = {}
+    w.__opRotateStartHandlers[op.uid] = (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const marker = ref.current?.getElement()
+      if (!marker) return
+      ref.current?.dragging?.disable()
+      const rect = marker.getBoundingClientRect()
+      const cx = rect.left + rect.width / 2
+      const cy = rect.top + rect.height / 2
+      const startPointerAngle = Math.atan2(event.clientY - cy, event.clientX - cx) * 180 / Math.PI
+      const startRotation = rotationRef.current
+      let finalRotation = startRotation
+      const move = (moveEvent: PointerEvent) => {
+        if (moveEvent.pointerId !== event.pointerId) return
+        moveEvent.preventDefault()
+        const pointerAngle = Math.atan2(moveEvent.clientY - cy, moveEvent.clientX - cx) * 180 / Math.PI
+        finalRotation = Math.round((startRotation + pointerAngle - startPointerAngle + 360) % 360)
+        if (finalRotation === rotationRef.current) return
+        rotationRef.current = finalRotation
+        window.dispatchEvent(new CustomEvent('unit-rotation-preview', { detail: { uid: op.uid, rotation: finalRotation } }))
+        onRotate(op.uid, finalRotation)
+      }
+      const finish = (finishEvent: PointerEvent) => {
+        if (finishEvent.pointerId !== event.pointerId) return
+        document.removeEventListener('pointermove', move)
+        document.removeEventListener('pointerup', finish)
+        document.removeEventListener('pointercancel', finish)
+        window.dispatchEvent(new CustomEvent('unit-rotation-preview', { detail: { uid: op.uid, rotation: null } }))
+        if (canDrag) ref.current?.dragging?.enable()
+      }
+      document.addEventListener('pointermove', move, { passive: false })
+      document.addEventListener('pointerup', finish)
+      document.addEventListener('pointercancel', finish)
+    }
+    return () => {
+      if (w.__opRotateStartHandlers) delete w.__opRotateStartHandlers[op.uid]
+    }
+  }, [op.uid, onRotate, canDrag])
+
+  useEffect(() => {
     const collapse = () => setExpanded(false)
     const selectOther = (event: Event) => {
       if ((event as CustomEvent<string>).detail !== op.uid) collapse()
@@ -165,7 +292,7 @@ function OperatorMarker({
     () => buildOperatorIcon(op, view, connectMode, pending, expanded),
     // 干员/职业/状态/队伍色/昵称变化需重建图标
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [op.operatorId, op.cls, op.status, op.team, op.name, op.side, view, connectMode, pending, expanded],
+    [op.operatorId, op.cls, op.status, op.team, op.name, op.side, op.fireLineEnabled, view, connectMode, pending, expanded],
   )
 
   // 代号标签响应：单击代号 = 快捷编辑昵称（与棋子单击三级菜单分离）。
@@ -185,10 +312,25 @@ function OperatorMarker({
       zIndexOffset={820}
       interactive={interactive}
       eventHandlers={{
+        mousedown: () => { if (platform.kind !== 'android') map.dragging.disable() },
+        mouseup: () => { if (platform.kind !== 'android') map.dragging.enable() },
         click: (e) => {
           // 阻止冒泡：避免地图点击事件误关气泡
           L.DomEvent.stopPropagation(e)
+          if (skillTargeting) {
+            onSkillTarget?.(op.uid)
+            return
+          }
           const t = e.originalEvent.target as HTMLElement | null
+          if (t?.closest?.('.op-info')) {
+            onEditClick(op.uid, { x: e.containerPoint.x, y: e.containerPoint.y })
+            return
+          }
+          if (t?.closest?.('.op-fireline')) {
+            // Android 在 pointerup 统一派发 unit-fireline-toggle；这里不再重复切换。
+            if (platform.kind !== 'android') onToggleFireLine(op.uid)
+            return
+          }
           if (t?.closest?.('.op-route')) {
             onStartRoute(op.uid)
             return
@@ -219,11 +361,18 @@ function OperatorMarker({
           if (connectMode) {
             onConnectClick(op.uid)
           } else {
-            // 传入容器像素坐标，用于地图上就近显示更换干员气泡
-            onEditClick(op.uid, { x: e.containerPoint.x, y: e.containerPoint.y })
+            window.dispatchEvent(new CustomEvent('mobile-unit-selected', { detail: op.uid }))
+            setExpanded(true)
           }
         },
-        dragstart: () => ref.current?.getElement()?.classList.add('mobile-unit-dragging'),
+        dragstart: (e) => {
+          // A route-bound unit also has a live route preview. Stop the native
+          // pointer event here so Leaflet's map drag handler cannot start in
+          // parallel with the marker drag.
+          L.DomEvent.stopPropagation(e as L.LeafletEvent)
+          map.dragging.disable()
+          ref.current?.getElement()?.classList.add('mobile-unit-dragging')
+        },
         drag: (e) => {
           // 拖动期间只更新 Leaflet 原生 Marker 和轻量图层预览；最终位置在 dragend 提交一次。
           const ll = (e.target as L.Marker).getLatLng()
@@ -237,9 +386,10 @@ function OperatorMarker({
         },
         contextmenu: (e) => {
           L.DomEvent.stop(e.originalEvent)
-          onClearDeploy(op.uid)
+          if (platform.kind !== 'android') onClearDeploy(op.uid)
         },
         dragend: (e) => {
+          map.dragging.enable()
           ref.current?.getElement()?.classList.remove('mobile-unit-dragging')
           const ll = (e.target as L.Marker).getLatLng()
           onMove(op.uid, ll.lat, ll.lng)
@@ -254,7 +404,11 @@ function OperatorMarker({
           })
         },
       }}
-    />
+    >
+      {platform.kind !== 'android' && <Tooltip direction="top" offset={[0, -28]}>
+        {op.name} · 滚轮旋转 · 右键撤回部署 · 枪线按钮上滚轮调长度
+      </Tooltip>}
+    </Marker>
   )
 }
 
@@ -274,11 +428,15 @@ export default function OperatorLayer({
   pendingConnect,
   interactive,
   onMove,
+  onRotate,
+  onToggleFireLine,
   onClearDeploy,
   onStartRoute,
   onConnectClick,
   onEditClick,
   onRenameClick,
+  skillTargeting,
+  onSkillTarget,
 }: OperatorLayerProps) {
   return (
     <>
@@ -293,11 +451,15 @@ export default function OperatorLayer({
           interactive={interactive}
           posRef={posRef}
           onMove={onMove}
+          onRotate={onRotate}
+          onToggleFireLine={onToggleFireLine}
           onClearDeploy={onClearDeploy}
           onStartRoute={onStartRoute}
           onConnectClick={onConnectClick}
           onEditClick={onEditClick}
           onRenameClick={onRenameClick}
+          skillTargeting={skillTargeting}
+          onSkillTarget={onSkillTarget}
         />
       ))}
     </>

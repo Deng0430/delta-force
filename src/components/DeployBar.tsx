@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import type { Side } from '../types'
 import {
   DEPLOY_BY_MAP,
+  DEPLOY_VEHICLE_CATALOG,
   localDeployIconUrl,
   type DeployVehicleEntry,
   type StageDeploy,
@@ -42,7 +43,13 @@ export default function DeployBar({ mapId, view, target, deployByStage, onClose,
     const stage = (deployByStage ?? DEPLOY_BY_MAP[mapId])?.[target.stageId]
     if (!stage) return []
     // 官网机制：载具的"备注"(note) === 出生点基地名(baseName) 才展示该载具
-    return (stage[target.side] ?? []).filter((v) => v.note === target.baseName)
+    return (stage[target.side] ?? [])
+      .filter((v) => v.note === target.baseName)
+      .map((vehicle) => {
+        const current = DEPLOY_VEHICLE_CATALOG.find((item) => item.name === vehicle.name)
+          ?? DEPLOY_VEHICLE_CATALOG.find((item) => item.icon === vehicle.icon)
+        return current ? { ...vehicle, iconUrl: current.iconUrl } : vehicle
+      })
   }, [deployByStage, mapId, target])
 
   if (!target || list.length === 0) return null
@@ -82,11 +89,17 @@ export default function DeployBar({ mapId, view, target, deployByStage, onClose,
                 <div className="deploy-card-img-ctn">
                   <img
                     className="deploy-card-img"
-                    src={localDeployIconUrl(v.icon)}
+                    src={v.iconUrl || localDeployIconUrl(v.icon)}
                     alt={v.name}
                     draggable={false}
                     onError={(e) => {
-                      ;(e.currentTarget as HTMLImageElement).style.display = 'none'
+                      const image = e.currentTarget as HTMLImageElement
+                      const fallback = localDeployIconUrl(v.icon)
+                      if (image.src !== new URL(fallback, window.location.href).href) {
+                        image.src = fallback
+                      } else {
+                        image.style.display = 'none'
+                      }
                     }}
                   />
                 </div>

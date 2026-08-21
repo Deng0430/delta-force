@@ -1,6 +1,7 @@
-import type { BuildingUnit, MapState, OperatorConnection, OperatorTeam, OperatorUnit, PersistedAppState, Side, TacticalRoute, TeamMarker, VehicleItem, WargameState } from '../types'
+import type { BuildingUnit, MapState, OperatorConnection, OperatorTeam, OperatorUnit, PersistedAppState, Side, TacticalBucket, TacticalRoute, TeamMarker, VehicleItem, WargameState } from '../types'
 import { TEAMS } from '../config/operators'
 import { orderTypeOf } from '../config/routes'
+import { DEPLOY_VEHICLE_CATALOG } from '../config/deployVehicles'
 import { emptyGeoJson } from './geo'
 
 /** 正式应用数据的本地存储键。 */
@@ -19,7 +20,26 @@ export function emptyWargameState(): WargameState {
   // 小队作用默认取 TEAMS.desc（可在左侧面板编辑，存于 teamRoles）
   const teamRoles: Record<string, string> = {}
   for (const t of TEAMS) teamRoles[t.id] = t.desc
-  return { enabled: false, round: 1, showConnections: true, connectMode: false, teamRoles }
+  return {
+    enabled: true,
+    round: 1,
+    showConnections: true,
+    showFireLines: true,
+    showRouteLabels: true,
+    notesMarkdown: '',
+    stageNotes: {},
+    noteImages: {},
+    connectMode: false,
+    teamRoles,
+    battleContext: {
+      tickets: { attack: null, defense: null },
+      matchTimeSeconds: null,
+      objectiveStates: {},
+      objectiveCountdowns: {},
+      mapEvents: [],
+    },
+    usedVehicleRefreshRuleIds: { attack: [], defense: [] },
+  }
 }
 
 /**
@@ -28,10 +48,19 @@ export function emptyWargameState(): WargameState {
  * 旧数组按 item.side 归入攻/守桶。
  */
 function normalizeVehicles(vehicles: unknown): Record<Side, VehicleItem[]> {
-  const normalizeList = (items: VehicleItem[]) => items.map((item) => ({
-    ...item,
-    team: (['A', 'B', 'C', 'D', 'E'].includes(item.team ?? '') ? item.team : undefined) as OperatorTeam | undefined,
-  }))
+  const normalizeList = (items: VehicleItem[]) => items.map((item) => {
+    const currentVehicle = DEPLOY_VEHICLE_CATALOG.find((entry) => (
+      entry.name === item.name
+      || entry.name.includes(item.name)
+      || item.name.includes(entry.name)
+    ))
+    return {
+      ...item,
+      // 已部署的刷新载具也应随内置图例更新，不能永久使用存档中的旧 URL。
+      iconUrl: currentVehicle?.iconUrl ?? item.iconUrl,
+      team: (['A', 'B', 'C', 'D', 'E'].includes(item.team ?? '') ? item.team : undefined) as OperatorTeam | undefined,
+    }
+  })
   // 新形状：Record<Side, VehicleItem[]>
   if (vehicles && typeof vehicles === 'object' && !Array.isArray(vehicles)) {
     const v = vehicles as Record<string, unknown>
@@ -85,7 +114,8 @@ export function normalizeTacticalRoute(route: TacticalRoute): TacticalRoute {
     color: typeof route.color === 'string' && route.color ? route.color : teamColor,
     lineStyle: lineStyles.includes(route.lineStyle) ? route.lineStyle : meta.lineStyle,
     opacity: typeof route.opacity === 'number' && Number.isFinite(route.opacity) ? Math.max(0.2, Math.min(1, route.opacity)) : 0.92,
-    anchorMode: route.anchorMode === 'free' || route.anchorMode === 'branch' || route.anchorMode === 'operator' || route.anchorMode === 'vehicle'
+    strokeWidth: typeof route.strokeWidth === 'number' && Number.isFinite(route.strokeWidth) ? Math.max(1, Math.min(10, route.strokeWidth)) : 3.5,
+    anchorMode: route.anchorMode === 'free' || route.anchorMode === 'branch' || route.anchorMode === 'operator' || route.anchorMode === 'vehicle' || route.anchorMode === 'building'
       ? route.anchorMode
       : route.branchFromRouteUid ? 'branch' : 'team',
     operatorIds: Array.isArray(route.operatorIds) ? route.operatorIds : [],
@@ -168,6 +198,12 @@ export function loadState(): PersistedAppState | null {
           // v11 起：队标分桶（v10 及更早数据默认空）
           m.teams = normalizeTeams(m.teams)
           m.routes = normalizeRoutes(m.routes)
+          m.fieldSupports = fieldSupportsBucketOf(m)
+          m.drawings = { attack: normalizeDrawingGeoJson(m.drawings?.attack ?? emptyGeoJson()), defense: normalizeDrawingGeoJson(m.drawings?.defense ?? emptyGeoJson()) }
+          if (!m.tacticalBuckets) {
+            const bucket = snapshotTacticalBucket(m, 'S1', wargameOf(m).round)
+            m.tacticalBuckets = { activeKey: bucket.key, buckets: { [bucket.key]: bucket } }
+          }
         }
       }
       // v9→v10：战术方案库缺省为空数组（不丢历史数据）
@@ -175,6 +211,7 @@ export function loadState(): PersistedAppState | null {
       parsed.plans = parsed.plans.map((plan) => ({
         ...plan,
         routes: Array.isArray(plan.routes) ? plan.routes.map(normalizeTacticalRoute) : [],
+        usedVehicleRefreshRuleIds: Array.isArray(plan.usedVehicleRefreshRuleIds) ? plan.usedVehicleRefreshRuleIds : [],
       }))
       return parsed
     }
@@ -193,6 +230,26 @@ export function saveState(state: PersistedAppState): void {
   }
 }
 
+function drawingUid(seed: string, index: number): string {
+  let hash = 2166136261
+  for (const char of `${seed}:${index}`) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619)
+  return `drawing_${(hash >>> 0).toString(36)}_${index}`
+}
+
+export function normalizeDrawingGeoJson(raw: string): string {
+  try {
+    const value = JSON.parse(raw)
+    if (value?.type !== 'FeatureCollection' || !Array.isArray(value.features)) return emptyGeoJson()
+    value.features = value.features.map((feature: Record<string, unknown>, index: number) => ({
+      ...feature,
+      properties: { ...((feature.properties as Record<string, unknown> | null) ?? {}), uid: typeof (feature.properties as Record<string, unknown> | null)?.uid === 'string' ? (feature.properties as Record<string, unknown>).uid : drawingUid(JSON.stringify(feature.geometry ?? feature), index) },
+    }))
+    return JSON.stringify(value)
+  } catch {
+    return emptyGeoJson()
+  }
+}
+
 /** 新建一张地图的空白数据 */
 export function createEmptyMapState(): MapState {
   return {
@@ -203,8 +260,131 @@ export function createEmptyMapState(): MapState {
     connections: { attack: [], defense: [] },
     teams: { attack: [], defense: [] },
     routes: { attack: [], defense: [] },
+    fieldSupports: { attack: [], defense: [] },
+    skillActions: [],
     wargame: emptyWargameState(),
+    tacticalBuckets: { activeKey: '', buckets: {} },
   }
+}
+
+export function tacticalBucketKey(stageId: string, round: number): string {
+  return `${stageId}:R${Math.max(1, Math.floor(round || 1))}`
+}
+
+export function snapshotTacticalBucket(map: MapState, stageId: string, round: number): import('../types').TacticalBucket {
+  const wargame = wargameOf(map)
+  const clone = <T>(value: T): T => structuredClone(value)
+  return {
+    key: tacticalBucketKey(stageId, round), stageId, round, updatedAt: Date.now(),
+    vehicles: clone(vehiclesBucketOf(map)), buildings: clone(buildingsBucketOf(map)), drawings: clone(map.drawings),
+    operators: clone(operatorsBucketOf(map)), connections: clone(connectionsBucketOf(map)), teams: clone(teamsBucketOf(map)),
+    routes: clone(routesBucketOf(map)), fieldSupports: clone(fieldSupportsBucketOf(map)), skillActions: clone(map.skillActions ?? []), notesMarkdown: wargame.notesMarkdown,
+  }
+}
+
+/** Normalize a native-import bucket using the same compatibility rules as a map state. */
+export function normalizeTacticalBucket(raw: unknown): TacticalBucket | null {
+  if (!raw || typeof raw !== 'object') return null
+  const value = raw as Partial<TacticalBucket>
+  if (typeof value.stageId !== 'string' || !Number.isFinite(value.round)) return null
+  const round = Math.max(1, Math.floor(value.round as number))
+  const base = createEmptyMapState()
+  const source = {
+    ...base,
+    vehicles: value.vehicles,
+    buildings: value.buildings,
+    drawings: value.drawings,
+    operators: value.operators,
+    connections: value.connections,
+    teams: value.teams,
+    routes: value.routes,
+    fieldSupports: value.fieldSupports,
+    skillActions: value.skillActions,
+  } as MapState
+  const normalized: TacticalBucket = {
+    key: tacticalBucketKey(value.stageId, round),
+    stageId: value.stageId,
+    round,
+    updatedAt: typeof value.updatedAt === 'number' ? value.updatedAt : Date.now(),
+    vehicles: vehiclesBucketOf(source),
+    buildings: buildingsBucketOf(source),
+    drawings: {
+      attack: normalizeDrawingGeoJson(source.drawings?.attack ?? emptyGeoJson()),
+      defense: normalizeDrawingGeoJson(source.drawings?.defense ?? emptyGeoJson()),
+    },
+    operators: operatorsBucketOf(source),
+    connections: connectionsBucketOf(source),
+    teams: teamsBucketOf(source),
+    routes: routesBucketOf(source),
+    fieldSupports: fieldSupportsBucketOf(source),
+    skillActions: Array.isArray(value.skillActions) ? value.skillActions : [],
+    notesMarkdown: typeof value.notesMarkdown === 'string' ? value.notesMarkdown : '',
+  }
+  return normalized
+}
+
+/**
+ * Persist the live tactical projection into its active stage/round bucket.
+ * Callers should invoke this after tactical content changes, rather than
+ * waiting for a stage/round switch or an export to take a snapshot.
+ */
+export function syncActiveTacticalBucket(map: MapState, fallbackStageId = 'S1'): MapState {
+  const store = map.tacticalBuckets ?? { activeKey: '', buckets: {} }
+  const active = store.activeKey ? store.buckets[store.activeKey] : undefined
+  const stageId = active?.stageId ?? fallbackStageId
+  const round = active?.round ?? wargameOf(map).round
+  // App mutations replace the affected arrays/objects, so retaining these
+  // references keeps prior buckets isolated without deep-cloning on every
+  // pointer-move event.
+  const bucket: TacticalBucket = {
+    key: tacticalBucketKey(stageId, round),
+    stageId,
+    round,
+    updatedAt: Date.now(),
+    vehicles: vehiclesBucketOf(map),
+    buildings: buildingsBucketOf(map),
+    drawings: map.drawings,
+    operators: operatorsBucketOf(map),
+    connections: connectionsBucketOf(map),
+    teams: teamsBucketOf(map),
+    routes: routesBucketOf(map),
+    fieldSupports: fieldSupportsBucketOf(map),
+    skillActions: map.skillActions ?? [],
+    notesMarkdown: wargameOf(map).notesMarkdown,
+  }
+  return {
+    ...map,
+    tacticalBuckets: {
+      activeKey: bucket.key,
+      buckets: { ...store.buckets, [bucket.key]: bucket },
+    },
+  }
+}
+
+export function applyTacticalBucket(map: MapState, bucket: import('../types').TacticalBucket): MapState {
+  return { ...map, vehicles: bucket.vehicles, buildings: bucket.buildings, drawings: bucket.drawings, operators: bucket.operators,
+    connections: bucket.connections, teams: bucket.teams, routes: bucket.routes, fieldSupports: bucket.fieldSupports ?? { attack: [], defense: [] }, skillActions: bucket.skillActions ?? [],
+    wargame: { ...wargameOf(map), round: bucket.round } }
+}
+
+export function createTacticalRound(map: MapState, stageId: string, round: number, copyFromCurrent = false): MapState {
+  const current = snapshotTacticalBucket(map, stageId, wargameOf(map).round)
+  const store = map.tacticalBuckets ?? { activeKey: current.key, buckets: {} }
+  const key = tacticalBucketKey(stageId, round)
+  const source = copyFromCurrent ? current : null
+  const emptyRound = createEmptyMapState()
+  // A new round starts without deployed tactical elements, but the operator
+  // roster is configuration rather than deployment data. Preserve custom
+  // names/operator choices/status while returning every operator to reserve.
+  emptyRound.operators = {
+    attack: operatorsBucketOf(map).attack.map((operator) => ({ ...structuredClone(operator), lat: null, lng: null })),
+    defense: operatorsBucketOf(map).defense.map((operator) => ({ ...structuredClone(operator), lat: null, lng: null })),
+  }
+  const bucket: TacticalBucket = source
+    ? { ...structuredClone(source), key, round, updatedAt: Date.now() }
+    : snapshotTacticalBucket(emptyRound, stageId, round)
+  const buckets = { ...store.buckets, [current.key]: current, [key]: bucket }
+  return applyTacticalBucket({ ...map, tacticalBuckets: { activeKey: key, buckets } }, bucket)
 }
 
 /** 防御性读取某张地图的载具分桶（避免旧数据/损坏数据导致 TypeError） */
@@ -242,8 +422,53 @@ export function routesBucketOf(s: MapState | undefined | null): Record<Side, Tac
   return normalizeRoutes(s.routes)
 }
 
+export function fieldSupportsBucketOf(s: MapState | undefined | null): Record<Side, import('../types').FieldSupportInstance[]> {
+  const value = s?.fieldSupports
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return { attack: [], defense: [] }
+  return {
+    attack: Array.isArray(value.attack) ? value.attack : [],
+    defense: Array.isArray(value.defense) ? value.defense : [],
+  }
+}
+
 /** 防御性读取推演状态 */
 export function wargameOf(s: MapState | undefined | null): WargameState {
   if (!s?.wargame) return emptyWargameState()
-  return { ...emptyWargameState(), ...s.wargame }
+  const fallback = emptyWargameState()
+  const battleContext = s.wargame.battleContext
+  const used = s.wargame.usedVehicleRefreshRuleIds
+  const storedStageNotes = s.wargame.stageNotes && typeof s.wargame.stageNotes === 'object' ? s.wargame.stageNotes : {}
+  const stageNotes = Object.keys(storedStageNotes).length === 0 && s.wargame.notesMarkdown?.trim()
+    ? { S1: s.wargame.notesMarkdown }
+    : storedStageNotes
+  const rawObjectiveStates = battleContext?.objectiveStates && typeof battleContext.objectiveStates === 'object'
+    ? battleContext.objectiveStates
+    : Object.fromEntries((Array.isArray(battleContext?.capturedObjectives) ? battleContext.capturedObjectives : []).map((name) => [name, { owner: 'attack', capturingSide: null, progress: 100 }]))
+  const objectiveStates = Object.fromEntries(Object.entries(rawObjectiveStates).map(([name, raw]) => {
+    const state = raw && typeof raw === 'object' ? raw : { owner: 'neutral', capturingSide: null, progress: 0 }
+    const owner = state.owner === 'attack' || state.owner === 'defense' ? state.owner : 'neutral'
+    const capturingSide = state.capturingSide === 'attack' || state.capturingSide === 'defense' ? state.capturingSide : null
+    const progress = typeof state.progress === 'number' && Number.isFinite(state.progress) ? Math.max(0, Math.min(100, state.progress)) : 0
+    return [name, { owner, capturingSide, progress }]
+  }))
+  return {
+    ...fallback,
+    ...s.wargame,
+    enabled: true,
+    stageNotes,
+    noteImages: s.wargame.noteImages && typeof s.wargame.noteImages === 'object' ? s.wargame.noteImages : {},
+    showRouteLabels: s.wargame.showRouteLabels !== false,
+    battleContext: {
+      ...fallback.battleContext,
+      ...(battleContext ?? {}),
+      tickets: { ...fallback.battleContext.tickets, ...(battleContext?.tickets ?? {}) },
+      objectiveStates,
+      objectiveCountdowns: battleContext?.objectiveCountdowns && typeof battleContext.objectiveCountdowns === 'object' ? battleContext.objectiveCountdowns : {},
+      mapEvents: Array.isArray(battleContext?.mapEvents) ? battleContext.mapEvents : [],
+    },
+    usedVehicleRefreshRuleIds: {
+      attack: Array.isArray(used?.attack) ? used.attack : [],
+      defense: Array.isArray(used?.defense) ? used.defense : [],
+    },
+  }
 }

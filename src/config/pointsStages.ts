@@ -1,7 +1,8 @@
 // 由官网地图工具数据提取生成（df.qq.com/cp/a20240729directory），勿手改核心坐标
-export const POINT_ICON_BASE = 'https://game.gtimg.cn/images/dfm/cp/a20240729directory/img/dzc_i'
+/** 地图道具、据点和复活点图标均已固化到 public，运行时不再请求官网 CDN。 */
+export const POINT_ICON_BASE = '/icons/map-props'
 
-export const MAP_PROPS: Record<string, { name: string; icon: string; lat: number; lng: number; stage: string }[]> = {
+const RAW_MAP_PROPS: Record<string, { name: string; icon: string; lat: number; lng: number; stage: string }[]> = {
   ascent: [
     { name: '固定防空炮', icon: 'q_gdaap', lat: -122.503, lng: 99.454, stage: '全局' },
     { name: '固定防空炮', icon: 'q_gdaap', lat: -107.343, lng: 90.999, stage: '全局' },
@@ -582,6 +583,9 @@ export const MAP_PROPS: Record<string, { name: string; icon: string; lat: number
     { name: '固定防空炮', icon: 'q_gdaap', lat: -81.926, lng: 120.307, stage: '全局' },
     { name: '固定防空炮', icon: 'q_gdaap', lat: -84.447, lng: 145.176, stage: '全局' },
     { name: '固定防空炮', icon: 'q_gdaap', lat: -100.91, lng: 153.966, stage: '全局' },
+    { name: '密集阵', icon: 'q_mjz', lat: -113.498, lng: 94.131, stage: '全局' },
+    { name: '密集阵', icon: 'q_mjz', lat: -113.754, lng: 148.749, stage: '全局' },
+    { name: '密集阵', icon: 'q_mjz', lat: -149.517, lng: 119.374, stage: '全局' },
     { name: '固定机枪', icon: 'q_gdjq', lat: -154.852, lng: 113.839, stage: '全局' },
     { name: '固定机枪', icon: 'q_gdjq', lat: -123.982, lng: 105.93, stage: '全局' },
     { name: '固定机枪', icon: 'q_gdjq', lat: -106.929, lng: 115.803, stage: '全局' },
@@ -1281,6 +1285,19 @@ export const MAP_PROPS: Record<string, { name: string; icon: string; lat: number
     { name: '载具补给站', icon: 'q_zjbjz', lat: -101.888, lng: 177.846, stage: '' },
   ],
 }
+
+/** 官网在每个阶段重复返回全局道具，内置数据只保留每个物理位置一次。 */
+export const MAP_PROPS = Object.fromEntries(
+  Object.entries(RAW_MAP_PROPS).map(([mapId, props]) => {
+    const seen = new Set<string>()
+    return [mapId, props.filter((prop) => {
+      const key = `${prop.name}|${prop.icon}|${prop.lat}|${prop.lng}|${prop.stage}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })]
+  }),
+) as typeof RAW_MAP_PROPS
 
 export const SUPPLY_STATIONS: Record<string, [number, number][]> = {
   ascent: [
@@ -2699,11 +2716,12 @@ export const FAULT_STAGES = [
     },
     attackSpawns: [
       [-161.837, 70.429],
+      [-149.365, 66.863],
       [-138.458, 78.154],
     ],
-    attackSpawnNames: [null, 'GTI3号阵地'],
+    attackSpawnNames: [null, null, null],
     defenseSpawns: [
-      [-160.638, 125.966],
+      [-164.777, 135.689],
     ],
     attackBaseZone: [
       [-68.977, 27.332],
@@ -2891,13 +2909,15 @@ export const FAULT_STAGES = [
     },
     attackSpawns: [
       [-160.638, 125.966],
+      [-146.094, 111.549],
+      [-153.162, 146.757],
     ],
-    attackSpawnNames: ['GTI4号阵地'],
+    attackSpawnNames: [null, null, null],
     defenseSpawns: [
       [-111.041, 169.05],
       [-95.787, 138.713],
     ],
-    defenseSpawnNames: [null, '哈夫克3号阵地'],
+    defenseSpawnNames: [null, null],
     attackBaseZone: [
       [-116.24, 113.324],
       [-130.449, 113.776],
@@ -3141,12 +3161,12 @@ export const FAULT_STAGES = [
       [-122.706, 127.855],
       [-125.728, 156.408],
     ],
-    attackSpawnNames: ['GTI7号阵地', null],
+    attackSpawnNames: [null, null],
     defenseSpawns: [
       [-48.459, 153.849],
       [-59.979, 127.24],
     ],
-    defenseSpawnNames: ['哈夫克4号阵地', null],
+    defenseSpawnNames: [null, null],
     attackBaseZone: [
       [-121.337, 172.286],
       [-132.905, 180.018],
@@ -4143,6 +4163,47 @@ export const BROKENTRACK_STAGES = [
     ],
     defenseVehicles: [],
   },
+]
+
+// 腾讯官方 map_dg.js（2026-08-21，SHA-256 7AAA6DD8...）的 mapArticle
+// 误把 S4 守方边界复制成攻方边界；同一脚本 init[3].typeList 中保留了
+// 正确的 f_jdbsd_g 35 点边界。PC 与移动端 init 数据完全一致。
+BROKENTRACK_STAGES[3].defenseBaseZone = [
+  [-123.284, 53.544],
+  [-128.168, 53.351],
+  [-129.518, 53.296],
+  [-131.435, 53.132],
+  [-131.665, 53.07],
+  [-133.987, 53.013],
+  [-140.187, 52.863],
+  [-142.268, 54.566],
+  [-142.631, 54.864],
+  [-145.633, 57.322],
+  [-155.256, 65.202],
+  [-158.543, 67.894],
+  [-159.766, 68.897],
+  [-161.071, 69.966],
+  [-161.768, 70.536],
+  [-161.94, 76.078],
+  [-162.023, 77.983],
+  [-162.218, 82.508],
+  [-162.325, 84.994],
+  [-162.467, 88.304],
+  [-163.864, 86.848],
+  [-167.903, 82.64],
+  [-179.018, 79.593],
+  [-175.001, 60.98],
+  [-176.14, 53.454],
+  [-170.683, 48.843],
+  [-168.538, 48.59],
+  [-157.477, 38.873],
+  [-157.016, 37.62],
+  [-150.507, 31.793],
+  [-142.757, 32.184],
+  [-137.258, 32.271],
+  [-132.018, 32.353],
+  [-129.828, 34.115],
+  [-123.284, 53.544],
 ]
 
 /** 克劳狄斗兽场攻防模式各阶段（官网数据） */

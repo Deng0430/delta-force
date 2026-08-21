@@ -211,6 +211,44 @@ export interface ModeMapProp {
   verification: ModeConfigVerification
 }
 
+export type ModeVehicleRefreshTriggerType =
+  | 'tickets'
+  | 'match-time'
+  | 'objective-countdown'
+  | 'objective-captured'
+  | 'map-event'
+
+/** 胜者为王载具刷新条件；实时比赛状态暂不由应用自动读取。 */
+export interface ModeVehicleRefreshTrigger {
+  type: ModeVehicleRefreshTriggerType
+  /** 兵力为 number；时间使用 HH:mm 或原始事件说明。 */
+  value: number | string
+}
+
+/** 可被多条刷新规则共用的地图坐标。 */
+export interface ModeVehicleRefreshPoint {
+  uid: string
+  name: string
+  lat: number
+  lng: number
+  verification: ModeConfigVerification
+}
+
+/** 胜者为王模式的条件式载具刷新规则。 */
+export interface ModeVehicleRefreshRule {
+  uid: string
+  objective: string
+  side: Side
+  action: 'refresh' | 'disable'
+  trigger: ModeVehicleRefreshTrigger
+  vehicle: ModeDeployVehicle
+  quantity: number
+  /** 空字符串表示尚未在地图上标注；多条规则可引用同一刷新位置。 */
+  refreshPointUid: string
+  note: string
+  verification: ModeConfigVerification
+}
+
 /** 模式地图自身的阶段定义；允许不同于攻防模式增删阶段。 */
 export interface ModeStageDefinition {
   id: string
@@ -226,6 +264,8 @@ export interface ModeMapOverride {
   spawns: ModeSpawnPoint[]
   objectives: ModeObjectivePoint[]
   props: ModeMapProp[]
+  vehicleRefreshPoints: ModeVehicleRefreshPoint[]
+  vehicleRefreshRules: ModeVehicleRefreshRule[]
   updatedAt: number
 }
 
@@ -235,23 +275,26 @@ export interface GameModeProfile {
   name: string
   description: string
   maps: Record<string, ModeMapOverride>
+  /** 攻防模式按游戏数据端分别保存；其他模式继续使用 maps。 */
+  platformMaps?: Partial<Record<'pc' | 'mobile', Record<string, ModeMapOverride>>>
   createdAt: number
   updatedAt: number
 }
 
 export interface ModeConfigStore {
-  version: 8
+  version: 19
   activeModeId: string
   profiles: GameModeProfile[]
 }
 
-export type ModeEditorTool = 'select' | 'zone' | 'spawn' | 'objective' | 'prop'
+export type ModeEditorTool = 'select' | 'zone' | 'spawn' | 'objective' | 'prop' | 'vehicle-refresh'
 
 export type ModeEditorSelection =
   | { kind: 'zone'; uid: string }
   | { kind: 'spawn'; uid: string }
   | { kind: 'objective'; uid: string }
   | { kind: 'prop'; uid: string }
+  | { kind: 'vehicle-refresh-point'; uid: string }
   | null
 
 export type ModeEditorSelectionItem = Exclude<ModeEditorSelection, null>
@@ -289,10 +332,18 @@ export interface VehicleItem {
   stageId: string
   /** 旋转角度（度，0-360，问题3：滚轮旋转，持久化） */
   rotation: number
+  /** 是否显示随兵棋朝向旋转的枪线。 */
+  fireLineEnabled?: boolean
+  /** 枪线地图距离。 */
+  fireLineLength?: number
   /** 是否为玩家自定义部署（非官方固定部署点，问题3） */
   custom?: boolean
   /** 本方/敌方部署（本方=绿底、敌方=红底；旧数据无此字段时按 side 兼容） */
   own?: boolean
+  /** 由胜者为王载具刷新规则创建；官方刷新点本身不会被转换或移动。 */
+  sourceType?: 'vehicle-refresh'
+  sourceRuleUid?: string
+  sourcePointUid?: string
 }
 
 /** 兵棋推演中的固定建筑单位；仅区分阵营，不隶属于任何小队。 */
@@ -308,6 +359,8 @@ export interface BuildingUnit {
   lng: number
   stageId: string
   rotation: number
+  fireLineEnabled?: boolean
+  fireLineLength?: number
 }
 
 /** 文字标注（由画笔 GeoJSON 中的 Point 特征推导） */
@@ -374,8 +427,85 @@ export interface MapState {
   teams: Record<Side, TeamMarker[]>
   /** 兵棋推演进攻路线（按视角分桶） */
   routes: Record<Side, TacticalRoute[]>
+  /** 阵地支援效果，按攻/守分桶保存。 */
+  fieldSupports: Record<Side, FieldSupportInstance[]>
+  /** 当前阶段/回合内的干员技能行动。 */
+  skillActions: OperatorSkillAction[]
   /** 兵棋推演控制状态（回合数等） */
   wargame: WargameState
+  /** 按阶段×回合保存的兵棋/绘制快照。 */
+  tacticalBuckets?: TacticalBucketStore
+}
+
+export interface TacticalBucket {
+  key: string
+  stageId: string
+  round: number
+  updatedAt: number
+  vehicles: Record<Side, VehicleItem[]>
+  buildings: Record<Side, BuildingUnit[]>
+  drawings: Record<Side, string>
+  operators: Record<Side, OperatorUnit[]>
+  connections: Record<Side, OperatorConnection[]>
+  teams: Record<Side, TeamMarker[]>
+  routes: Record<Side, TacticalRoute[]>
+  fieldSupports: Record<Side, FieldSupportInstance[]>
+  /** 干员技能的独立使用记录；同一技能可在同一回合重复使用。 */
+  skillActions: OperatorSkillAction[]
+  notesMarkdown: string
+}
+
+export type OperatorSkillActionGeometry =
+  | { type: 'point'; position: [number, number] }
+  | { type: 'area'; center: [number, number]; radius: number; radiusRatio?: number }
+  | { type: 'line'; points: [number, number][]; width?: number; widthRatio?: number }
+  | { type: 'trajectory'; points: [number, number][] }
+  | { type: 'curve'; start: [number, number]; controls?: [number, number][]; control?: [number, number]; end: [number, number] }
+
+export interface OperatorSkillAction {
+  uid: string
+  sourceOperatorUid: string
+  operatorId: string
+  skillSlot: 1 | 2 | 3 | 4
+  skillName: string
+  kind: 'ultimate' | 'gadget' | 'passive'
+  placementMode?: 'self' | 'target-point' | 'area' | 'trajectory' | 'guided-path' | 'target-unit' | 'ally-unit'
+  side: Side
+  geometry?: OperatorSkillActionGeometry
+  targetUid?: string
+  effectArea?: boolean
+  canBindTarget?: boolean
+  tracking?: boolean
+  sector?: boolean
+  visible: boolean
+  createdAt: number
+}
+
+/** 阵地支援图标定义（四种官方地图工具资源）。 */
+export interface FieldSupportDefinition {
+  id: string
+  name: string
+  iconUrl: string
+  description: string
+  defaultRadius: number
+}
+
+/** 已放置的阵地支援范围。 */
+export interface FieldSupportInstance {
+  uid: string
+  definitionId: string
+  name: string
+  iconUrl: string
+  side: Side
+  lat: number
+  lng: number
+  radius: number
+  stageId: string
+}
+
+export interface TacticalBucketStore {
+  activeKey: string
+  buckets: Record<string, TacticalBucket>
 }
 
 /** 干员职业（三角洲行动四类定位） */
@@ -402,6 +532,12 @@ export interface OperatorUnit {
   /** 地图坐标；null = 未部署 */
   lat: number | null
   lng: number | null
+  /** 步兵朝向（0=正北）。 */
+  rotation?: number
+  fireLineEnabled?: boolean
+  fireLineLength?: number
+  /** 当前选择使用的干员技能槽位；技能与 operatorId 绑定。 */
+  activeSkillSlot?: 1 | 2 | 3 | 4
 }
 
 /** 兵棋推演：干员间协同关系；仅表示双方协同，不表示移动。 */
@@ -441,6 +577,9 @@ export interface TeamMarker {
   /** 地图坐标；null = 未部署 */
   lat: number | null
   lng: number | null
+  rotation?: number
+  fireLineEnabled?: boolean
+  fireLineLength?: number
 }
 
 /** 行动指令类型（路线 V2） */
@@ -451,10 +590,11 @@ export type TacticalOrderStatus = 'planned' | 'pending' | 'executing' | 'complet
 
 /** 路线线型 */
 export type TacticalRouteLineStyle = 'solid' | 'dashed' | 'dotted'
+export type TacticalRouteGeometry = 'straight' | 'curve'
 
 /** 路线终点吸附目标 */
 export interface TacticalRouteTarget {
-  kind: 'point' | 'team' | 'operator' | 'vehicle'
+  kind: 'point' | 'team' | 'operator' | 'vehicle' | 'building'
   uid: string
   label: string
 }
@@ -468,18 +608,25 @@ export interface TacticalRoute {
   /** 发起路线的队标；用于队标移动时同步路线起点 */
   teamMarkerUid: string
   /** 起点锚定方式：队标 / 干员 / 载具 / 父路线节点 / 自由起点 */
-  anchorMode: 'team' | 'operator' | 'vehicle' | 'branch' | 'free'
+  anchorMode: 'team' | 'operator' | 'vehicle' | 'building' | 'branch' | 'free'
   /** 干员独立任务路线的起点锚定干员 */
   anchorOperatorUid?: string
   /** 载具任务路线或自由路线吸附后锚定的载具 */
   anchorVehicleUid?: string
+  /** 建筑单位任务路线的起点锚定建筑。 */
+  anchorBuildingUid?: string
   name: string
+  /** 单条路线标签开关；未设置兼容为显示。 */
+  showLabel?: boolean
   orderType: TacticalOrderType
   status: TacticalOrderStatus
   /** 自定义路线色；行动类型切换时会应用该类型默认色 */
   color: string
   lineStyle: TacticalRouteLineStyle
+  geometryType?: TacticalRouteGeometry
   opacity: number
+  /** 线条粗细（像素）；旧存档缺失时使用默认值。 */
+  strokeWidth?: number
   /** 地图坐标 [lat, lng]；首点始终锚定队标 */
   waypoints: [number, number][]
   /** 指令标签的自定义地图位置；未设置时自动放在路线首段中点。 */
@@ -503,10 +650,50 @@ export interface WargameState {
   round: number
   /** 联线是否显示（数据保留，可隐藏） */
   showConnections: boolean
+  /** 枪线总显示开关；关闭时保留各兵棋的独立设置。 */
+  showFireLines: boolean
+  /** 是否显示兵棋路线的指令标签。 */
+  showRouteLabels: boolean
+  /** 旧版阶段/回合备注字段，仅用于兼容迁移。 */
+  notesMarkdown: string
+  /** 按阶段保存的 Markdown 推演备注；切换回合时保持不变。 */
+  stageNotes: Record<string, string>
+  /** 备注内粘贴图片的数据，以短 ID 引用，避免正文存入超长 data URL。 */
+  noteImages: Record<string, string>
   /** 是否处于协同关系编辑模式（依次点击两名干员建立关系） */
   connectMode: boolean
   /** 各小队作用描述（可编辑，键为队伍 id：A/B/C/D/E；缺省回退 TEAMS.desc） */
   teamRoles: Record<string, string>
+  /** 手动设置的对局状态，用于判断胜者为王载具刷新规则是否满足。 */
+  battleContext: TacticalBattleContext
+  /** 每个战术视角中本轮已经使用过的刷新规则；载具损失后仍保留。 */
+  usedVehicleRefreshRuleIds: Record<Side, string[]>
+}
+
+export interface TacticalBattleContext {
+  /** 进攻方当前兵力；防守方固定为 null，表示无限兵力。 */
+  tickets: Record<Side, number | null>
+  /** 已进行的比赛时间（秒）；null 表示尚未设置。 */
+  matchTimeSeconds: number | null
+  /** 据点实时占领状态，以据点名称为键。 */
+  objectiveStates: Record<string, TacticalObjectiveState>
+  /** 旧版简单占领列表，仅用于读取迁移。 */
+  capturedObjectives?: string[]
+  /** 据点倒计时剩余秒数，以据点名称为键；null/缺失表示尚未设置。 */
+  objectiveCountdowns: Record<string, number | null>
+  /** 已触发的地图事件名称。 */
+  mapEvents: string[]
+}
+
+export type TacticalObjectiveOwner = Side | 'neutral'
+
+export interface TacticalObjectiveState {
+  /** 据点当前归属；neutral 表示中立/正在占领。 */
+  owner: TacticalObjectiveOwner
+  /** 正在读条的一方；已有归属时只能是另一方。 */
+  capturingSide: Side | null
+  /** 连续占领进度，范围 0-100。 */
+  progress: number
 }
 
 /** 撤回/恢复历史快照：双方载具 + 双方绘制（按 地图+视角 分栈） */
@@ -520,6 +707,8 @@ export interface MapStateSnapshot {
   /** 兵棋推演队标（v11 新增，随快照入栈） */
   teams: Record<Side, TeamMarker[]>
   routes: Record<Side, TacticalRoute[]>
+  fieldSupports?: Record<Side, FieldSupportInstance[]>
+  skillActions?: OperatorSkillAction[]
 }
 
 /** 撤回/恢复历史条目 */
@@ -558,6 +747,12 @@ export interface TacticalPlan {
   teams: TeamMarker[]
   /** 该视角的队伍进攻路线 */
   routes: TacticalRoute[]
+  fieldSupports?: FieldSupportInstance[]
+  skillActions?: OperatorSkillAction[]
+  /** 保存方案时本轮已经使用的载具刷新规则（包括兵棋已损失的规则）。 */
+  usedVehicleRefreshRuleIds?: string[]
+  /** 保存方案时的兵力、时间、据点占领与地图事件状态。 */
+  battleContext?: TacticalBattleContext
 }
 
 /** 图层显示开关（问题1：地图道具等图层控制） */
@@ -573,6 +768,8 @@ export interface LayerVisibility {
   pointsFrontline: boolean
   spawns: boolean
   zones: boolean
+  /** 胜者为王的条件式载具刷新位置。 */
+  vehicleRefresh: boolean
 }
 
 /** 地图道具按类型显示开关（问题2：每个道具类型独立控制） */

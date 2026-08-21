@@ -1,5 +1,5 @@
 import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import type { BuildingUnit, BuildingUnitKind, LayerVisibility, OperatorConnection, OperatorTeam, OperatorUnit, PropVisibility, Side, TeamMarker, VehicleItem, WargameState } from '../types'
+import type { BuildingUnit, BuildingUnitKind, FieldSupportDefinition, FieldSupportInstance, LayerVisibility, ModeVehicleRefreshRule, OperatorConnection, OperatorTeam, OperatorUnit, PropVisibility, Side, TeamMarker, VehicleItem, WargameState } from '../types'
 import type { CustomVehicleTemplate } from '../config/customVehicles'
 import { Checkbox, IconChevronLeft, IconChevronRight } from './icons'
 import WargamePanel from './WargamePanel'
@@ -7,6 +7,7 @@ import WargamePanel from './WargamePanel'
 const LAYER_ITEMS: { key: keyof LayerVisibility; label: string; parent?: keyof LayerVisibility }[] = [
   { key: 'spawns', label: '复活点' },
   { key: 'zones', label: '活动区域' },
+  { key: 'vehicleRefresh', label: '载具刷新' },
 ]
 
 const POINT_LAYER_ITEMS: { key: keyof LayerVisibility; label: string }[] = [
@@ -16,12 +17,12 @@ const POINT_LAYER_ITEMS: { key: keyof LayerVisibility; label: string }[] = [
 ]
 
 /** 道具类型清单（问题2：按类型独立开关，与 MAP_PROPS 名称一致） */
-const PROP_TYPES = ['载具补给站', '固定防空炮', '固定机枪', '岸防炮', '滑索', '电梯', '固定弹药箱']
+const PROP_TYPES = ['载具补给站', '固定防空炮', '密集阵', '固定机枪', '岸防炮', '滑索', '电梯', '固定弹药箱']
 
 /** 左侧面板折叠区块 key（展开状态持久化，收缩侧栏不重置） */
 export type PanelSectionKey = 'layers' | 'props' | 'points' | 'vehicles' | 'wargame' | 'vehGroups'
 
-const LEFT_PANEL_MIN_WIDTH = 250
+const LEFT_PANEL_MIN_WIDTH = 300
 const LEFT_PANEL_DEFAULT_WIDTH = 300
 const LEFT_PANEL_MAX_WIDTH = 440
 
@@ -38,6 +39,7 @@ interface LeftPanelProps {
   onWidthChange: (width: number) => void
   layers: LayerVisibility
   onLayerChange: (key: keyof LayerVisibility, value: boolean) => void
+  vehicleRefreshAvailable: boolean
   /** 道具按类型显示开关（问题2） */
   propVis: PropVisibility
   onPropVisChange: (name: string, value: boolean) => void
@@ -90,6 +92,17 @@ interface LeftPanelProps {
   vehicles: VehicleItem[]
   buildings: BuildingUnit[]
   onAddBuilding: (kind: BuildingUnitKind, own: boolean, team?: OperatorTeam) => void
+  stageLabel: string
+  objectiveNames: string[]
+  vehicleRefreshRules: Omit<ModeVehicleRefreshRule, 'verification'>[]
+  stageOptions: Array<{ id: string; label: string }>
+  onStageChange: (stageId: string) => void
+  onRoundChange: (round: number) => void
+  roundOptions: number[]
+  onCreateRound: (copy: boolean) => void
+  onDeleteRound: () => void
+  fieldSupports: FieldSupportInstance[]
+  onAddFieldSupport: (definition: FieldSupportDefinition, side: Side) => void
 }
 
 /**
@@ -107,6 +120,7 @@ export default function LeftPanel({
   onWidthChange,
   layers,
   onLayerChange,
+  vehicleRefreshAvailable,
   propVis,
   onPropVisChange,
   sections,
@@ -137,6 +151,17 @@ export default function LeftPanel({
   vehicles,
   buildings,
   onAddBuilding,
+  stageLabel,
+  stageOptions,
+  onStageChange,
+  onRoundChange,
+  roundOptions,
+  onCreateRound,
+  onDeleteRound,
+  objectiveNames,
+  vehicleRefreshRules,
+  fieldSupports,
+  onAddFieldSupport,
 }: LeftPanelProps) {
   const [liveWidth, setLiveWidth] = useState(() => clampLeftPanelWidth(width))
   const [resizing, setResizing] = useState(false)
@@ -205,16 +230,12 @@ export default function LeftPanel({
     onWidthChange(nextWidth)
   }
 
-  if (!open) {
-    return (
-      <button className="collapse-float left" onClick={onToggle} title="展开战术面板" aria-label="展开战术面板">
-        <IconChevronRight size={16} />
-      </button>
-    )
-  }
-
   return (
-    <aside className={`left-panel ${resizing ? 'resizing' : ''}`} style={{ width: liveWidth }}>
+    <>
+    {!open && <button className="collapse-float left" onClick={onToggle} title="展开战术面板" aria-label="展开战术面板">
+      <IconChevronRight size={16} />
+    </button>}
+    <aside className={`left-panel ${open ? '' : 'collapsed'} ${resizing ? 'resizing' : ''}`} style={{ width: open ? liveWidth : 0 }} aria-hidden={!open}>
       <div
         className="left-panel-resizer"
         role="separator"
@@ -326,7 +347,7 @@ export default function LeftPanel({
                 </div>
               )}
             </div>
-            {LAYER_ITEMS.map((it) => (
+            {LAYER_ITEMS.filter((item) => item.key !== 'vehicleRefresh' || vehicleRefreshAvailable).map((it) => (
               <Checkbox
                 key={it.key}
                 checked={layers[it.key]}
@@ -361,6 +382,12 @@ export default function LeftPanel({
           connectionCount={connectionCount}
           connections={connections}
           onWargameChange={onWargameChange}
+          stageOptions={stageOptions}
+          onStageChange={onStageChange}
+          onRoundChange={onRoundChange}
+          roundOptions={roundOptions}
+          onCreateRound={onCreateRound}
+          onDeleteRound={onDeleteRound}
           onOperatorChange={onOperatorChange}
           onRenameOperator={onOperatorRename}
           onStatusChange={onOperatorStatusChange}
@@ -384,9 +411,15 @@ export default function LeftPanel({
           vehicles={vehicles}
           buildings={buildings}
           onAddBuilding={onAddBuilding}
+          stageLabel={stageLabel}
+          objectiveNames={objectiveNames}
+          vehicleRefreshRules={vehicleRefreshRules}
+          fieldSupports={fieldSupports}
+          onAddFieldSupport={onAddFieldSupport}
         />
       </details>
       </div>
     </aside>
+    </>
   )
 }

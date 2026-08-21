@@ -11,6 +11,7 @@ function capacitorBridge(): CapacitorBridge | undefined {
 
 function detectPlatformKind(): PlatformKind {
   const demoParams = new URLSearchParams(window.location.search)
+  if (import.meta.env.DEV && demoParams.get('platformDemo') === 'android') return 'android'
   if (demoParams.get('cinematicDemoFrame') === '1' && demoParams.get('platformDemo') === 'android') return 'android'
   const capacitor = capacitorBridge()
   if (capacitor?.getPlatform?.() === 'android') return 'android'
@@ -37,7 +38,31 @@ async function toggleFullscreen(): Promise<void> {
 }
 
 async function downloadText(filename: string, text: string, mime?: string): Promise<void> {
-  // Android 接入 Capacitor Filesystem/Share 后只需替换本实现；当前 Web 下载可继续用于浏览器和桌面端。
+  if (kind === 'android' && capacitorBridge()?.isNativePlatform?.() === true) {
+    try {
+      const [{ Directory, Encoding, Filesystem }, { Share }] = await Promise.all([
+        import('@capacitor/filesystem'),
+        import('@capacitor/share'),
+      ])
+      const result = await Filesystem.writeFile({
+        path: `exports/${Date.now()}_${filename}`,
+        data: text,
+        directory: Directory.Cache,
+        encoding: Encoding.UTF8,
+        recursive: true,
+      })
+      await Share.share({
+        title: filename,
+        url: result.uri,
+        dialogTitle: '导出到',
+      })
+    } catch (error) {
+      // 用户关闭系统分享面板属于正常操作。
+      if (!/cancel/i.test(String(error))) console.error('Android 文件导出失败', error)
+    }
+    return
+  }
+
   const contentType = mime ?? (filename.toLowerCase().endsWith('.json') ? 'application/json' : 'text/html')
   const blob = new Blob([text], { type: `${contentType};charset=utf-8` })
   const url = URL.createObjectURL(blob)

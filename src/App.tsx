@@ -11,17 +11,21 @@ import type {
   MapState,
   MapStateSnapshot,
   ModeConfigStore,
+  ModeVehicleRefreshPoint,
+  ModeVehicleRefreshRule,
   PropVisibility,
   Side,
+  TacticalBucket,
   TacticalPlan,
   TacticalRoute,
+  TacticalObjectiveState,
   TeamMarker,
   ToolMode,
   VehicleItem,
   WargameState,
 } from './types'
 import { MAP_BY_ID } from './config/maps'
-import { buildingsBucketOf, createEmptyMapState, loadState, saveState, vehiclesBucketOf, operatorsBucketOf, connectionsBucketOf, teamsBucketOf, routesBucketOf, wargameOf } from './utils/storage'
+import { applyTacticalBucket, buildingsBucketOf, createEmptyMapState, createTacticalRound, fieldSupportsBucketOf, loadState, normalizeDrawingGeoJson, normalizeTacticalBucket, saveState, snapshotTacticalBucket, syncActiveTacticalBucket, tacticalBucketKey, vehiclesBucketOf, operatorsBucketOf, connectionsBucketOf, teamsBucketOf, routesBucketOf, wargameOf } from './utils/storage'
 import { emptyGeoJson, genUid } from './utils/geo'
 import { buildTacticalHtml, downloadText } from './utils/exportTactical'
 import type { CustomVehicleTemplate } from './config/customVehicles'
@@ -29,6 +33,9 @@ import type { DeployVehicleEntry } from './config/deployVehicles'
 import { buildDefaultOperators } from './config/operators'
 import { buildingUnitOf } from './config/buildingUnits'
 import { defaultProfileForTeam, profileOf } from './config/operatorProfiles'
+const SHARED_SMOKE_WIDTH_RATIO = 0.04
+const SHARED_SMOKE_RADIUS_RATIO = 0.004
+import { operatorSkillsOf, type OperatorSkillDefinition } from './config/operatorSkills'
 import type { OperatorConnection, OperatorTeam, OperatorUnit } from './types'
 import type { DeployTarget } from './components/DeployBar'
 import DeployBar from './components/DeployBar'
@@ -50,16 +57,54 @@ import {
 import { platform } from './platform'
 import { useDeviceType } from './hooks/useDeviceType'
 import { propsForPlatform, stagesForPlatform, type GameDataPlatform } from './config/gameDataPlatform'
+import { evaluateVehicleRefreshRule } from './utils/vehicleRefreshRuntime'
 
 const DEFAULT_MAP_IDS = ['ascent', 'flashpoint', 'fault', 'brokentrack', 'colosseum', 'stormeye', 'ember', 'pyramid', 'trench', 'umuscanal', 'aftershock']
 const DEFAULT_PROP_VIS: PropVisibility = {
   载具补给站: true,
   固定防空炮: true,
+  密集阵: true,
   固定机枪: true,
   岸防炮: true,
   滑索: true,
   电梯: true,
   固定弹药箱: true,
+}
+
+/**
+ * 切换阶段时统一归属：推进所完成的阶段归攻方；每次进入的目标阶段
+ * 都重置为中立；目标阶段之后所有未激活据点归守方。
+ */
+function normalizeObjectivesForStageChange(
+  state: MapState,
+  stageList: Array<{ points: CapturePoint[] }>,
+  fromIndex: number,
+  toIndex: number,
+): MapState {
+  const currentWargame = wargameOf(state)
+  const objectiveStates = { ...currentWargame.battleContext.objectiveStates }
+  if (toIndex > fromIndex) {
+    for (let stageIndex = Math.max(0, fromIndex); stageIndex < toIndex; stageIndex += 1) {
+      for (const point of stageList[stageIndex]?.points ?? []) {
+        objectiveStates[point.name] = { owner: 'attack', capturingSide: null, progress: 100 }
+      }
+    }
+  }
+  for (const point of stageList[toIndex]?.points ?? []) {
+    objectiveStates[point.name] = { owner: 'neutral', capturingSide: null, progress: 0 }
+  }
+  for (let stageIndex = toIndex + 1; stageIndex < stageList.length; stageIndex += 1) {
+    for (const point of stageList[stageIndex]?.points ?? []) {
+      objectiveStates[point.name] = { owner: 'defense', capturingSide: null, progress: 100 }
+    }
+  }
+  return {
+    ...state,
+    wargame: {
+      ...currentWargame,
+      battleContext: { ...currentWargame.battleContext, objectiveStates },
+    },
+  }
 }
 
 /** 将分支路线首点递归吸附到父路线节点；父节点删除时自动夹取到仍存在的最近节点。 */
@@ -235,6 +280,7 @@ export default function App() {
   } | null>(null)
   // 底部载具部署栏：点击出生点后显示该出生点可部署载具
   const [deployTarget, setDeployTarget] = useState<DeployTarget | null>(null)
+  const [skillActionDraft, setSkillActionDraft] = useState<{ operator: OperatorUnit; skill: OperatorSkillDefinition } | null>(null)
   // 自定义载具部署阵营：本方（绿底）/ 敌方（红底）
   const [customOwn, setCustomOwn] = useState<boolean>(true)
   // 战术方案库（第二十一轮：各阶段默认战术部署，按 地图×阶段×视角 保存）
@@ -249,12 +295,13 @@ export default function App() {
     confirmLabel: string
     onConfirm: () => void
   } | null>(null)
+  const [refreshVehicleDelete, setRefreshVehicleDelete] = useState<{ vehicles: VehicleItem[]; uids: string[] } | null>(null)
   // 左右工具栏折叠 + 图层/道具显示开关（问题1/2/8）+ 画笔设置（问题4）
   const [ui, setUi] = useState(() => ({
-    paletteOpen: isCinematicMapOnly || isCinematicMobileFrame || cinematicLayoutPreset === 'platformCompare' || cinematicLayoutPreset === 'backdrop' ? false : persisted?.ui?.paletteOpen ?? true,
-    panelOpen: isCinematicMapOnly || isCinematicMobileFrame || cinematicLayoutPreset === 'winnerA' || cinematicLayoutPreset === 'platformCompare' || cinematicLayoutPreset === 'backdrop' ? false : persisted?.ui?.panelOpen ?? true,
-    legendOpen: isCinematicMapOnly || Boolean(cinematicDefenseDemo) || cinematicLayoutPreset === 'backdrop' ? false : persisted?.ui?.legendOpen ?? true,
-    leftPanelWidth: Math.max(250, Math.min(440, persisted?.ui?.leftPanelWidth ?? 300)),
+    paletteOpen: device.mobileLayout || isCinematicMapOnly || isCinematicMobileFrame || cinematicLayoutPreset === 'platformCompare' || cinematicLayoutPreset === 'backdrop' ? false : persisted?.ui?.paletteOpen ?? true,
+    panelOpen: device.mobileLayout || isCinematicMapOnly || isCinematicMobileFrame || cinematicLayoutPreset === 'winnerA' || cinematicLayoutPreset === 'platformCompare' || cinematicLayoutPreset === 'backdrop' ? false : persisted?.ui?.panelOpen ?? true,
+    legendOpen: device.mobileLayout || isCinematicMapOnly || Boolean(cinematicDefenseDemo) || cinematicLayoutPreset === 'backdrop' ? false : persisted?.ui?.legendOpen ?? true,
+    leftPanelWidth: Math.max(300, Math.min(440, persisted?.ui?.leftPanelWidth ?? 300)),
     layers: {
       props: cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.props ?? true,
       points: cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.points ?? true,
@@ -263,6 +310,7 @@ export default function App() {
       pointsFrontline: cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.pointsFrontline ?? true,
       spawns: cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.spawns ?? true,
       zones: cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.zones ?? true,
+      vehicleRefresh: persisted?.ui?.layers?.vehicleRefresh ?? true,
     } as LayerVisibility,
     propVis: {
       ...DEFAULT_PROP_VIS,
@@ -310,8 +358,12 @@ export default function App() {
     [modeStore.activeModeId, modeStore.profiles],
   )
   const activeModeMap = useMemo(
-    () => activeModeProfile ? activeModeProfile.maps[mapId] ?? emptyModeMapOverride(mapId) : null,
-    [activeModeProfile, mapId],
+    () => activeModeProfile
+      ? (activeModeProfile.id === 'attack-defense' ? activeModeProfile.platformMaps?.[gameDataPlatform] : activeModeProfile.maps)?.[mapId]
+        ?? activeModeProfile.maps[mapId]
+        ?? emptyModeMapOverride(mapId)
+      : null,
+    [activeModeProfile, gameDataPlatform, mapId],
   )
   const gameModeName = activeModeProfile?.name ?? '攻防模式'
   const modeStageKey = activeModeProfile ? `${activeModeProfile.id}:${mapId}` : ''
@@ -321,28 +373,101 @@ export default function App() {
       : activeModeMap.stages[0]?.id ?? 'S1'
     : null
   const activeOfficialMode = useMemo(
-    () => activeModeProfile ? buildOfficialModeData(activeModeProfile) : null,
-    [activeModeProfile],
+    () => activeModeProfile ? buildOfficialModeData(activeModeProfile, gameDataPlatform) : null,
+    [activeModeProfile, gameDataPlatform],
   )
   const activeOfficialModeMap = activeOfficialMode?.maps[mapId] ?? null
   const pointPanelStages = activeOfficialModeMap?.stages.length ? activeOfficialModeMap.stages : stages
   const pointPanelStageIndex = activeOfficialModeMap?.stages.length
     ? Math.max(0, activeOfficialModeMap.stages.findIndex((stage) => stage.id === activeModeStageId))
     : capturedStageIndex
+  const initializedMapEntryRef = useRef('')
+
+  // 每次实际进入“数据端 + 模式 + 地图”组合时都从第一阶段开始：当前
+  // 第一阶段据点为中立，后续据点为守方。使用 entry key 防止同一张地图
+  // 停留期间因普通状态更新而反复覆盖用户手动设置的据点归属。
+  useEffect(() => {
+    const entryKey = `${gameDataPlatform}:${activeModeProfile?.id ?? 'attack-defense'}:${mapId}`
+    if (initializedMapEntryRef.current === entryKey) return
+    initializedMapEntryRef.current = entryKey
+    const entryStages = activeOfficialModeMap?.stages.length ? activeOfficialModeMap.stages : stages
+    const firstStageId = entryStages[0]?.id
+    if (!firstStageId) return
+
+    setProgress((current) => current[mapId] === 0 ? current : { ...current, [mapId]: 0 })
+    if (activeModeProfile) {
+      const entryModeStageKey = `${activeModeProfile.id}:${mapId}`
+      setModeStageSelection((current) => current[entryModeStageKey] === firstStageId
+        ? current
+        : { ...current, [entryModeStageKey]: firstStageId })
+    }
+    setMaps((current) => {
+      const state = current[mapId] ?? createEmptyMapState()
+      const normalized = normalizeObjectivesForStageChange(state, entryStages, 0, 0)
+      return { ...current, [mapId]: normalized }
+    })
+    setSelectedPoint(null)
+    setDeployTarget(null)
+  }, [activeModeProfile, activeOfficialModeMap, gameDataPlatform, mapId, stages])
 
   const handleSelectModeStage = useCallback((id: string) => {
     if (!modeStageKey || !activeModeMap?.stages.some((stage) => stage.id === id)) return
+    const fromIndex = Math.max(0, activeModeMap.stages.findIndex((stage) => stage.id === activeModeStageId))
+    const toIndex = activeModeMap.stages.findIndex((stage) => stage.id === id)
+    if (toIndex !== fromIndex) {
+      setMaps((current) => {
+        const state = current[mapId] ?? createEmptyMapState()
+        const sourceStage = activeModeStageId || activeOfficialModeMap?.stages?.[fromIndex]?.id || 'S1'
+        const sourceBucket = snapshotTacticalBucket(state, sourceStage, wargameOf(state).round)
+        const previousStore = state.tacticalBuckets ?? { activeKey: sourceBucket.key, buckets: {} }
+        const stored = { ...previousStore.buckets, [sourceBucket.key]: sourceBucket }
+        const targetStage = id
+        const currentRoundKey = tacticalBucketKey(targetStage, wargameOf(state).round)
+        const existingTarget = stored[currentRoundKey]
+          ?? Object.values(stored).filter((bucket) => bucket.stageId === targetStage).sort((a, b) => a.round - b.round)[0]
+        const emptyTarget = createEmptyMapState()
+        emptyTarget.operators = {
+          attack: operatorsBucketOf(state).attack.map((operator) => ({ ...structuredClone(operator), lat: null, lng: null })),
+          defense: operatorsBucketOf(state).defense.map((operator) => ({ ...structuredClone(operator), lat: null, lng: null })),
+        }
+        const targetBase = existingTarget ?? snapshotTacticalBucket(emptyTarget, targetStage, 1)
+        const target = {
+          ...targetBase,
+          operators: {
+            attack: targetBase.operators.attack.length ? targetBase.operators.attack : emptyTarget.operators.attack,
+            defense: targetBase.operators.defense.length ? targetBase.operators.defense : emptyTarget.operators.defense,
+          },
+        }
+        stored[target.key] = target
+        const staged = { ...normalizeObjectivesForStageChange({ ...state, tacticalBuckets: { activeKey: sourceBucket.key, buckets: stored } }, activeOfficialModeMap?.stages ?? [], fromIndex, toIndex), tacticalBuckets: { activeKey: sourceBucket.key, buckets: stored } }
+        return { ...current, [mapId]: applyTacticalBucket({ ...staged, tacticalBuckets: { activeKey: target.key, buckets: stored } }, target) }
+      })
+    }
     setModeStageSelection((current) => ({ ...current, [modeStageKey]: id }))
     setSelectedPoint(null)
     setDeployTarget(null)
-  }, [activeModeMap, modeStageKey])
+  }, [activeModeMap, activeModeStageId, activeOfficialModeMap, mapId, modeStageKey])
 
   const updateMap = useCallback((id: string, fn: (s: MapState) => MapState) => {
-    setMaps((prev) => ({
-      ...prev,
-      [id]: fn(prev[id] ?? createEmptyMapState()),
-    }))
-  }, [])
+    setMaps((prev) => {
+      const before = prev[id] ?? createEmptyMapState()
+      const next = fn(before)
+      const tacticalContentChanged =
+        next.vehicles !== before.vehicles
+        || next.buildings !== before.buildings
+        || next.drawings !== before.drawings
+        || next.operators !== before.operators
+        || next.connections !== before.connections
+        || next.teams !== before.teams
+        || next.routes !== before.routes
+        || next.fieldSupports !== before.fieldSupports
+        || next.skillActions !== before.skillActions
+      const synced = tacticalContentChanged
+        ? syncActiveTacticalBucket(next, activeModeStageId ?? stages[capturedStageIndex]?.id ?? 'S1')
+        : next
+      return { ...prev, [id]: synced }
+    })
+  }, [activeModeStageId, capturedStageIndex, stages])
 
   const handleOpenModeEditor = useCallback(() => {
     const editor = platform.openPath(
@@ -751,7 +876,7 @@ export default function App() {
         ...vehiclesBucketOf(current),
         [view]: [{
           uid: vehicleUid, name: 'M1A4主战坦克', category: 'tank', side: view, team: 'B', badge: '坦',
-          iconUrl: '/icons/vehicles/deploy_m1a4zztk.png', lat: center.lat, lng: center.lng, stageId: cinematicDemoStage ?? 'S1', rotation: 0, custom: true,
+          iconUrl: '/icons/vehicles/legend/主战坦克.png', lat: center.lat, lng: center.lng, stageId: cinematicDemoStage ?? 'S1', rotation: 0, custom: true,
         }],
       },
       buildings: {
@@ -1137,18 +1262,18 @@ export default function App() {
     const entry = bucket?.undo.pop()
     if (!entry) return
     bucket.redo.push(entry)
-    setMaps((prev) => ({ ...prev, [mapId]: { ...prev[mapId], ...entry.before } }))
+    updateMap(mapId, (state) => ({ ...state, ...entry.before }))
     setHistVersion((v) => v + 1)
-  }, [mapId, view])
+  }, [mapId, updateMap, view])
 
   const handleRedo = useCallback(() => {
     const bucket = historyRef.current[`${mapId}:${view}`]
     const entry = bucket?.redo.pop()
     if (!entry) return
     bucket.undo.push(entry)
-    setMaps((prev) => ({ ...prev, [mapId]: { ...prev[mapId], ...entry.after } }))
+    updateMap(mapId, (state) => ({ ...state, ...entry.after }))
     setHistVersion((v) => v + 1)
-  }, [mapId, view])
+  }, [mapId, updateMap, view])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1171,6 +1296,7 @@ export default function App() {
 
   // 删除选中（第十二轮：套索圈选后工具栏按钮删除；信号 + 是否有选中上报）
   const [deleteSelectedTick, setDeleteSelectedTick] = useState(0)
+  const [clearDrawTick, setClearDrawTick] = useState(0)
   const [deleteSelCount, setDeleteSelCount] = useState(0)
   const handleDeleteSelected = useCallback(() => setDeleteSelectedTick((t) => t + 1), [])
 
@@ -1328,6 +1454,13 @@ export default function App() {
     [updateMap, mapId, view, cloneState, pushEntry],
   )
 
+  const handleToggleVehicleFireLine = useCallback((uid: string) => {
+    updateMap(mapId, (state) => {
+      const bucket = vehiclesBucketOf(state)
+      return { ...state, vehicles: { ...bucket, [view]: bucket[view].map((item) => item.uid === uid ? { ...item, fireLineEnabled: !item.fireLineEnabled } : item) } }
+    })
+  }, [mapId, updateMap, view])
+
   /** 快捷切换载具阵营（攻↔守）：底色随视角实时判定，切换 side 后自动反转 */
   const handleToggleVehicleSide = useCallback(
     (uid: string) => {
@@ -1421,9 +1554,31 @@ export default function App() {
   const handleMoveBuilding = useCallback((uid: string, lat: number, lng: number) => {
     const cur = mapsRef.current[mapId] ?? createEmptyMapState()
     const before = cloneState(cur)
+    const originalBuilding = buildingsBucketOf(cur)[view].find((item) => item.uid === uid)
     const nextBuildings = buildingsBucketOf(cur)[view].map((item) => item.uid === uid ? { ...item, lat, lng } : item)
-    updateMap(mapId, (state) => ({ ...state, buildings: { ...buildingsBucketOf(state), [view]: nextBuildings } }))
-    pushEntry(before, { ...before, buildings: { ...(before.buildings ?? { attack: [], defense: [] }), [view]: nextBuildings } })
+    const nextRoutes = routesBucketOf(cur)[view].map((route) => {
+      const oldPoint = route.waypoints[0]
+      const legacyBuildingRoute = Boolean(
+        originalBuilding
+        && route.anchorMode === 'free'
+        && oldPoint
+        && Math.abs(oldPoint[0] - originalBuilding.lat) < 1e-6
+        && Math.abs(oldPoint[1] - originalBuilding.lng) < 1e-6,
+      )
+      return (route.anchorMode === 'building' && route.anchorBuildingUid === uid) || legacyBuildingRoute
+        ? { ...route, anchorMode: 'building' as const, anchorBuildingUid: uid, waypoints: [[lat, lng] as [number, number], ...route.waypoints.slice(1)] }
+        : route
+    })
+    updateMap(mapId, (state) => ({
+      ...state,
+      buildings: { ...buildingsBucketOf(state), [view]: nextBuildings },
+      routes: { ...routesBucketOf(state), [view]: nextRoutes },
+    }))
+    pushEntry(before, {
+      ...before,
+      buildings: { ...(before.buildings ?? { attack: [], defense: [] }), [view]: nextBuildings },
+      routes: { ...before.routes, [view]: nextRoutes },
+    })
   }, [cloneState, mapId, pushEntry, updateMap, view])
 
   const handleRotateBuilding = useCallback((uid: string, rotation: number) => {
@@ -1444,6 +1599,13 @@ export default function App() {
       delete buildingRotateSessionRef.current[uid]
     }, 300)
   }, [cloneState, mapId, pushEntry, updateMap, view])
+
+  const handleToggleBuildingFireLine = useCallback((uid: string) => {
+    updateMap(mapId, (state) => {
+      const bucket = buildingsBucketOf(state)
+      return { ...state, buildings: { ...bucket, [view]: bucket[view].map((item) => item.uid === uid ? { ...item, fireLineEnabled: !item.fireLineEnabled } : item) } }
+    })
+  }, [mapId, updateMap, view])
 
   const handleToggleBuildingSide = useCallback((uid: string) => {
     const cur = mapsRef.current[mapId] ?? createEmptyMapState()
@@ -1467,8 +1629,12 @@ export default function App() {
     const cur = mapsRef.current[mapId] ?? createEmptyMapState()
     const before = cloneState(cur)
     const nextBuildings = buildingsBucketOf(cur)[view].filter((item) => item.uid !== uid)
-    updateMap(mapId, (state) => ({ ...state, buildings: { ...buildingsBucketOf(state), [view]: nextBuildings } }))
-    pushEntry(before, { ...before, buildings: { ...(before.buildings ?? { attack: [], defense: [] }), [view]: nextBuildings } })
+    const currentRoutes = routesBucketOf(cur)[view]
+    const removedRouteIds = new Set<string>()
+    currentRoutes.forEach((route) => { if (route.anchorMode === 'building' && route.anchorBuildingUid === uid) removedRouteIds.add(route.uid) })
+    const nextRoutes = currentRoutes.filter((route) => !removedRouteIds.has(route.uid))
+    updateMap(mapId, (state) => ({ ...state, buildings: { ...buildingsBucketOf(state), [view]: nextBuildings }, routes: { ...routesBucketOf(state), [view]: nextRoutes } }))
+    pushEntry(before, { ...before, buildings: { ...(before.buildings ?? { attack: [], defense: [] }), [view]: nextBuildings }, routes: { ...before.routes, [view]: nextRoutes } })
   }, [cloneState, mapId, pushEntry, updateMap, view])
 
   const handleMoveVehicle = useCallback(
@@ -1532,31 +1698,115 @@ export default function App() {
     [commitVehicleChange, view],
   )
 
-  const handleDeleteVehicle = useCallback(
-    (uid: string) => {
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
-      const before = cloneState(cur)
-      const nextVehicles = vehiclesBucketOf(cur)[view].filter((vehicle) => vehicle.uid !== uid)
-      const nextRoutes = routesBucketOf(cur)[view].map((route) => ({
-        ...route,
-        vehicleIds: route.vehicleIds.filter((vehicleUid) => vehicleUid !== uid),
-        ...(route.anchorMode === 'vehicle' && route.anchorVehicleUid === uid
-          ? { anchorMode: 'free' as const, anchorVehicleUid: undefined }
-          : {}),
-        ...(route.target?.kind === 'vehicle' && route.target.uid === uid ? { target: undefined } : {}),
-      }))
-      updateMap(mapId, (state) => ({
+  const handleDeployVehicleRefresh = useCallback((
+    rule: Omit<ModeVehicleRefreshRule, 'verification'>,
+    point: Omit<ModeVehicleRefreshPoint, 'verification'>,
+    force: boolean,
+  ) => {
+    const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+    const currentWargame = wargameOf(cur)
+    if (currentWargame.usedVehicleRefreshRuleIds[view].includes(rule.uid) || rule.action !== 'refresh') return
+    if (!force && activeOfficialModeMap && !evaluateVehicleRefreshRule(rule, currentWargame.battleContext, {
+      stages: activeOfficialModeMap.stages,
+      currentStageIndex: pointPanelStageIndex,
+    }).eligible) return
+    const before = cloneState(cur)
+    const currentVehicles = vehiclesBucketOf(cur)[view]
+    const created: VehicleItem[] = Array.from({ length: Math.max(1, rule.quantity) }, (_, index) => ({
+      uid: genUid('veh'),
+      name: rule.vehicle.name,
+      category: rule.vehicle.category,
+      side: rule.side,
+      badge: rule.vehicle.badge,
+      iconUrl: rule.vehicle.iconUrl,
+      lat: point.lat + index * 2.4,
+      lng: point.lng,
+      stageId: activeModeStageId ?? '',
+      rotation: 0,
+      own: rule.side === view,
+      sourceType: 'vehicle-refresh',
+      sourceRuleUid: rule.uid,
+      sourcePointUid: point.uid,
+    }))
+    const nextVehicles = [...currentVehicles, ...created]
+    const nextUsed = [...currentWargame.usedVehicleRefreshRuleIds[view], rule.uid]
+    updateMap(mapId, (state) => ({
+      ...state,
+      vehicles: { ...vehiclesBucketOf(state), [view]: nextVehicles },
+      wargame: {
+        ...wargameOf(state),
+        usedVehicleRefreshRuleIds: { ...wargameOf(state).usedVehicleRefreshRuleIds, [view]: nextUsed },
+      },
+    }))
+    pushEntry(before, { ...before, vehicles: { ...before.vehicles, [view]: nextVehicles } })
+    setTool('pan')
+  }, [activeModeStageId, activeOfficialModeMap, cloneState, mapId, pointPanelStageIndex, pushEntry, updateMap, view])
+
+  const locateVehicleRefreshRule = useCallback((ruleUid: string) => {
+    const vehicle = vehiclesBucketOf(mapsRef.current[mapId])[view].find((item) => item.sourceRuleUid === ruleUid)
+    if (!vehicle) return
+    mapRef.current?.setView([vehicle.lat, vehicle.lng], Math.max(mapRef.current.getZoom(), 4), { animate: true })
+  }, [mapId, view])
+
+  const locateVehicleRefreshSource = useCallback((vehicle: VehicleItem) => {
+    if (!vehicle.sourcePointUid) return
+    const point = activeOfficialModeMap?.vehicleRefreshPoints.find((item) => item.uid === vehicle.sourcePointUid)
+    if (!point) return
+    mapRef.current?.setView([point.lat, point.lng], Math.max(mapRef.current.getZoom(), 4), { animate: true })
+  }, [activeOfficialModeMap])
+
+  const deleteVehicleInstances = useCallback((uids: string[], restoreRules: boolean) => {
+    const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+    const before = cloneState(cur)
+    const currentVehicles = vehiclesBucketOf(cur)[view]
+    const selected = currentVehicles.filter((vehicle) => uids.includes(vehicle.uid))
+    if (selected.length === 0) return
+    const restoredRuleIds = new Set(restoreRules ? selected.map((vehicle) => vehicle.sourceRuleUid).filter((uid): uid is string => Boolean(uid)) : [])
+    const removedIds = new Set(currentVehicles
+      .filter((vehicle) => uids.includes(vehicle.uid) || vehicle.sourceRuleUid && restoredRuleIds.has(vehicle.sourceRuleUid))
+      .map((vehicle) => vehicle.uid))
+    const nextVehicles = currentVehicles.filter((vehicle) => !removedIds.has(vehicle.uid))
+    const currentRoutes = routesBucketOf(cur)[view]
+    const removedRouteIds = new Set<string>()
+    currentRoutes.forEach((route) => { if (route.anchorMode === 'vehicle' && route.anchorVehicleUid && removedIds.has(route.anchorVehicleUid)) removedRouteIds.add(route.uid) })
+    const nextRoutes = currentRoutes.filter((route) => !removedRouteIds.has(route.uid)).map((route) => ({ ...route, vehicleIds: route.vehicleIds.filter((vehicleUid) => !removedIds.has(vehicleUid)), ...(route.target?.kind === 'vehicle' && removedIds.has(route.target.uid) ? { target: undefined } : {}) }))
+    updateMap(mapId, (state) => {
+      const currentWargame = wargameOf(state)
+      const used = restoredRuleIds.size > 0
+        ? currentWargame.usedVehicleRefreshRuleIds[view].filter((ruleUid) => !restoredRuleIds.has(ruleUid))
+        : currentWargame.usedVehicleRefreshRuleIds[view]
+      return {
         ...state,
         vehicles: { ...vehiclesBucketOf(state), [view]: nextVehicles },
         routes: { ...routesBucketOf(state), [view]: nextRoutes },
-      }))
-      pushEntry(before, {
-        ...before,
-        vehicles: { ...before.vehicles, [view]: nextVehicles },
-        routes: { ...before.routes, [view]: nextRoutes },
-      })
+        wargame: { ...currentWargame, usedVehicleRefreshRuleIds: { ...currentWargame.usedVehicleRefreshRuleIds, [view]: used } },
+      }
+    })
+    pushEntry(before, { ...before, vehicles: { ...before.vehicles, [view]: nextVehicles }, routes: { ...before.routes, [view]: nextRoutes } })
+  }, [cloneState, mapId, pushEntry, updateMap, view])
+
+  const handleRestoreVehicleRefresh = useCallback((ruleUid: string) => {
+    const vehicle = vehiclesBucketOf(mapsRef.current[mapId])[view].find((item) => item.sourceRuleUid === ruleUid)
+    if (vehicle) {
+      deleteVehicleInstances([vehicle.uid], true)
+      return
+    }
+    updateMap(mapId, (state) => {
+      const currentWargame = wargameOf(state)
+      return { ...state, wargame: { ...currentWargame, usedVehicleRefreshRuleIds: { ...currentWargame.usedVehicleRefreshRuleIds, [view]: currentWargame.usedVehicleRefreshRuleIds[view].filter((uid) => uid !== ruleUid) } } }
+    })
+  }, [deleteVehicleInstances, mapId, updateMap, view])
+
+  const handleDeleteVehicle = useCallback(
+    (uid: string) => {
+      const vehicle = vehiclesBucketOf(mapsRef.current[mapId])[view].find((item) => item.uid === uid)
+      if (vehicle?.sourceType === 'vehicle-refresh') {
+        setRefreshVehicleDelete({ vehicles: [vehicle], uids: [uid] })
+        return
+      }
+      deleteVehicleInstances([uid], false)
     },
-    [mapId, view, cloneState, pushEntry, updateMap],
+    [deleteVehicleInstances, mapId, view],
   )
 
   /** 批量移动载具（套索整体移动，第十四轮）：一次入历史栈 */
@@ -1590,6 +1840,12 @@ export default function App() {
   /** 批量删除载具（套索 Delete/删除按钮，第十四轮）：一次入历史栈 */
   const handleDeleteVehicles = useCallback(
     (uids: string[]) => {
+      const selectedVehicles = vehiclesBucketOf(mapsRef.current[mapId])[view].filter((vehicle) => uids.includes(vehicle.uid))
+      const refreshVehicles = selectedVehicles.filter((vehicle) => vehicle.sourceType === 'vehicle-refresh')
+      if (refreshVehicles.length > 0) {
+        setRefreshVehicleDelete({ vehicles: refreshVehicles, uids })
+        return
+      }
       const set = new Set(uids)
       const cur = mapsRef.current[mapId] ?? createEmptyMapState()
       const before = cloneState(cur)
@@ -1618,23 +1874,14 @@ export default function App() {
 
   const handleDrawSaved = useCallback(
     (side: Side, geoJson: string) => {
-      updateMap(mapId, (s) => ({
-        ...s,
-        drawings: { ...s.drawings, [side]: geoJson },
-      }))
+      updateMap(mapId, (s) => ({ ...s, drawings: { ...s.drawings, [side]: geoJson } }))
     },
-    [updateMap, mapId],
+    [mapId, updateMap],
   )
 
   const clearCurrentDraw = useCallback(() => {
-    // 清空入历史栈（可撤回）
-    const cur = mapsRef.current[mapId] ?? createEmptyMapState()
-    pushEntry(cloneState(cur), { ...cloneState(cur), drawings: { ...cur.drawings, [view]: emptyGeoJson() } })
-    updateMap(mapId, (s) => ({
-      ...s,
-      drawings: { ...s.drawings, [view]: emptyGeoJson() },
-    }))
-  }, [updateMap, mapId, view, cloneState, pushEntry])
+    setClearDrawTick((tick) => tick + 1)
+  }, [])
 
   const handleClearDraw = useCallback(() => {
     if (platform.kind === 'android') {
@@ -1690,9 +1937,12 @@ export default function App() {
       teams: { attack: [], defense: [] },
       routes: { attack: [], defense: [] },
       buildings: { attack: [], defense: [] },
+      fieldSupports: { attack: [], defense: [] },
+      skillActions: [],
     }
     pushEntry(before, after)
     updateMap(mapId, (s) => ({
+      ...s,
       vehicles: { attack: [], defense: [] },
       buildings: { attack: [], defense: [] },
       drawings: { attack: emptyGeoJson(), defense: emptyGeoJson() },
@@ -1704,6 +1954,8 @@ export default function App() {
       connections: { ...connectionsBucketOf(s) },
       teams: { attack: [], defense: [] },
       routes: { attack: [], defense: [] },
+      fieldSupports: { attack: [], defense: [] },
+      skillActions: [],
       wargame: { ...wargameOf(s) },
     }))
   }, [mapId, cloneState, pushEntry, updateMap])
@@ -1730,6 +1982,42 @@ export default function App() {
   const operators = operatorsBucketOf(state)[view]
   const connections = connectionsBucketOf(state)[view]
   const wargame = wargameOf(state)
+  const fieldSupports = fieldSupportsBucketOf(state)[view]
+
+  const handleAddFieldSupport = useCallback((definition: import('./types').FieldSupportDefinition, side: Side) => {
+    const center = mapRef.current?.getCenter() ?? { lat: 0, lng: 0 }
+    const stageId = activeModeStageId ?? stages[capturedStageIndex]?.id ?? 'S1'
+    updateMap(mapId, (current) => {
+      const buckets = fieldSupportsBucketOf(current)
+      const item: import('./types').FieldSupportInstance = {
+        uid: genUid('support'),
+        definitionId: definition.id,
+        name: definition.name,
+        iconUrl: definition.iconUrl,
+        side,
+        lat: center.lat,
+        lng: center.lng,
+        radius: definition.defaultRadius,
+        stageId,
+      }
+      return { ...current, fieldSupports: { ...buckets, [view]: [...buckets[view], item] } }
+    })
+    setTool('pan')
+  }, [activeModeStageId, capturedStageIndex, mapId, stages, updateMap, view])
+
+  const handleMoveFieldSupport = useCallback((uid: string, lat: number, lng: number) => {
+    updateMap(mapId, (current) => {
+      const buckets = fieldSupportsBucketOf(current)
+      return { ...current, fieldSupports: { ...buckets, [view]: buckets[view].map((item) => item.uid === uid ? { ...item, lat, lng } : item) } }
+    })
+  }, [mapId, updateMap, view])
+
+  const handleDeleteFieldSupport = useCallback((uid: string) => {
+    updateMap(mapId, (current) => {
+      const buckets = fieldSupportsBucketOf(current)
+      return { ...current, fieldSupports: { ...buckets, [view]: buckets[view].filter((item) => item.uid !== uid) } }
+    })
+  }, [mapId, updateMap, view])
 
   /** 推演状态局部更新（enabled/round/showConnections/connectMode） */
   const handleWargameChange = useCallback(
@@ -1738,6 +2026,148 @@ export default function App() {
     },
     [mapId, updateMap],
   )
+  const handleRoundChange = useCallback((round: number) => {
+    updateMap(mapId, (state) => {
+      const stageId = activeModeStageId ?? stages[capturedStageIndex]?.id ?? 'S1'
+      const current = snapshotTacticalBucket(state, stageId, wargameOf(state).round)
+      const buckets = { ...(state.tacticalBuckets ?? { activeKey: current.key, buckets: {} }).buckets, [current.key]: current }
+      const target = buckets[tacticalBucketKey(stageId, round)]
+      return target ? applyTacticalBucket({ ...state, tacticalBuckets: { activeKey: target.key, buckets } }, target) : createTacticalRound({ ...state, tacticalBuckets: { activeKey: current.key, buckets } }, stageId, round)
+    })
+  }, [activeModeStageId, capturedStageIndex, mapId, stages, updateMap])
+  const handleCreateRound = useCallback((copy: boolean) => {
+    updateMap(mapId, (state) => {
+      const stageId = activeModeStageId ?? stages[capturedStageIndex]?.id ?? 'S1'
+      const currentRound = wargameOf(state).round
+      const current = snapshotTacticalBucket(state, stageId, currentRound)
+      const store = state.tacticalBuckets ?? { activeKey: current.key, buckets: {} }
+      const buckets = { ...store.buckets, [current.key]: current }
+      const stageRounds = Object.values(buckets).filter((bucket) => bucket.stageId === stageId).map((bucket) => bucket.round)
+      const targetRound = copy ? Math.max(currentRound, ...stageRounds) + 1 : currentRound + 1
+      const existing = buckets[tacticalBucketKey(stageId, targetRound)]
+      if (existing) return applyTacticalBucket({ ...state, tacticalBuckets: { activeKey: existing.key, buckets } }, existing)
+      return createTacticalRound({ ...state, tacticalBuckets: { activeKey: current.key, buckets } }, stageId, targetRound, copy)
+    })
+  }, [activeModeStageId, capturedStageIndex, mapId, stages, updateMap])
+  const handleDeleteRound = useCallback(() => {
+    updateMap(mapId, (state) => {
+      const stageId = activeModeStageId ?? stages[capturedStageIndex]?.id ?? 'S1'
+      const current = snapshotTacticalBucket(state, stageId, wargameOf(state).round)
+      const buckets = { ...(state.tacticalBuckets ?? { activeKey: current.key, buckets: {} }).buckets }
+      delete buckets[current.key]
+      const target = Object.values(buckets).filter((bucket) => bucket.stageId === stageId).sort((a, b) => a.round - b.round)[0]
+      return target ? applyTacticalBucket({ ...state, tacticalBuckets: { activeKey: target.key, buckets } }, target) : state
+    })
+  }, [activeModeStageId, capturedStageIndex, mapId, stages, updateMap])
+
+  // 枪线按钮上的滚轮只调整该兵棋的地图距离，不触发兵棋朝向旋转。
+  useEffect(() => {
+    const adjust = (event: Event) => {
+      const detail = (event as CustomEvent<{ kind: 'operator' | 'team' | 'vehicle' | 'building'; uid: string; delta: number }>).detail
+      if (!detail?.uid || !Number.isFinite(detail.delta)) return
+      const nextLength = (value?: number) => Math.max(0, Math.min(240, (value ?? 56) + detail.delta))
+      updateMap(mapId, (state) => {
+        if (detail.kind === 'vehicle') {
+          const bucket = vehiclesBucketOf(state)
+          return { ...state, vehicles: { ...bucket, [view]: bucket[view].map((item) => item.uid === detail.uid ? { ...item, fireLineLength: nextLength(item.fireLineLength) } : item) } }
+        }
+        if (detail.kind === 'building') {
+          const bucket = buildingsBucketOf(state)
+          return { ...state, buildings: { ...bucket, [view]: bucket[view].map((item) => item.uid === detail.uid ? { ...item, fireLineLength: nextLength(item.fireLineLength) } : item) } }
+        }
+        if (detail.kind === 'team') {
+          const bucket = teamsBucketOf(state)
+          return { ...state, teams: { ...bucket, [view]: bucket[view].map((item) => item.uid === detail.uid ? { ...item, fireLineLength: nextLength(item.fireLineLength) } : item) } }
+        }
+        const bucket = operatorsBucketOf(state)
+        return { ...state, operators: { ...bucket, [view]: bucket[view].map((item) => item.uid === detail.uid ? { ...item, fireLineLength: nextLength(item.fireLineLength) } : item) } }
+      })
+    }
+    window.addEventListener('unit-fireline-length', adjust)
+    return () => window.removeEventListener('unit-fireline-length', adjust)
+  }, [mapId, updateMap, view])
+
+  useEffect(() => {
+    if (!device.mobileLayout) return
+    const target = window as unknown as {
+      __unitFireLineDragStart?: (event: PointerEvent, kind: 'operator' | 'team' | 'vehicle' | 'building', uid: string) => void
+    }
+    target.__unitFireLineDragStart = (event, kind, uid) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const button = event.currentTarget instanceof HTMLElement ? event.currentTarget : event.target instanceof HTMLElement ? event.target : null
+      try { button?.setPointerCapture(event.pointerId) } catch { /* pointer may already have been released */ }
+      const pointerId = event.pointerId
+      let moved = false
+      let slider: HTMLInputElement | null = null
+      let longPressTimer: number | undefined
+      const closeSlider = () => { slider?.remove(); slider = null }
+      longPressTimer = window.setTimeout(() => {
+        if (!button) return
+        moved = true
+        slider = document.createElement('input')
+        slider.type = 'range'; slider.min = '0'; slider.max = '240'; slider.step = '1'
+        slider.value = button.dataset.firelineLength ?? '56'
+        slider.className = 'mobile-fireline-slider'
+        const rect = button.getBoundingClientRect()
+        slider.style.left = `${Math.max(8, Math.min(window.innerWidth - 188, rect.left + rect.width / 2 - 90))}px`
+        slider.style.top = `${Math.max(8, rect.top - 42)}px`
+        slider.addEventListener('pointerdown', (e) => { e.stopPropagation() })
+        slider.addEventListener('input', () => {
+          const next = Number(slider?.value ?? 56)
+          const previous = Number(button.dataset.firelineLength ?? 56)
+          button.dataset.firelineLength = String(next)
+          window.dispatchEvent(new CustomEvent('unit-fireline-length', { detail: { kind, uid, delta: next - previous } }))
+        })
+        document.body.appendChild(slider)
+        slider.focus()
+        window.setTimeout(() => {
+          const dismiss = (dismissEvent: PointerEvent) => {
+            if (dismissEvent.target === slider) return
+            closeSlider()
+            document.removeEventListener('pointerdown', dismiss, true)
+          }
+          document.addEventListener('pointerdown', dismiss, true)
+        }, 0)
+      }, 450)
+      const move = (moveEvent: PointerEvent) => {
+        if (moveEvent.pointerId !== pointerId) return
+        moveEvent.preventDefault()
+        if (!slider) return
+      }
+      const finish = (finishEvent: PointerEvent) => {
+        if (finishEvent.pointerId !== pointerId) return
+        document.removeEventListener('pointermove', move)
+        document.removeEventListener('pointerup', finish)
+        document.removeEventListener('pointercancel', finish)
+        try { button?.releasePointerCapture(pointerId) } catch { /* capture may already be lost */ }
+        if (longPressTimer) window.clearTimeout(longPressTimer)
+        if (!moved && finishEvent.type === 'pointerup') {
+          window.dispatchEvent(new CustomEvent('unit-fireline-toggle', { detail: { kind, uid } }))
+        }
+      }
+      document.addEventListener('pointermove', move, { passive: false })
+      document.addEventListener('pointerup', finish)
+      document.addEventListener('pointercancel', finish)
+    }
+    return () => { delete target.__unitFireLineDragStart }
+  }, [device.mobileLayout])
+
+  const handleObjectiveStateChange = useCallback((pointName: string, objectiveState: TacticalObjectiveState) => {
+    updateMap(mapId, (state) => {
+      const currentWargame = wargameOf(state)
+      return {
+        ...state,
+        wargame: {
+          ...currentWargame,
+          battleContext: {
+            ...currentWargame.battleContext,
+            objectiveStates: { ...currentWargame.battleContext.objectiveStates, [pointName]: objectiveState },
+          },
+        },
+      }
+    })
+  }, [mapId, updateMap])
 
   /** 干员操作的统一入栈入口（与 commitVehicleChange 对称） */
   const commitOperatorChange = useCallback(
@@ -1747,7 +2177,21 @@ export default function App() {
       const current = operatorsBucketOf(cur)[view] ?? []
       const currentByUid = new Map(current.map((operator) => [operator.uid, operator]))
       const nextOperators = mutator(current)
+      const undeployed = new Set(nextOperators.filter((operator) => operator.lat == null || operator.lng == null).map((operator) => operator.uid))
+      const changedOperator = new Set(nextOperators.filter((operator) => {
+        const previous = currentByUid.get(operator.uid)
+        return previous && previous.operatorId !== operator.operatorId
+      }).map((operator) => operator.uid))
+      const clearedSkillSources = new Set([...undeployed, ...changedOperator])
+      const nextSkillActions = (cur.skillActions ?? []).filter((action) => !clearedSkillSources.has(action.sourceOperatorUid))
       let nextRoutes = routesBucketOf(cur)[view]
+      const removedRouteIds = new Set<string>()
+      for (const route of nextRoutes) {
+        if (route.anchorMode === 'operator' && route.anchorOperatorUid && undeployed.has(route.anchorOperatorUid)) {
+          removedRouteIds.add(route.uid)
+        }
+      }
+      if (removedRouteIds.size > 0) nextRoutes = nextRoutes.filter((route) => !removedRouteIds.has(route.uid))
       for (const operator of nextOperators) {
         const previous = currentByUid.get(operator.uid)
         if (!previous || operator.lat == null || operator.lng == null) continue
@@ -1764,11 +2208,13 @@ export default function App() {
         ...s,
         operators: { ...operatorsBucketOf(s), [view]: nextOperators },
         routes: { ...routesBucketOf(s), [view]: nextRoutes },
+        skillActions: nextSkillActions,
       }))
       const after: MapStateSnapshot = {
         ...before,
         operators: { ...before.operators, [view]: nextOperators },
         routes: { ...before.routes, [view]: nextRoutes },
+        skillActions: nextSkillActions,
       }
       pushEntry(before, after)
     },
@@ -1825,16 +2271,26 @@ export default function App() {
             : route,
         )
         nextRoutes = syncRouteTargetPosition(nextRoutes, 'operator', uid, point)
+      } else {
+        const removedRouteIds = new Set<string>()
+        for (const route of nextRoutes) {
+          if (route.anchorMode === 'operator' && route.anchorOperatorUid === uid) {
+            removedRouteIds.add(route.uid)
+          }
+        }
+        nextRoutes = nextRoutes.filter((route) => !removedRouteIds.has(route.uid))
       }
       updateMap(mapId, (state) => ({
         ...state,
         operators: { ...operatorsBucketOf(state), [view]: nextOperators },
         routes: { ...routesBucketOf(state), [view]: nextRoutes },
+        skillActions: deploying ? state.skillActions : (state.skillActions ?? []).filter((action) => action.sourceOperatorUid !== uid),
       }))
       pushEntry(before, {
         ...before,
         operators: { ...before.operators, [view]: nextOperators },
         routes: { ...before.routes, [view]: nextRoutes },
+        skillActions: deploying ? before.skillActions : (before.skillActions ?? []).filter((action) => action.sourceOperatorUid !== uid),
       })
     },
     [mapId, view, cloneState, pushEntry, updateMap, device.mobileLayout],
@@ -1860,6 +2316,20 @@ export default function App() {
     },
     [mapId, view, updateMap],
   )
+
+  const handleRotateOperator = useCallback((uid: string, rotation: number) => {
+    updateMap(mapId, (state) => {
+      const bucket = operatorsBucketOf(state)
+      return { ...state, operators: { ...bucket, [view]: bucket[view].map((item) => item.uid === uid ? { ...item, rotation } : item) } }
+    })
+  }, [mapId, updateMap, view])
+
+  const handleToggleOperatorFireLine = useCallback((uid: string) => {
+    updateMap(mapId, (state) => {
+      const bucket = operatorsBucketOf(state)
+      return { ...state, operators: { ...bucket, [view]: bucket[view].map((item) => item.uid === uid ? { ...item, fireLineEnabled: !item.fireLineEnabled } : item) } }
+    })
+  }, [mapId, updateMap, view])
 
   /** 部署某方某队全部干员：围绕当前地图中心环形排布（视角桶内含双方，需按 阵营+队 定位） */
   const handleDeployTeam = useCallback(
@@ -2025,32 +2495,79 @@ export default function App() {
     [mapId, view, cloneState, pushEntry, updateMap],
   )
 
-  /** 一键重置推演：全部干员回初始，协同关系与队标清空，回合回到 1。 */
+  /** 一键重置推演：清空当前视角全部阶段/回合兵棋数据，回到第 1 回合。 */
   const handleWargameReset = useCallback(() => {
-    if (!window.confirm(`确定重置${view === 'attack' ? '攻方' : '守方'}视角兵棋推演？双方干员（我方+敌方）全部回到未部署，协同关系与队标清空。`)) return
+    if (!window.confirm(`确定重置${view === 'attack' ? '攻方' : '守方'}视角全部兵棋推演？将清空所有阶段/回合中的兵棋、路线、枪线、绘制与备注。`)) return
     const cur = mapsRef.current[mapId] ?? createEmptyMapState()
     const before = cloneState(cur)
-    updateMap(mapId, (s) => ({
-      ...s,
-      operators: { ...operatorsBucketOf(s), [view]: buildDefaultOperators(view) },
-      connections: { ...connectionsBucketOf(s), [view]: [] },
-      teams: { ...teamsBucketOf(s), [view]: [] },
-      wargame: { ...wargameOf(s), round: 1, connectMode: false },
-    }))
+    updateMap(mapId, (s) => {
+      const resetView = (bucket: TacticalBucket): TacticalBucket => ({
+        ...bucket,
+        vehicles: { ...bucket.vehicles, [view]: [] },
+        buildings: { ...bucket.buildings, [view]: [] },
+        operators: { ...bucket.operators, [view]: buildDefaultOperators(view) },
+        connections: { ...bucket.connections, [view]: [] },
+        teams: { ...bucket.teams, [view]: [] },
+        routes: { ...bucket.routes, [view]: [] },
+        fieldSupports: { ...(bucket.fieldSupports ?? { attack: [], defense: [] }), [view]: [] },
+        skillActions: (bucket.skillActions ?? []).filter((action) => action.side !== view),
+        updatedAt: Date.now(),
+      })
+      const buckets = Object.fromEntries(Object.entries(s.tacticalBuckets?.buckets ?? {}).map(([key, bucket]) => [key, resetView(bucket)]))
+      return {
+        ...s,
+        vehicles: { ...vehiclesBucketOf(s), [view]: [] },
+        buildings: { ...buildingsBucketOf(s), [view]: [] },
+        operators: { ...operatorsBucketOf(s), [view]: buildDefaultOperators(view) },
+        connections: { ...connectionsBucketOf(s), [view]: [] },
+        teams: { ...teamsBucketOf(s), [view]: [] },
+        routes: { ...routesBucketOf(s), [view]: [] },
+        fieldSupports: { ...fieldSupportsBucketOf(s), [view]: [] },
+        tacticalBuckets: { activeKey: tacticalBucketKey(activeModeStageId ?? stages[capturedStageIndex]?.id ?? 'S1', 1), buckets },
+        wargame: { ...wargameOf(s), round: 1, connectMode: false },
+      }
+    })
     const after: MapStateSnapshot = {
       ...before,
       operators: { ...before.operators, [view]: buildDefaultOperators(view) },
       connections: { ...before.connections, [view]: [] },
       teams: { ...before.teams, [view]: [] },
+      fieldSupports: { ...(before.fieldSupports ?? { attack: [], defense: [] }), [view]: [] },
     }
     pushEntry(before, after)
-  }, [mapId, view, cloneState, pushEntry, updateMap])
+  }, [activeModeStageId, capturedStageIndex, mapId, stages, view, cloneState, pushEntry, updateMap])
 
   // ---- 战术板：导出 + 方案管理（第二十一轮） ----
   /** 导出战术板 HTML（当前视角全部战术层 + 静态层，范围可选当前阶段/全部阶段） */
   const handleExportTactical = useCallback(
-    async (stageMode: 'current' | 'all') => {
+    async (stageMode: 'current' | 'all' | 'overview', exportStageId: string, exportRound: number) => {
       const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const stageId = exportStageId || activeModeStageId || stages[capturedStageIndex]?.id || 'S1'
+      const allBuckets = cur.tacticalBuckets?.buckets ?? {}
+      const bucket = allBuckets[tacticalBucketKey(stageId, exportRound)]
+      const source = bucket ? applyTacticalBucket(cur, bucket) : cur
+      const snapshots = stageMode !== 'current'
+        ? Object.values(allBuckets).sort((a, b) => {
+            const stageOrder = stages.findIndex((stage) => stage.id === a.stageId) - stages.findIndex((stage) => stage.id === b.stageId)
+            return stageOrder || a.round - b.round
+          }).map((item) => ({
+            key: item.key,
+            stageId: item.stageId,
+            round: item.round,
+            capturedStageIndex: stages.findIndex((stage) => stage.id === item.stageId),
+            geoJson: item.drawings[view] ?? emptyGeoJson(),
+            vehicles: item.vehicles[view] ?? [],
+            buildings: item.buildings[view] ?? [],
+            operators: item.operators[view] ?? [],
+            connections: item.connections[view] ?? [],
+            teams: item.teams[view] ?? [],
+            routes: item.routes[view] ?? [],
+            fieldSupports: item.fieldSupports?.[view] ?? [],
+            // 一个战术视角中可同时部署敌我双方技能，不能按技能阵营过滤。
+            skillActions: item.skillActions ?? [],
+            notesMarkdown: wargameOf(cur).stageNotes?.[item.stageId] ?? item.notesMarkdown ?? '',
+          }))
+        : undefined
       const propsList = platformProps[mapId] ?? []
       const html = await buildTacticalHtml({
         config,
@@ -2059,27 +2576,205 @@ export default function App() {
         stageMode,
         capturedStageIndex,
         stages,
-        geoJson: cur.drawings[view] ?? emptyGeoJson(),
-        vehicles: vehiclesBucketOf(cur)[view],
-        operators: operatorsBucketOf(cur)[view],
-        connections: connectionsBucketOf(cur)[view],
-        teams: teamsBucketOf(cur)[view],
-        routes: routesBucketOf(cur)[view],
+        geoJson: source.drawings[view] ?? emptyGeoJson(),
+        vehicles: vehiclesBucketOf(source)[view],
+        buildings: buildingsBucketOf(source)[view],
+        operators: operatorsBucketOf(source)[view],
+        connections: connectionsBucketOf(source)[view],
+        teams: teamsBucketOf(source)[view],
+        teamRoles: wargameOf(source).teamRoles,
+        routes: routesBucketOf(source)[view],
+        fieldSupports: fieldSupportsBucketOf(source)[view],
+        skillActions: source.skillActions ?? [],
         showProps: ui.layers.props,
         propVis: ui.propVis,
         propsList,
+        notesMarkdown: wargameOf(source).stageNotes?.[stageId] ?? wargameOf(source).notesMarkdown ?? '',
+        noteImages: wargameOf(source).noteImages ?? {},
+        snapshots,
       })
-      const stageTag = stageMode === 'current' ? (stages[capturedStageIndex]?.id ?? 'cur') : 'all'
+      const stageTag = stageMode === 'current' ? `${stageId}-R${exportRound}` : stageMode === 'overview' ? 'overview' : 'all'
       downloadText(`战术板_${config.name}_${view === 'attack' ? '攻方' : '守方'}_${stageTag}.html`, html)
     },
-    [mapId, config, view, capturedStageIndex, stages, platformProps, ui.layers.props, ui.propVis],
+    [mapId, config, view, activeModeStageId, capturedStageIndex, stages, platformProps, ui.layers.props, ui.propVis],
   )
+
+  const handleOperatorSkillUse = useCallback(
+    (uid: string, activeSkillSlot?: 1 | 2 | 3 | 4) => {
+      const current = mapsRef.current[mapId] ?? createEmptyMapState()
+      const operator = operatorsBucketOf(current)[view].find((item) => item.uid === uid)
+      if (!operator || activeSkillSlot == null) {
+        setSkillActionDraft(null)
+        return
+      }
+      const skill = operatorSkillsOf(operator.operatorId).find((item) => item.slot === activeSkillSlot)
+      if (!skill || skill.kind === 'passive') return
+      if (skill.placementMode === 'self') {
+        updateMap(mapId, (state) => ({
+          ...state,
+          skillActions: [...(state.skillActions ?? []), {
+            uid: genUid('skill'), sourceOperatorUid: operator.uid, operatorId: operator.operatorId,
+            skillSlot: skill.slot, skillName: skill.name, kind: skill.kind, placementMode: skill.placementMode,
+            side: operator.side, effectArea: skill.effectArea, canBindTarget: skill.canBindTarget,
+            tracking: skill.tracking, sector: skill.sector, visible: true, createdAt: Date.now(),
+          }],
+        }))
+        return
+      }
+      setSkillActionDraft({ operator, skill })
+      setTool('pan')
+    },
+    [mapId, updateMap, view],
+  )
+
+  const handlePlaceSkillAction = useCallback((lat: number, lng: number) => {
+    if (!skillActionDraft) return
+    const { operator, skill } = skillActionDraft
+    if (operator.lat == null || operator.lng == null) return
+    const source: [number, number] = [operator.lat, operator.lng]
+    const target: [number, number] = [lat, lng]
+    const isSwarmCorridor = operator.operatorId === '10018' && skill.slot === 4
+    const isSmokeWall = operator.operatorId === '10001' && skill.slot === 2
+    const isSmokeSkill = skill.name.includes('烟雾')
+    const geometry: import('./types').OperatorSkillActionGeometry = isSwarmCorridor
+      ? { type: 'line', points: [source, target], width: 34, widthRatio: 0.01425 }
+      : isSmokeWall
+        ? { type: 'line', points: [source, target], width: 24, widthRatio: SHARED_SMOKE_WIDTH_RATIO }
+        : isSmokeSkill
+          ? { type: 'area', center: target, radius: 60, radiusRatio: SHARED_SMOKE_RADIUS_RATIO }
+      : skill.placementMode === 'area'
+      ? { type: 'area', center: target, radius: 60 }
+      : skill.placementMode === 'target-point' || skill.placementMode === 'target-unit' || skill.placementMode === 'ally-unit'
+        ? { type: 'point', position: target }
+        : skill.placementMode === 'guided-path'
+          ? { type: 'curve', start: source, controls: [[(source[0] + target[0]) / 2 + 10, (source[1] + target[1]) / 2]], end: target }
+          : { type: 'trajectory', points: [source, target] }
+    updateMap(mapId, (state) => ({
+      ...state,
+      skillActions: [...(state.skillActions ?? []), {
+        uid: genUid('skill'), sourceOperatorUid: operator.uid, operatorId: operator.operatorId,
+        skillSlot: skill.slot, skillName: skill.name, kind: skill.kind, placementMode: skill.placementMode,
+        side: operator.side, geometry, effectArea: skill.effectArea, canBindTarget: skill.canBindTarget,
+        tracking: skill.tracking, sector: skill.sector, visible: true, createdAt: Date.now(),
+      }],
+    }))
+    setSkillActionDraft(null)
+  }, [mapId, skillActionDraft, updateMap])
+
+  const handleSelectSkillTarget = useCallback((targetUid: string) => {
+    if (!skillActionDraft) return
+    const current = mapsRef.current[mapId] ?? createEmptyMapState()
+    const target = operatorsBucketOf(current)[view].find((item) => item.uid === targetUid)
+    const { operator, skill } = skillActionDraft
+    if (!target || target.lat == null || target.lng == null || target.uid === operator.uid) return
+    if (skill.placementMode === 'ally-unit' && target.side !== operator.side) return
+    if (skill.placementMode === 'target-unit' && target.side === operator.side) return
+    updateMap(mapId, (state) => ({
+      ...state,
+      skillActions: [...(state.skillActions ?? []), {
+        uid: genUid('skill'), sourceOperatorUid: operator.uid, operatorId: operator.operatorId,
+        skillSlot: skill.slot, skillName: skill.name, kind: skill.kind, placementMode: skill.placementMode,
+        side: operator.side, targetUid: target.uid, geometry: { type: 'point', position: [target.lat as number, target.lng as number] },
+        effectArea: skill.effectArea, canBindTarget: skill.canBindTarget, tracking: skill.tracking,
+        sector: skill.sector, visible: true, createdAt: Date.now(),
+      }],
+    }))
+    setSkillActionDraft(null)
+  }, [mapId, skillActionDraft, updateMap, view])
+
+  const handleDeleteSkillAction = useCallback((uid: string) => {
+    updateMap(mapId, (state) => ({ ...state, skillActions: (state.skillActions ?? []).filter((action) => action.uid !== uid) }))
+  }, [mapId, updateMap])
+
+  const handleUpdateSkillActionGeometry = useCallback((uid: string, geometry: import('./types').OperatorSkillActionGeometry) => {
+    updateMap(mapId, (state) => ({ ...state, skillActions: (state.skillActions ?? []).map((action) => action.uid === uid ? { ...action, geometry } : action) }))
+  }, [mapId, updateMap])
+
+  const handleExportNativeTactical = useCallback((scope: 'all' | 'stage' | 'current' = 'all') => {
+    const current = mapsRef.current[mapId] ?? createEmptyMapState()
+    const activeKey = current.tacticalBuckets?.activeKey
+    const currentBucket = activeKey ? current.tacticalBuckets?.buckets[activeKey] : undefined
+    const buckets = current.tacticalBuckets?.buckets ?? {}
+    const selectedBuckets = scope === 'stage' && currentBucket
+      ? Object.fromEntries(Object.entries(buckets).filter(([, bucket]) => bucket.stageId === currentBucket.stageId))
+      : scope === 'current' && currentBucket ? { [currentBucket.key]: currentBucket } : buckets
+    const payload = {
+      format: 'deltaforce-native-tactical-board',
+      version: 1,
+      scope,
+      exportedAt: new Date().toISOString(),
+      mapId,
+      view,
+      mapState: { ...createEmptyMapState(), tacticalBuckets: { activeKey: currentBucket?.key ?? '', buckets: selectedBuckets } },
+    }
+    const suffix = currentBucket ? (scope === 'stage' ? `_${currentBucket.stageId}-all` : scope === 'current' ? `_${currentBucket.stageId}-R${currentBucket.round}` : '_all') : ''
+    downloadText(`原生战术包_${config.name}_${view === 'attack' ? '攻方' : '守方'}${suffix}.dfboard`, JSON.stringify(payload), 'application/json')
+  }, [config.name, mapId, view])
+
+  const handleImportNativeTactical = useCallback(async (file: File) => {
+    let payload: { format?: unknown; version?: unknown; scope?: unknown; mapId?: unknown; view?: unknown; mapState?: unknown }
+    try {
+      payload = JSON.parse(await file.text()) as typeof payload
+    } catch {
+      window.alert('无法读取原生战术包：文件不是有效的 JSON。')
+      return
+    }
+    if (payload.format !== 'deltaforce-native-tactical-board' || payload.version !== 1 || typeof payload.mapId !== 'string' || !MAP_BY_ID[payload.mapId] || !payload.mapState || typeof payload.mapState !== 'object') {
+      window.alert('无法导入：文件不是受支持的原生战术包。')
+      return
+    }
+    const targetMapId = payload.mapId
+    const source = payload.mapState as MapState
+    if (!window.confirm(`导入将覆盖“${MAP_BY_ID[targetMapId].name}”现有战术数据，是否继续？`)) return
+    const imported: MapState = {
+      ...createEmptyMapState(),
+      ...source,
+      vehicles: vehiclesBucketOf(source),
+      buildings: buildingsBucketOf(source),
+      operators: operatorsBucketOf(source),
+      connections: connectionsBucketOf(source),
+      teams: teamsBucketOf(source),
+      routes: routesBucketOf(source),
+      drawings: { attack: normalizeDrawingGeoJson(source.drawings?.attack ?? emptyGeoJson()), defense: normalizeDrawingGeoJson(source.drawings?.defense ?? emptyGeoJson()) },
+      fieldSupports: fieldSupportsBucketOf(source),
+      skillActions: Array.isArray(source.skillActions) ? source.skillActions : [],
+      wargame: wargameOf(source),
+    }
+    const rawStore = source.tacticalBuckets
+    const migratedBuckets = rawStore && typeof rawStore === 'object' && rawStore.buckets && typeof rawStore.buckets === 'object'
+      ? Object.fromEntries(Object.values(rawStore.buckets).map((bucket) => normalizeTacticalBucket(bucket)).filter((bucket): bucket is NonNullable<typeof bucket> => Boolean(bucket)).map((bucket) => [bucket.key, bucket]))
+      : {}
+    const activeKey = rawStore && typeof rawStore.activeKey === 'string' && migratedBuckets[rawStore.activeKey]
+      ? rawStore.activeKey
+      : Object.keys(migratedBuckets)[0] ?? tacticalBucketKey('S1', imported.wargame.round)
+    imported.tacticalBuckets = { activeKey, buckets: migratedBuckets }
+    const activeBucket = migratedBuckets[activeKey]
+    if (activeBucket) Object.assign(imported, applyTacticalBucket(imported, activeBucket))
+    const packageScope = payload.scope === 'stage' || payload.scope === 'current' ? payload.scope : 'all'
+    setMaps((current) => {
+      if (packageScope === 'all') return { ...current, [targetMapId]: imported }
+      const existing = current[targetMapId] ?? createEmptyMapState()
+      const existingStore = existing.tacticalBuckets ?? { activeKey: '', buckets: {} }
+      const mergedBuckets = packageScope === 'stage' && activeBucket
+        ? { ...existingStore.buckets, ...Object.fromEntries(Object.entries(existingStore.buckets).filter(([, bucket]) => bucket.stageId !== activeBucket.stageId)), ...migratedBuckets }
+        : { ...existingStore.buckets, ...migratedBuckets }
+      const merged = { ...existing, tacticalBuckets: { activeKey, buckets: mergedBuckets } }
+      return { ...current, [targetMapId]: activeBucket ? applyTacticalBucket(merged, activeBucket) : merged }
+    })
+    setMapId(targetMapId)
+    setView(payload.view === 'defense' ? 'defense' : 'attack')
+    if (activeBucket) {
+      setProgress((current) => ({ ...current, [targetMapId]: Math.max(0, stages.findIndex((stage) => stage.id === activeBucket.stageId)) }))
+      setModeStageSelection((current) => ({ ...current, [`${activeModeProfile?.id ?? 'attack-defense'}:${targetMapId}`]: activeBucket.stageId }))
+    }
+    window.alert(packageScope === 'stage' ? '当前阶段原生包已导入，其他阶段保持不变。' : packageScope === 'current' ? '当前回合原生包已导入，其他阶段回合保持不变。' : '原生战术包已导入。')
+  }, [])
 
   /** 保存当前战术为方案（自定义名称；记录当前 地图×阶段×视角 的完整部署快照） */
   const handleSavePlan = useCallback(
     (name: string) => {
       const cur = mapsRef.current[mapId] ?? createEmptyMapState()
-      const stageId = stages[capturedStageIndex]?.id ?? 'S1'
+      const stageId = activeModeStageId ?? stages[capturedStageIndex]?.id ?? 'S1'
       const plan: TacticalPlan = {
         id: genUid('plan'),
         name: name.trim() || '未命名战术',
@@ -2093,10 +2788,14 @@ export default function App() {
         connections: connectionsBucketOf(cur)[view].map((c) => ({ ...c })),
         teams: teamsBucketOf(cur)[view].map((t) => ({ ...t })),
         routes: routesBucketOf(cur)[view].map((r) => ({ ...r, waypoints: r.waypoints.map((p) => [...p] as [number, number]) })),
+        fieldSupports: fieldSupportsBucketOf(cur)[view].map((item) => ({ ...item })),
+        skillActions: (cur.skillActions ?? []).filter((item) => item.side === view).map((item) => ({ ...item })),
+        usedVehicleRefreshRuleIds: [...wargameOf(cur).usedVehicleRefreshRuleIds[view]],
+        battleContext: structuredClone(wargameOf(cur).battleContext),
       }
       setPlans((prev) => [...prev, plan])
     },
-    [mapId, view, capturedStageIndex, stages],
+    [activeModeStageId, mapId, view, capturedStageIndex, stages],
   )
 
   /** 应用方案：将方案快照写入当前地图/视角（阶段由用户自行切换），入历史栈 */
@@ -2118,6 +2817,13 @@ export default function App() {
         connections: { ...connectionsBucketOf(s), [view]: conns },
         teams: { ...teamsBucketOf(s), [view]: tm },
         routes: { ...routesBucketOf(s), [view]: routeItems },
+        fieldSupports: { ...fieldSupportsBucketOf(s), [view]: (plan.fieldSupports ?? []).map((item) => ({ ...item })) },
+        skillActions: [ ...(s.skillActions ?? []).filter((item) => item.side !== view), ...(plan.skillActions ?? []).map((item) => ({ ...item })) ],
+        wargame: {
+          ...wargameOf(s),
+          ...(plan.battleContext ? { battleContext: structuredClone(plan.battleContext) } : {}),
+          usedVehicleRefreshRuleIds: { ...wargameOf(s).usedVehicleRefreshRuleIds, [view]: [...(plan.usedVehicleRefreshRuleIds ?? [])] },
+        },
       }))
       const after: MapStateSnapshot = {
         ...before,
@@ -2127,6 +2833,8 @@ export default function App() {
         connections: { ...before.connections, [view]: conns },
         teams: { ...before.teams, [view]: tm },
         routes: { ...before.routes, [view]: routeItems },
+        fieldSupports: { ...(before.fieldSupports ?? { attack: [], defense: [] }), [view]: (plan.fieldSupports ?? []).map((item) => ({ ...item })) },
+        skillActions: [ ...(before.skillActions ?? []).filter((item) => item.side !== view), ...(plan.skillActions ?? []).map((item) => ({ ...item })) ],
       }
       pushEntry(before, after)
     },
@@ -2419,15 +3127,44 @@ export default function App() {
     [mapId, view, updateMap],
   )
 
+  const handleRotateTeamMarker = useCallback((uid: string, rotation: number) => {
+    updateMap(mapId, (state) => {
+      const bucket = teamsBucketOf(state)
+      return { ...state, teams: { ...bucket, [view]: bucket[view].map((item) => item.uid === uid ? { ...item, rotation } : item) } }
+    })
+  }, [mapId, updateMap, view])
+
+  const handleToggleTeamFireLine = useCallback((uid: string) => {
+    updateMap(mapId, (state) => {
+      const bucket = teamsBucketOf(state)
+      return { ...state, teams: { ...bucket, [view]: bucket[view].map((item) => item.uid === uid ? { ...item, fireLineEnabled: !item.fireLineEnabled } : item) } }
+    })
+  }, [mapId, updateMap, view])
+
+  useEffect(() => {
+    if (!device.mobileLayout) return
+    const toggle = (event: Event) => {
+      const detail = (event as CustomEvent<{ kind: 'operator' | 'team' | 'vehicle' | 'building'; uid: string }>).detail
+      if (!detail?.uid) return
+      if (detail.kind === 'operator') handleToggleOperatorFireLine(detail.uid)
+      else if (detail.kind === 'team') handleToggleTeamFireLine(detail.uid)
+      else if (detail.kind === 'vehicle') handleToggleVehicleFireLine(detail.uid)
+      else handleToggleBuildingFireLine(detail.uid)
+    }
+    window.addEventListener('unit-fireline-toggle', toggle)
+    return () => window.removeEventListener('unit-fireline-toggle', toggle)
+  }, [device.mobileLayout, handleToggleBuildingFireLine, handleToggleOperatorFireLine, handleToggleTeamFireLine, handleToggleVehicleFireLine])
+
   /** 删除队标 */
   const handleDeleteTeamMarker = useCallback(
     (uid: string) => {
       const cur = mapsRef.current[mapId] ?? createEmptyMapState()
       const before = cloneState(cur)
       const nextTeams = teamsBucketOf(cur)[view].filter((t) => t.uid !== uid)
-      const nextRoutes = routesBucketOf(cur)[view]
-        .filter((route) => route.teamMarkerUid !== uid)
-        .map((route) => route.target?.kind === 'team' && route.target.uid === uid ? { ...route, target: undefined } : route)
+      const currentRoutes = routesBucketOf(cur)[view]
+      const removedRouteIds = new Set<string>()
+      currentRoutes.forEach((route) => { if (route.anchorMode === 'team' && route.teamMarkerUid === uid) removedRouteIds.add(route.uid) })
+      const nextRoutes = currentRoutes.filter((route) => !removedRouteIds.has(route.uid)).map((route) => route.target?.kind === 'team' && route.target.uid === uid ? { ...route, target: undefined } : route)
       updateMap(mapId, (s) => ({
         ...s,
         teams: { ...teamsBucketOf(s), [view]: nextTeams },
@@ -2495,18 +3232,33 @@ export default function App() {
     (point: CapturePoint, stageId: string) => {
       if (activeModeMap && modeStageKey) {
         if (activeModeMap.stages.some((stage) => stage.id === stageId)) {
-          setModeStageSelection((current) => ({ ...current, [modeStageKey]: stageId }))
+          handleSelectModeStage(stageId)
         }
       } else {
         // 切换防线状态：该据点所在阶段成为当前激活阶段
         const idx = stages.findIndex((s) => s.id === stageId)
-        if (idx >= 0) setProgress((prev) => ({ ...prev, [mapId]: idx }))
+        if (idx >= 0) {
+          if (idx !== capturedStageIndex) {
+            updateMap(mapId, (state) => {
+              const fromStage = stages[capturedStageIndex]?.id ?? 'S1'
+              const toStage = stages[idx]?.id ?? fromStage
+              const source = snapshotTacticalBucket(state, fromStage, wargameOf(state).round)
+              const buckets = { ...(state.tacticalBuckets?.buckets ?? {}), [source.key]: source }
+              const targetKey = tacticalBucketKey(toStage, wargameOf(state).round)
+              const target = buckets[targetKey] ?? snapshotTacticalBucket(createEmptyMapState(), toStage, wargameOf(state).round)
+              buckets[targetKey] = target
+              const staged = normalizeObjectivesForStageChange({ ...state, tacticalBuckets: { activeKey: source.key, buckets } }, stages, capturedStageIndex, idx)
+              return applyTacticalBucket({ ...staged, tacticalBuckets: { activeKey: target.key, buckets } }, target)
+            })
+          }
+          setProgress((prev) => ({ ...prev, [mapId]: idx }))
+        }
       }
       setSelectedPoint((prev) =>
         prev?.point.name === point.name && prev.stageId === stageId ? null : { point, stageId },
       )
     },
-    [activeModeMap, mapId, modeStageKey, stages],
+    [activeModeMap, capturedStageIndex, handleSelectModeStage, mapId, modeStageKey, stages, updateMap],
   )
   const handleClosePointDetail = useCallback(() => setSelectedPoint(null), [])
   const handleResetPointPanel = useCallback(() => {
@@ -2527,10 +3279,13 @@ export default function App() {
     }
     const stageIndex = stages.findIndex((stage) => stage.id === stageId)
     if (stageIndex < 0) return
+    if (stageIndex !== capturedStageIndex) {
+      updateMap(mapId, (state) => normalizeObjectivesForStageChange(state, stages, capturedStageIndex, stageIndex))
+    }
     setProgress((current) => ({ ...current, [mapId]: stageIndex }))
     setSelectedPoint(null)
     setDeployTarget(null)
-  }, [activeModeMap, handleSelectModeStage, mapId, stages])
+  }, [activeModeMap, capturedStageIndex, handleSelectModeStage, mapId, stages, updateMap])
 
   return (
     <div className={`app platform-${device.platform} ${device.mobileLayout ? 'mobile-layout' : 'desktop-layout'} ${ui.paletteOpen ? 'left-panel-open' : 'left-panel-closed'} ${isCinematicMapOnly ? 'cinematic-map-only' : ''} ${isCinematicLayerTour ? 'cinematic-layer-tour' : ''} ${isCinematicBattleCompare ? `cinematic-battle-${cinematicDemoStage?.toLowerCase()}` : ''} ${isCinematicC1Highlight ? `cinematic-c1-${cinematicDemoStage?.toLowerCase()}` : ''}`} style={{ '--left-panel-width': `${ui.leftPanelWidth}px` } as CSSProperties}>
@@ -2578,6 +3333,7 @@ export default function App() {
           onWidthChange={(leftPanelWidth) => setUi((current) => ({ ...current, leftPanelWidth }))}
           layers={ui.layers}
           onLayerChange={handleLayerChange}
+          vehicleRefreshAvailable={(activeOfficialModeMap?.vehicleRefreshRules.length ?? 0) > 0}
           propVis={ui.propVis}
           onPropVisChange={handlePropVisChange}
           sections={ui.sections}
@@ -2617,6 +3373,22 @@ export default function App() {
           vehicles={vehicles}
           buildings={buildings}
           onAddBuilding={handleAddBuilding}
+          stageLabel={pointPanelStages[pointPanelStageIndex] ? `${pointPanelStages[pointPanelStageIndex].id} · ${pointPanelStages[pointPanelStageIndex].label}` : ''}
+          stageOptions={pointPanelStages.map((stage) => ({ id: stage.id, label: stage.label }))}
+          onStageChange={handleSelectModeStage}
+          onRoundChange={handleRoundChange}
+          roundOptions={(() => {
+            const rounds = Array.from(new Set(Object.values(state.tacticalBuckets?.buckets ?? {})
+              .filter((bucket) => bucket.stageId === (activeModeStageId ?? stages[capturedStageIndex]?.id ?? 'S1'))
+              .map((bucket) => bucket.round))).sort((a, b) => a - b)
+            return rounds.length ? rounds : [wargame.round || 1]
+          })()}
+          onCreateRound={handleCreateRound}
+          onDeleteRound={handleDeleteRound}
+          objectiveNames={pointPanelStages[pointPanelStageIndex]?.points.map((point) => point.name) ?? []}
+          vehicleRefreshRules={activeOfficialModeMap?.vehicleRefreshRules ?? []}
+          fieldSupports={fieldSupports}
+          onAddFieldSupport={handleAddFieldSupport}
         />
         <MapView
           key={`${gameDataPlatform}:${mapId}`}
@@ -2628,6 +3400,9 @@ export default function App() {
           tool={tool}
           onTool={setTool}
           state={state}
+          fieldSupports={fieldSupports}
+          onMoveFieldSupport={handleMoveFieldSupport}
+          onDeleteFieldSupport={handleDeleteFieldSupport}
           stages={stages}
           propsOverride={platformProps[mapId]}
           capturedStageIndex={capturedStageIndex}
@@ -2641,16 +3416,20 @@ export default function App() {
           legendOpen={ui.legendOpen}
           onToggleLegend={handleToggleLegend}
           deleteSelectedTick={deleteSelectedTick}
+          clearDrawTick={clearDrawTick}
           onDeleteSelCount={setDeleteSelCount}
           onMapReady={handleMapReady}
           onMoveVehicle={handleMoveVehicle}
           onRotateVehicle={handleRotateVehicle}
+          onToggleVehicleFireLine={handleToggleVehicleFireLine}
           onDeleteVehicle={handleDeleteVehicle}
+          onLocateVehicleRefreshSource={locateVehicleRefreshSource}
           onToggleVehicleSide={handleToggleVehicleSide}
           onChangeVehicleTeam={handleVehicleTeamChange}
           buildings={buildings}
           onMoveBuilding={handleMoveBuilding}
           onRotateBuilding={handleRotateBuilding}
+          onToggleBuildingFireLine={handleToggleBuildingFireLine}
           onToggleBuildingSide={handleToggleBuildingSide}
           onChangeBuildingTeam={handleBuildingTeamChange}
           onDeleteBuilding={handleDeleteBuilding}
@@ -2660,6 +3439,7 @@ export default function App() {
           onDeleteOperators={handleDeleteOperators}
           onDrawSaved={handleDrawSaved}
           onSelectPoint={handleSelectPoint}
+          onObjectiveStateChange={handleObjectiveStateChange}
           onCloseDetail={handleClosePointDetail}
           onSpawnSelect={handleSpawnSelect}
           // 兵棋推演（视角桶内含双方，绿=我方/红=敌方）
@@ -2669,21 +3449,37 @@ export default function App() {
           pendingConnect={pendingConnect}
           operatorPosRef={operatorPosRef}
           onMoveOperator={handleOperatorMove}
+          onRotateOperator={handleRotateOperator}
+          onToggleOperatorFireLine={handleToggleOperatorFireLine}
           onClearOperatorDeploy={handleToggleOperatorDeploy}
           onConnectClick={handleConnectClick}
           onRemoveConnection={handleRemoveConnection}
           onCancelConnect={handleCancelConnect}
           onOperatorChange={handleOperatorChange}
           onOperatorStatusChange={handleOperatorStatusChange}
+          onOperatorSkillUse={handleOperatorSkillUse}
+          skillActionDraft={skillActionDraft}
+          onPlaceSkillAction={handlePlaceSkillAction}
+          onCancelSkillAction={() => setSkillActionDraft(null)}
+          onSelectSkillTarget={handleSelectSkillTarget}
+          onDeleteSkillAction={handleDeleteSkillAction}
+          onUpdateSkillActionGeometry={handleUpdateSkillActionGeometry}
           onOperatorRename={handleOperatorRename}
           // 兵棋队标（第二十三轮）
           teams={teams}
           teamPosRef={teamPosRef}
           onMoveTeamMarker={handleTeamMarkerMove}
+          onRotateTeamMarker={handleRotateTeamMarker}
+          onToggleTeamFireLine={handleToggleTeamFireLine}
           onDeleteTeamMarker={handleDeleteTeamMarker}
           onMoveTeamMarkers={handleMoveTeamMarkers}
           onDeleteTeamMarkers={handleDeleteTeamMarkers}
           routes={routes}
+          battleContext={wargame.battleContext}
+          usedVehicleRefreshRuleIds={wargame.usedVehicleRefreshRuleIds[view]}
+          onDeployVehicleRefresh={handleDeployVehicleRefresh}
+          onRestoreVehicleRefresh={handleRestoreVehicleRefresh}
+          onLocateVehicleRefresh={locateVehicleRefreshRule}
           onCreateRoute={handleCreateRoute}
           onUpdateRoute={handleUpdateRoute}
           onDeleteRoute={handleDeleteRoute}
@@ -2705,6 +3501,7 @@ export default function App() {
           onSelectStage={handleSelectPointPanelStage}
           onSelect={handleSelectPoint}
           onResetProgress={handleResetPointPanel}
+          battleContext={wargame.battleContext}
         />
         <DeployBar
           mapId={mapId}
@@ -2746,16 +3543,44 @@ export default function App() {
         </div>
       )}
 
+      {refreshVehicleDelete && (
+        <div className="mobile-confirm-backdrop" role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget) setRefreshVehicleDelete(null) }}>
+          <div className="mobile-confirm-dialog refresh-vehicle-dialog" role="dialog" aria-modal="true" aria-labelledby="refresh-vehicle-delete-title">
+            <h2 id="refresh-vehicle-delete-title">处理刷新载具</h2>
+            <p>{refreshVehicleDelete.vehicles.length === 1 ? `“${refreshVehicleDelete.vehicles[0].name}”来自载具刷新规则。` : `选中内容包含 ${refreshVehicleDelete.vehicles.length} 个刷新载具。`}请选择删除后的规则状态。</p>
+            <div className="refresh-vehicle-dialog-options">
+              <button type="button" className="danger" onClick={() => { const uids = refreshVehicleDelete.uids; setRefreshVehicleDelete(null); deleteVehicleInstances(uids, false) }}><strong>视为损失</strong><small>删除兵棋，本轮规则仍保持已使用</small></button>
+              <button type="button" onClick={() => { const uids = refreshVehicleDelete.uids; setRefreshVehicleDelete(null); deleteVehicleInstances(uids, true) }}><strong>复原刷新规则</strong><small>删除对应规则产生的兵棋，并恢复为可部署</small></button>
+              <button type="button" onClick={() => setRefreshVehicleDelete(null)}>取消</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <TacticalBoardModal
         open={tacticalOpen}
         mapId={mapId}
         mapNameOf={(id) => MAP_BY_ID[id]?.name ?? id}
         mapName={config.name}
         view={view}
-        stageId={stages[capturedStageIndex]?.id ?? 'S1'}
-        stageLabel={stages[capturedStageIndex] ? `${stages[capturedStageIndex].id} · ${stages[capturedStageIndex].label}` : ''}
+        stageId={activeModeStageId ?? stages[capturedStageIndex]?.id ?? 'S1'}
+        stageOptions={stages.map((stage) => ({ id: stage.id, label: stage.label }))}
+        stageLabel={activeOfficialModeMap?.stages.find((stage) => stage.id === activeModeStageId)
+          ? `${activeModeStageId} · ${activeOfficialModeMap.stages.find((stage) => stage.id === activeModeStageId)?.label}`
+          : stages[capturedStageIndex] ? `${stages[capturedStageIndex].id} · ${stages[capturedStageIndex].label}` : ''}
         plans={plans}
-        onExport={(m) => void handleExportTactical(m)}
+        round={wargame.round}
+        roundOptions={(() => {
+          const rounds = Array.from(new Set(Object.values(state.tacticalBuckets?.buckets ?? {}).map((bucket) => bucket.round))).sort((a, b) => a - b)
+          return rounds.length ? rounds : [wargame.round || 1]
+        })()}
+        roundOptionsByStage={Object.fromEntries(stages.map((stage) => {
+          const rounds = Array.from(new Set(Object.values(state.tacticalBuckets?.buckets ?? {}).filter((bucket) => bucket.stageId === stage.id).map((bucket) => bucket.round))).sort((a, b) => a - b)
+          return [stage.id, rounds.length ? rounds : [1]]
+        }))}
+        onExport={(m, stageId, round) => void handleExportTactical(m, stageId, round)}
+        onExportNative={handleExportNativeTactical}
+        onImportNative={handleImportNativeTactical}
         onSavePlan={handleSavePlan}
         onApplyPlan={handleApplyPlan}
         onDeletePlan={handleDeletePlan}

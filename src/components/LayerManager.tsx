@@ -18,11 +18,22 @@ export const SIDE_COLORS: Record<Side, string> = {
  * 确保画笔图形始终显示在瓦片、点位、载具、道具、区域之上。
  */
 const DRAW_PANE = 'drawPane'
-/** Leaflet 会把 pane 名 drawPane 转换成 DOM 类名 leaflet-draw-pane。 */
-const DRAW_PANE_SELECTOR = '.leaflet-draw-pane'
+/** Marker 由 leaflet-rotate 换算屏幕坐标，需留在非旋转 Pane，避免双重偏移。 */
+const DRAW_MARKER_PANE = 'drawMarkerPane'
+/** Leaflet 会把 pane 名转换成对应的 leaflet-* DOM 类名。 */
+const DRAW_PANE_SELECTOR = '.leaflet-draw-pane, .leaflet-draw-marker-pane'
+/** 防线三角带始终使用完全不透明的实心填充。 */
+const DEFENSE_FILL_OPACITY = 1
 /** 图形命中区向路径两侧各扩展 10px；5px 内的位移仍按单击处理。 */
 const HIT_PADDING_PX = 10
 const CLICK_DRAG_THRESHOLD_PX = 5
+const LOCKED_TOAST_MSG = '该图样已经锁定，请解锁后再删除'
+const LOCKED_MOVE_TOAST_MSG = '存在图形处于锁定状态，请先解锁'
+const LOCK_BODY_PATH = 'M758.5 931h-497c-50.453 0-91.5-41.047-91.5-91.5v-335c0-50.453 41.047-91.5 91.5-91.5h497c50.453 0 91.5 41.047 91.5 91.5v335c0 50.453-41.047 91.5-91.5 91.5z m-497-454c-15.164 0-27.5 12.336-27.5 27.5v335c0 15.163 12.336 27.5 27.5 27.5h497c15.163 0 27.5-12.337 27.5-27.5v-335c0-15.164-12.337-27.5-27.5-27.5h-497z'
+const LOCK_SHACKLE_PATH = 'M512.1 791c-17.673 0-32-14.327-32-32V588.999c0-17.673 14.327-32 32-32 17.673 0 32 14.327 32 32V759c0 17.673-14.328 32-32 32zM297.472 446.595c-17.673 0-32-14.327-32-32 0-109.504 25.127-192.098 74.684-245.486 22.309-24.034 49.483-42.036 80.767-53.505 27.139-9.95 57.454-14.995 90.101-14.995 76.909 0 134.36 20.286 175.638 62.018 51.002 51.562 75.166 134.096 73.874 252.317-0.191 17.552-14.481 31.649-31.99 31.65-0.12 0-0.237 0-0.357-0.002-17.672-0.193-31.842-14.676-31.648-32.348 1.08-98.854-17.552-168.368-55.379-206.611-28.637-28.952-71.205-43.025-130.137-43.025-52.665 0-94.371 16.163-123.96 48.04-38.214 41.169-57.59 109.113-57.59 201.946-0.003 17.674-14.329 32.001-32.003 32.001z'
+const UNLOCK_SHACKLE_PATH = 'M512.1 791c-17.673 0-32-14.327-32-32V588.999c0-17.673 14.327-32 32-32 17.673 0 32 14.327 32 32V759c0 17.673-14.328 32-32 32zM297.472 446.595c-17.673 0-32-14.327-32-32 0-109.504 25.127-192.098 74.684-245.486 22.309-24.034 49.483-42.036 80.767-53.505 27.139-9.95 57.454-14.995 90.101-14.995 64.215 0 114.448 14.036 153.567 42.911 22.108 16.319 40.617 37.577 55.012 63.183 14.526 25.841 25.306 56.97 32.037 92.523 3.288 17.365-8.124 34.106-25.488 37.395-17.363 3.291-34.106-8.123-37.395-25.488-19.446-102.703-72.6-146.523-177.733-146.523-52.665 0-94.371 16.163-123.96 48.04-38.214 41.169-57.59 109.113-57.59 201.946-0.002 17.674-14.329 31.999-32.002 31.999z'
+const lockIcon = (unlock = false) => `<svg viewBox="0 0 1024 1024" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="${LOCK_BODY_PATH}"/><path d="${unlock ? UNLOCK_SHACKLE_PATH : LOCK_SHACKLE_PATH}"/></svg>`
+const featureKeyOf = (p: Record<string, unknown>) => String(p.group || p.uid || '')
 
 function offsetGeoCoordinates(value: unknown, dLng: number, dLat: number): unknown {
   if (!Array.isArray(value)) return value
@@ -51,10 +62,13 @@ interface LayerManagerProps {
   onCommitDraw: (before: string, after: string) => void
   /** 删除选中信号（第十二轮：App 点击"删除选中"按钮 +1） */
   deleteSelectedTick: number
+  clearDrawTick: number
   /** 是否有选中图形上报（第十二轮：驱动"删除选中"按钮置灰/可用） */
   onDeleteSelCount: (n: number) => void
   onDrawSaved: (side: Side, geoJson: string) => void
   onStartEdit: (edit: ActiveTextEdit) => void
+  /** Android 绘制模式下双击地图空白处切回普通鼠标。 */
+  onExitDraw: () => void
   // ---- 套索支持载具（第十四轮：框选载具部署图标，整体移动/删除） ----
   /** 当前地图全部载具（供套索框选判定） */
   vehicles: VehicleItem[]
@@ -327,6 +341,7 @@ function ensureProps(feature: Feature): Record<string, unknown> {
   // 导致套索选中/高亮无法区分箭杆与箭头。还原时检测到这种格式就重新分配独立 uid，
   // 与新版绘制逻辑保持一致（group 仍用于关联整组）。
   if (p.group && p.uid === p.group) p.uid = genUid('draw')
+  if (p.locked == null) p.locked = false
   return p
 }
 
@@ -536,9 +551,11 @@ export default function LayerManager({
   draw,
   onCommitDraw,
   deleteSelectedTick,
+  clearDrawTick,
   onDeleteSelCount,
   onDrawSaved,
   onStartEdit,
+  onExitDraw,
   vehicles,
   vehiclePosRef,
   onMoveVehicles,
@@ -561,6 +578,8 @@ export default function LayerManager({
   // 当前工具的 ref 快照（闭包/回调内读取最新值，避免依赖数组引起重订阅）
   const toolRef = useRef(tool)
   toolRef.current = tool
+  const onExitDrawRef = useRef(onExitDraw)
+  onExitDrawRef.current = onExitDraw
   // 回调 ref（供 restoreLayer 等早期定义的闭包在 render 后读取最新回调，第十一轮）
   const onFeatureClickRef = useRef<(e: L.LeafletMouseEvent) => void>(() => {})
   const openEditorRef = useRef<(m: MarkerWithFeature) => void>(() => {})
@@ -575,6 +594,10 @@ export default function LayerManager({
   const androidPinchStartRef = useRef<(a: L.Point, b: L.Point) => boolean>(() => false)
   const androidPinchMoveRef = useRef<(a: L.Point, b: L.Point) => void>(() => {})
   const androidPinchEndRef = useRef<() => void>(() => {})
+  const androidSelectionDragStartRef = useRef<(event: L.LeafletMouseEvent) => boolean>(() => false)
+  const androidHandleDragStartRef = useRef<(kind: string, event: L.LeafletMouseEvent) => boolean>(() => false)
+  const androidSelectionDragMoveRef = useRef<(event: L.LeafletMouseEvent) => void>(() => {})
+  const androidSelectionDragEndRef = useRef<() => void>(() => {})
   const androidPinchSessionRef = useRef<AndroidPinchScaleSession | null>(null)
   // 拖拽位移标记（第十二轮：区分"点击"与"拖动"。拖动结束后 Leaflet 仍会派发 click，
   // 若位移超过阈值则视为拖动，抑制 click 取消选中逻辑）
@@ -595,7 +618,33 @@ export default function LayerManager({
   }>({})
   // 套索包围矩形（第十五轮：圈中图形后显示矩形区域，区域内按住可整体移动）
   const lassoBoxRef = useRef<L.Rectangle | null>(null)
+  const selectionDragBoundsRef = useRef<L.Bounds | null>(null)
+  const currentSelectionScreenBoundsRef = useRef<() => L.Bounds | null>(() => null)
+  const gizmoRefreshFrameRef = useRef<number | null>(null)
+  const scheduleGizmoRefreshRef = useRef<() => void>(() => {})
+  const lassoBoxBtnRef = useRef<L.Marker | null>(null)
+  const selectionHasLockedRef = useRef<() => boolean>(() => false)
+  const setLassoLockedRef = useRef<(locked: boolean) => void>(() => {})
+  const setKeyLockedRef = useRef<(key: string, locked: boolean) => void>(() => {})
   const drawClipboardRef = useRef<Feature[]>([])
+  const [toast, setToast] = useState<string | null>(null)
+  const toastTimerRef = useRef<number | null>(null)
+  const showToast = useCallback((message: string) => {
+    if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current)
+    setToast(message)
+    toastTimerRef.current = window.setTimeout(() => { toastTimerRef.current = null; setToast(null) }, 2000)
+  }, [])
+  useEffect(() => () => { if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current) }, [])
+  const lockedKeys = useCallback(() => {
+    const keys = new Set<string>()
+    fgRef.current?.eachLayer((layer) => {
+      const p = ((layer as AnyWithFeature).feature?.properties ?? {}) as Record<string, unknown>
+      if (p.locked === true) keys.add(featureKeyOf(p))
+    })
+    return keys
+  }, [])
+  const lockedKeysRef = useRef(lockedKeys)
+  lockedKeysRef.current = lockedKeys
 
   const save = useCallback(() => {
     const g = fgRef.current
@@ -672,13 +721,108 @@ export default function LayerManager({
   useEffect(() => {
     if (platform.kind !== 'android') return
     const container = map.getContainer()
-    let activePointerId: number | null = null
-    let activePointerOnDrawLayer = false
-    let activePointerClearsSelection = false
+    type AndroidGesture =
+      | { kind: 'idle' }
+      | { kind: 'ui'; pointerId: number; button: HTMLElement; action: 'delete' | 'lock'; locked?: boolean; key?: string; lasso?: boolean }
+      | { kind: 'selection-pending'; pointerId: number; startEvent: PointerEvent; startPoint: L.Point }
+      | { kind: 'selection-drag'; pointerId: number }
+      | { kind: 'selection-pinch'; pointerIds: Set<number>; committed: boolean }
+      | { kind: 'handle-drag'; pointerId: number }
+      | { kind: 'shape'; pointerId: number }
+      | { kind: 'draw'; pointerId: number }
+      | { kind: 'tool-drag'; pointerId: number; startPoint: L.Point; tapEligible: boolean }
+      | { kind: 'tool-tap'; pointerId: number; startPoint: L.Point; cancelled: boolean }
+    let gesture: AndroidGesture = { kind: 'idle' }
     let lastTouchPointerAt = 0
     let lastValidPointerEvent: PointerEvent | null = null
+    let mapGestureState: { dragging: boolean; touchZoom: boolean } | null = null
     const activePointers = new Map<number, PointerEvent>()
+    const suppressedPointers = new Set<number>()
     const bridgedMouseEvents = new WeakSet<MouseEvent>()
+    const DOUBLE_TAP_MS = 360
+    const DOUBLE_TAP_DISTANCE_PX = 28
+    let pendingBlankTap: {
+      at: number
+      point: L.Point
+      commit?: () => void
+      timer: number
+    } | null = null
+
+    const flushPendingBlankTap = () => {
+      const pending = pendingBlankTap
+      pendingBlankTap = null
+      if (!pending) return
+      window.clearTimeout(pending.timer)
+      pending.commit?.()
+    }
+
+    const registerBlankTap = (event: PointerEvent, commit?: () => void) => {
+      const at = performance.now()
+      const point = pointerPoint(event)
+      const previous = pendingBlankTap
+      if (previous && at - previous.at <= DOUBLE_TAP_MS && previous.point.distanceTo(point) <= DOUBLE_TAP_DISTANCE_PX) {
+        window.clearTimeout(previous.timer)
+        pendingBlankTap = null
+        // Let the active tool finish its own up/reset work before MapView unmounts this gesture effect.
+        window.setTimeout(() => onExitDrawRef.current(), 0)
+        return
+      }
+      if (previous) flushPendingBlankTap()
+      const candidate = {
+        at,
+        point,
+        commit,
+        timer: 0,
+      }
+      candidate.timer = window.setTimeout(() => {
+        if (pendingBlankTap !== candidate) return
+        pendingBlankTap = null
+        candidate.commit?.()
+      }, DOUBLE_TAP_MS)
+      pendingBlankTap = candidate
+    }
+
+    const claimMapGestures = () => {
+      if (mapGestureState) return
+      mapGestureState = {
+        dragging: map.dragging.enabled(),
+        touchZoom: map.touchZoom.enabled(),
+      }
+      if (mapGestureState.dragging) map.dragging.disable()
+      if (mapGestureState.touchZoom) map.touchZoom.disable()
+    }
+
+    const restoreMapGestures = () => {
+      const state = mapGestureState
+      mapGestureState = null
+      if (!state) return
+      if (state.dragging && !map.dragging.enabled()) map.dragging.enable()
+      if (state.touchZoom && !map.touchZoom.enabled()) map.touchZoom.enable()
+    }
+
+    const capturePointer = (event: PointerEvent) => {
+      try { container.setPointerCapture?.(event.pointerId) } catch { /* WebView may reject capture */ }
+    }
+
+    const releasePointer = (pointerId: number) => {
+      try { container.releasePointerCapture?.(pointerId) } catch { /* already released */ }
+    }
+
+    const ownEvent = (event: PointerEvent) => {
+      lastTouchPointerAt = performance.now()
+      event.preventDefault()
+      event.stopImmediatePropagation()
+    }
+
+    const resetGesture = () => {
+      for (const pointerId of activePointers.keys()) releasePointer(pointerId)
+      for (const pointerId of suppressedPointers) releasePointer(pointerId)
+      activePointers.clear()
+      suppressedPointers.clear()
+      gesture = { kind: 'idle' }
+      lastValidPointerEvent = null
+      restoreMapGestures()
+    }
 
     const pointerPoint = (event: PointerEvent) => {
       const rect = container.getBoundingClientRect()
@@ -696,6 +840,16 @@ export default function LayerManager({
       const layerPoint = map.containerPointToLayerPoint(containerPoint)
       const latlng = map.layerPointToLatLng(layerPoint)
       map.fire(type, { latlng, layerPoint, containerPoint, originalEvent: event })
+    }
+
+    const leafletEventOf = (event: PointerEvent): L.LeafletMouseEvent => {
+      const containerPoint = pointerPoint(event)
+      return {
+        latlng: map.containerPointToLatLng(containerPoint),
+        containerPoint,
+        layerPoint: map.containerPointToLayerPoint(containerPoint),
+        originalEvent: event,
+      } as unknown as L.LeafletMouseEvent
     }
 
     const fireDrawLayerMouseDown = (event: PointerEvent) => {
@@ -721,123 +875,248 @@ export default function LayerManager({
       return true
     }
 
-    const onPointerDown = (event: PointerEvent) => {
+    /**
+     * Android single-owner gesture arbiter. Every non-map gesture is claimed here in capture
+     * phase and remains owned until all participating pointers end. Leaflet only receives a
+     * gesture when the first contact starts on map chrome/empty map in pan mode.
+     */
+    const onArbitratedPointerDown = (event: PointerEvent) => {
       if (event.pointerType === 'mouse') return
-      if ((event.target as HTMLElement | null)?.closest('.leaflet-control-container')) return
-      const onDrawLayer = !!(event.target as HTMLElement | null)?.closest(DRAW_PANE_SELECTOR)
-      if (activePointerId != null) {
-        // 第二根手指只有在第一根手指从已选图形/编辑框开始时才由图形编辑器接管；
-        // 地图空白上的双指手势继续交给 Leaflet touchZoom。
-        if (!activePointerOnDrawLayer || activePointers.size !== 1) return
-        activePointers.set(event.pointerId, event)
-        const [first, second] = [...activePointers.values()]
-        if (!androidPinchStartRef.current(pointerPoint(first), pointerPoint(second))) {
-          activePointers.delete(event.pointerId)
+      const target = event.target as HTMLElement | null
+      if (target?.closest('.leaflet-control-container')) return
+
+      if (gesture.kind !== 'idle') {
+        if (gesture.kind === 'selection-pending' && activePointers.size === 1) {
+          activePointers.set(event.pointerId, event)
+          capturePointer(event)
+          ownEvent(event)
+          const [first, second] = [...activePointers.values()]
+          if (androidPinchStartRef.current(pointerPoint(first), pointerPoint(second))) {
+            androidPinchActiveRef.current = true
+            gesture = { kind: 'selection-pinch', pointerIds: new Set(activePointers.keys()), committed: false }
+          } else {
+            activePointers.delete(event.pointerId)
+            suppressedPointers.add(event.pointerId)
+          }
           return
         }
-        androidPinchActiveRef.current = true
-        lastTouchPointerAt = performance.now()
-        try { container.setPointerCapture?.(event.pointerId) } catch { /* WebView may reject capture */ }
-        event.preventDefault()
+        // UI, handles, drawing and an established one-finger drag cannot be stolen by another
+        // finger. Suppress the extra pointer until it ends so Leaflet never receives half a gesture.
+        suppressedPointers.add(event.pointerId)
+        capturePointer(event)
+        ownEvent(event)
         return
       }
-      // 平移模式的地图空白仍完全交给 Leaflet 原生触控拖图；只有命中已有图形或
-      // 编辑手柄时才接管，从而让移动端在 pan 模式也能编辑既有图形。
-      // 物理触摸交给 Leaflet 原生处理；影视 Demo 派发的非受信任 PointerEvent
-      // 不会获得浏览器的后续兼容 click，因此继续走下方桥接以形成完整点击。
+
+      const deleteButton = target?.closest<HTMLElement>('.edit-delete-trigger')
+      const lockButton = target?.closest<HTMLElement>('.edit-lock-trigger, .edit-unlock-trigger')
+      if (deleteButton || lockButton) {
+        claimMapGestures()
+        capturePointer(event)
+        activePointers.set(event.pointerId, event)
+        gesture = deleteButton
+          ? { kind: 'ui', pointerId: event.pointerId, button: deleteButton, action: 'delete' }
+          : {
+              kind: 'ui',
+              pointerId: event.pointerId,
+              button: lockButton!,
+              action: 'lock',
+              locked: lockButton!.dataset.editLockValue === 'true',
+              key: lockButton!.dataset.editLockKey,
+              lasso: lockButton!.dataset.editLassoLock === 'true',
+            }
+        ownEvent(event)
+        return
+      }
+
+      const handle = target?.closest<HTMLElement>('[data-edit-handle-kind]')
+      const handleKind = handle?.dataset.editHandleKind ?? ''
+      const hit = target?.closest<HTMLElement>('[data-draw-hit-key]')
+      const hitKey = hit?.dataset.drawHitKey ?? ''
+      const selectedHit = !!hitKey && isKeySelectedRef.current(hitKey)
+      const insideSelection = selectedRef.current.size > 0
+        && (selectedHit || !!target?.closest('.edit-selection-box'))
+        && !target?.closest('.edit-style-trigger, .edit-delete-trigger, .edit-lock-trigger, .edit-unlock-trigger, .edit-handle-wrap')
+      const onDrawLayer = !!target?.closest(DRAW_PANE_SELECTOR)
+
+      if (handleKind) {
+        claimMapGestures()
+        capturePointer(event)
+        activePointers.set(event.pointerId, event)
+        lastValidPointerEvent = event
+        if (androidHandleDragStartRef.current(handleKind, leafletEventOf(event))) {
+          gesture = { kind: 'handle-drag', pointerId: event.pointerId }
+          ownEvent(event)
+          return
+        }
+        resetGesture()
+      }
+
+      if (insideSelection) {
+        // First contact is deliberately inert. Movement promotes it to drag; a second contact
+        // promotes it to pinch. This removes the first-finger race without adding a timer/lag.
+        claimMapGestures()
+        capturePointer(event)
+        activePointers.set(event.pointerId, event)
+        lastValidPointerEvent = event
+        selectionDragBoundsRef.current = currentSelectionScreenBoundsRef.current()
+        gesture = {
+          kind: 'selection-pending',
+          pointerId: event.pointerId,
+          startEvent: event,
+          startPoint: pointerPoint(event),
+        }
+        ownEvent(event)
+        return
+      }
+
+      // Empty-map gestures in pan mode are 100% native Leaflet gestures. The arbiter does not
+      // capture, prevent or synthesize any event, so ordinary map pinch remains fully native.
       if (tool === 'pan' && !onDrawLayer && event.isTrusted) {
-        // 清除上一轮图形手势的兼容鼠标抑制窗口，确保紧接着点击空白能触发
-        // Leaflet click，从而立即取消图形选中。
         lastTouchPointerAt = Number.NEGATIVE_INFINITY
         return
       }
-      lastTouchPointerAt = performance.now()
-      activePointerId = event.pointerId
-      activePointerOnDrawLayer = onDrawLayer
-      activePointerClearsSelection = !onDrawLayer && selectedRef.current.size > 0
+
+      claimMapGestures()
+      capturePointer(event)
       activePointers.set(event.pointerId, event)
       lastValidPointerEvent = event
-      try { container.setPointerCapture?.(event.pointerId) } catch { /* WebView may reject capture during handoff */ }
-      event.preventDefault()
       if (onDrawLayer) {
-        // 在补发 Leaflet mousedown 之前先上编辑锁。这样即使 WebView/Leaflet 的事件
-        // 调度顺序发生变化，当前仍处于激活状态的防线绘制器也绝不会启动新线。
         editPointerActiveRef.current = true
         fireDrawLayerMouseDown(event)
+        gesture = { kind: hitKey ? 'shape' : 'draw', pointerId: event.pointerId }
+      } else {
+        // Clearing selection is an orthogonal pre-action, never the owner of the gesture. The
+        // same first contact must continue into the active tool without requiring a second tap.
+        if (selectedRef.current.size > 0) clearEditSelectionRef.current(true)
+        if (tool === 'text') {
+          gesture = { kind: 'tool-tap', pointerId: event.pointerId, startPoint: pointerPoint(event), cancelled: false }
+        } else {
+          gesture = { kind: 'tool-drag', pointerId: event.pointerId, startPoint: pointerPoint(event), tapEligible: true }
+          fireLeafletPointer('mousedown', event)
+        }
       }
-      else if (!activePointerClearsSelection && tool !== 'text') fireLeafletPointer('mousedown', event)
+      ownEvent(event)
     }
-    const onPointerMove = (event: PointerEvent) => {
+
+    const onArbitratedPointerMove = (event: PointerEvent) => {
+      if (suppressedPointers.has(event.pointerId)) {
+        ownEvent(event)
+        return
+      }
       if (!activePointers.has(event.pointerId)) return
-      lastTouchPointerAt = performance.now()
-      lastValidPointerEvent = event
       activePointers.set(event.pointerId, event)
-      event.preventDefault()
-      if (androidPinchActiveRef.current && activePointers.size >= 2) {
-        const [first, second] = [...activePointers.values()]
-        androidPinchMoveRef.current(pointerPoint(first), pointerPoint(second))
-        return
-      }
-      if (activePointerId !== event.pointerId) return
-      if (!activePointerClearsSelection && tool !== 'text') fireLeafletPointer('mousemove', event)
-    }
-    const finishPointer = (event: PointerEvent) => {
-      if (!activePointers.has(event.pointerId)) return
-      lastTouchPointerAt = performance.now()
       lastValidPointerEvent = event
-      event.preventDefault()
-      if (androidPinchActiveRef.current) {
-        androidPinchEndRef.current()
-        androidPinchActiveRef.current = false
-        for (const id of activePointers.keys()) {
-          try { container.releasePointerCapture?.(id) } catch { /* capture may already be released */ }
+      ownEvent(event)
+
+      if (gesture.kind === 'ui') return
+      if (gesture.kind === 'selection-pinch') {
+        if (!gesture.committed && activePointers.size >= 2) {
+          const [first, second] = [...activePointers.values()]
+          androidPinchMoveRef.current(pointerPoint(first), pointerPoint(second))
         }
-        activePointers.clear()
-        activePointerId = null
-        activePointerOnDrawLayer = false
-        activePointerClearsSelection = false
-        lastValidPointerEvent = null
         return
       }
-      if (activePointerId !== event.pointerId) return
-      fireLeafletPointer(activePointerClearsSelection || (tool === 'text' && !activePointerOnDrawLayer) ? 'click' : 'mouseup', event)
-      try { container.releasePointerCapture?.(event.pointerId) } catch { /* capture may already be released */ }
-      activePointerId = null
-      activePointerOnDrawLayer = false
-      activePointerClearsSelection = false
-      activePointers.clear()
-      lastValidPointerEvent = null
+      if (gesture.kind === 'selection-pending' && gesture.pointerId === event.pointerId) {
+        if (gesture.startPoint.distanceTo(pointerPoint(event)) <= CLICK_DRAG_THRESHOLD_PX) return
+        if (!androidSelectionDragStartRef.current(leafletEventOf(gesture.startEvent))) return
+        gesture = { kind: 'selection-drag', pointerId: event.pointerId }
+        androidSelectionDragMoveRef.current(leafletEventOf(event))
+        return
+      }
+      if (gesture.kind === 'tool-drag' && gesture.pointerId === event.pointerId
+        && gesture.tapEligible && gesture.startPoint.distanceTo(pointerPoint(event)) > CLICK_DRAG_THRESHOLD_PX) {
+        gesture.tapEligible = false
+        flushPendingBlankTap()
+      }
+      if ((gesture.kind === 'selection-drag' || gesture.kind === 'handle-drag') && gesture.pointerId === event.pointerId) {
+        androidSelectionDragMoveRef.current(leafletEventOf(event))
+      } else if ((gesture.kind === 'shape' || gesture.kind === 'draw' || gesture.kind === 'tool-drag') && gesture.pointerId === event.pointerId && tool !== 'text') {
+        fireLeafletPointer('mousemove', event)
+      } else if (gesture.kind === 'tool-tap' && gesture.pointerId === event.pointerId
+        && gesture.startPoint.distanceTo(pointerPoint(event)) > CLICK_DRAG_THRESHOLD_PX) {
+        // A text placement remains a tap only while the finger stays within the click threshold.
+        gesture.cancelled = true
+        flushPendingBlankTap()
+      }
     }
-    const cancelPointer = (event: PointerEvent) => {
-      if (!activePointers.has(event.pointerId)) return
-      lastTouchPointerAt = performance.now()
-      event.preventDefault()
-      if (androidPinchActiveRef.current) {
-        androidPinchEndRef.current()
-        androidPinchActiveRef.current = false
-        for (const id of activePointers.keys()) {
-          try { container.releasePointerCapture?.(id) } catch { /* already released */ }
-        }
-        activePointerId = null
-        activePointerOnDrawLayer = false
-        activePointerClearsSelection = false
-        activePointers.clear()
-        lastValidPointerEvent = null
+
+    const onArbitratedPointerUp = (event: PointerEvent) => {
+      if (suppressedPointers.delete(event.pointerId)) {
+        releasePointer(event.pointerId)
+        ownEvent(event)
         return
       }
-      if (activePointerId !== event.pointerId) return
-      // pointercancel 在部分 Android WebView 中会报告 (0,0)。绝不能用取消事件本身
-      // 作为终点，否则所有图形都会跳向地图左上角。用最后一个有效采样点收尾；
-      // 文字工具的取消则不产生任何标注。
-      if (!activePointerClearsSelection && tool !== 'text' && lastValidPointerEvent) {
+      if (!activePointers.has(event.pointerId)) return
+      const owner = gesture
+      ownEvent(event)
+
+      if (owner.kind === 'selection-pinch') {
+        activePointers.delete(event.pointerId)
+        releasePointer(event.pointerId)
+        if (!owner.committed) {
+          androidPinchEndRef.current()
+          androidPinchActiveRef.current = false
+          owner.committed = true
+        }
+        // The first lifted finger ends geometry updates, but map gestures stay disabled until the
+        // second finger also lifts; otherwise the remaining finger can unexpectedly pan the map.
+        if (activePointers.size === 0) resetGesture()
+        return
+      }
+
+      activePointers.delete(event.pointerId)
+      releasePointer(event.pointerId)
+      if (owner.kind === 'ui' && owner.pointerId === event.pointerId) {
+        const hit = document.elementFromPoint(event.clientX, event.clientY)
+        const button = hit instanceof Element
+          ? hit.closest<HTMLElement>('.edit-delete-trigger, .edit-lock-trigger, .edit-unlock-trigger')
+          : null
+        if (button === owner.button && owner.button.isConnected) {
+          if (owner.action === 'delete') deleteSelected()
+          else if (owner.lasso) setLassoLockedRef.current(Boolean(owner.locked))
+          else if (owner.key) setKeyLockedRef.current(owner.key, Boolean(owner.locked))
+        }
+      } else if (owner.kind === 'selection-drag' || owner.kind === 'handle-drag') {
+        androidSelectionDragEndRef.current()
+      } else if (owner.kind === 'shape' || owner.kind === 'draw') {
+        fireLeafletPointer('mouseup', event)
+      } else if (owner.kind === 'tool-drag') {
+        fireLeafletPointer('mouseup', event)
+        if (owner.tapEligible) registerBlankTap(event)
+      } else if (owner.kind === 'tool-tap' && !owner.cancelled) {
+        registerBlankTap(event, () => fireLeafletPointer('click', event))
+      }
+      resetGesture()
+    }
+
+    const onArbitratedPointerCancel = (event: PointerEvent) => {
+      if (suppressedPointers.delete(event.pointerId)) {
+        releasePointer(event.pointerId)
+        ownEvent(event)
+        return
+      }
+      if (!activePointers.has(event.pointerId)) return
+      const owner = gesture
+      ownEvent(event)
+      if (owner.kind === 'selection-pinch') {
+        activePointers.delete(event.pointerId)
+        releasePointer(event.pointerId)
+        if (!owner.committed) {
+          androidPinchEndRef.current()
+          androidPinchActiveRef.current = false
+          owner.committed = true
+        }
+        if (activePointers.size === 0) resetGesture()
+        return
+      }
+      if (owner.kind === 'selection-drag' || owner.kind === 'handle-drag') {
+        androidSelectionDragEndRef.current()
+      } else if ((owner.kind === 'shape' || owner.kind === 'draw' || owner.kind === 'tool-drag') && tool !== 'text' && lastValidPointerEvent) {
+        // Some WebViews report (0,0) on cancel. Finalize from the last valid sample only.
         fireLeafletPointer('mouseup', lastValidPointerEvent)
       }
-      try { container.releasePointerCapture?.(event.pointerId) } catch { /* already released */ }
-      activePointerId = null
-      activePointerOnDrawLayer = false
-      activePointerClearsSelection = false
-      activePointers.clear()
-      lastValidPointerEvent = null
+      resetGesture()
     }
 
     // Chromium 会在触控 PointerEvent 之后补发 mousedown/mousemove/mouseup/click。
@@ -850,23 +1129,34 @@ export default function LayerManager({
       event.stopImmediatePropagation()
     }
 
-    container.addEventListener('pointerdown', onPointerDown, { passive: false })
-    container.addEventListener('pointermove', onPointerMove, { passive: false })
-    container.addEventListener('pointerup', finishPointer, { passive: false })
-    container.addEventListener('pointercancel', cancelPointer, { passive: false })
+    // Capture is required here: Leaflet begins map dragging from listeners below the container.
+    // Android selection-zone gestures must claim the pointer before it reaches those listeners.
+    container.addEventListener('pointerdown', onArbitratedPointerDown, { passive: false, capture: true })
+    container.addEventListener('pointermove', onArbitratedPointerMove, { passive: false, capture: true })
+    container.addEventListener('pointerup', onArbitratedPointerUp, { passive: false, capture: true })
+    container.addEventListener('pointercancel', onArbitratedPointerCancel, { passive: false, capture: true })
     container.addEventListener('mousedown', suppressCompatibilityMouse, true)
     container.addEventListener('mousemove', suppressCompatibilityMouse, true)
     container.addEventListener('mouseup', suppressCompatibilityMouse, true)
     container.addEventListener('click', suppressCompatibilityMouse, true)
     return () => {
-      container.removeEventListener('pointerdown', onPointerDown)
-      container.removeEventListener('pointermove', onPointerMove)
-      container.removeEventListener('pointerup', finishPointer)
-      container.removeEventListener('pointercancel', cancelPointer)
+      container.removeEventListener('pointerdown', onArbitratedPointerDown, true)
+      container.removeEventListener('pointermove', onArbitratedPointerMove, true)
+      container.removeEventListener('pointerup', onArbitratedPointerUp, true)
+      container.removeEventListener('pointercancel', onArbitratedPointerCancel, true)
       container.removeEventListener('mousedown', suppressCompatibilityMouse, true)
       container.removeEventListener('mousemove', suppressCompatibilityMouse, true)
       container.removeEventListener('mouseup', suppressCompatibilityMouse, true)
       container.removeEventListener('click', suppressCompatibilityMouse, true)
+      if (androidPinchActiveRef.current) {
+        androidPinchEndRef.current()
+        androidPinchActiveRef.current = false
+      }
+      if (pendingBlankTap) {
+        window.clearTimeout(pendingBlankTap.timer)
+        pendingBlankTap = null
+      }
+      resetGesture()
     }
   }, [map, tool])
 
@@ -895,11 +1185,15 @@ export default function LayerManager({
     }
   }, [map, tool])
 
-  // 按视角创建 / 切换 FeatureGroup（画笔）与高亮组（问题1：均挂载到顶层 drawPane）
+  // Path/SVG 随地图旋转；Marker/编辑手柄由 leaflet-rotate 独立换算位置。
   useEffect(() => {
     if (!map.getPane(DRAW_PANE)) {
-      const pane = map.createPane(DRAW_PANE)
-      pane.style.zIndex = '700'
+      const pane = map.createPane(DRAW_PANE, map.getPane('rotatePane') ?? undefined)
+      if (pane) pane.style.zIndex = '700'
+    }
+    if (!map.getPane(DRAW_MARKER_PANE)) {
+      const pane = map.createPane(DRAW_MARKER_PANE, map.getPane('norotatePane') ?? undefined)
+      if (pane) pane.style.zIndex = '710'
     }
     const g = L.featureGroup([], { pane: DRAW_PANE })
     const h = L.featureGroup([], { pane: DRAW_PANE })
@@ -917,6 +1211,10 @@ export default function LayerManager({
       if (lassoBoxRef.current) {
         lassoBoxRef.current.remove()
         lassoBoxRef.current = null
+      }
+      if (lassoBoxBtnRef.current) {
+        lassoBoxBtnRef.current.remove()
+        lassoBoxBtnRef.current = null
       }
       // 第十六轮：视角切换时清空套索选中集（载具/图形已按视角分桶，旧选中失效）
       selectedRef.current.clear()
@@ -946,6 +1244,7 @@ export default function LayerManager({
   const openEditor = useCallback(
     (marker: MarkerWithFeature) => {
       const props = (marker.feature?.properties ?? {}) as Record<string, unknown>
+      if (lockedKeysRef.current().has(featureKeyOf(props))) return
       const latlng = marker.getLatLng()
       const uid = String(props.uid ?? genUid('text'))
       if (props.uid !== uid) props.uid = uid
@@ -1131,6 +1430,18 @@ export default function LayerManager({
   const startMoveSelected = useCallback(
     (e: L.LeafletMouseEvent) => {
       dragMovedRef.current = false
+      const locked = lockedKeysRef.current()
+      let containsLocked = false
+      fgRef.current?.eachLayer((layer) => {
+        const item = layer as AnyWithFeature
+        if (!item.feature) return
+        const props = item.feature.properties as Record<string, unknown>
+        if (selectedRef.current.has(String(props.uid)) && locked.has(featureKeyOf(props))) containsLocked = true
+      })
+      if (containsLocked) {
+        showToast(LOCKED_MOVE_TOAST_MSG)
+        return
+      }
       const base = new Map<string, unknown>()
       fgRef.current?.eachLayer((l) => {
         const fl = l as AnyWithFeature
@@ -1168,7 +1479,7 @@ export default function LayerManager({
         boxBounds: lassoBoxRef.current?.getBounds(),
       }
     },
-    [snapshotNow],
+    [snapshotNow, showToast],
   )
   const startMoveSelectedRef = useRef(startMoveSelected)
   startMoveSelectedRef.current = startMoveSelected
@@ -1186,6 +1497,9 @@ export default function LayerManager({
     const existing = lassoBoxRef.current
     lassoBoxRef.current = null
     if (existing) existing.remove()
+    const existingButton = lassoBoxBtnRef.current
+    lassoBoxBtnRef.current = null
+    if (existingButton) existingButton.remove()
     if (toolRef.current !== 'lasso') return
     const bounds = computeSelectionBounds()
     if (!bounds) return
@@ -1197,13 +1511,14 @@ export default function LayerManager({
     const ne2 = map.containerPointToLatLng(L.point(ne.x + PAD, ne.y - PAD))
     const box = L.rectangle(L.latLngBounds(sw2, ne2), {
       pane: DRAW_PANE,
-      color: '#01ff84',
+      color: '#3f8cff',
       weight: 1.5,
       dashArray: '6 4',
-      fillColor: '#01ff84',
+      fillColor: '#3f8cff',
       fillOpacity: 0.05,
       opacity: 0.9,
       interactive: true,
+      className: 'edit-selection-box edit-selection-drag-hit',
     })
     // 区域内按住：启动整体移动（与"按住已选中图形"相同）
     box.on('mousedown', (e: L.LeafletMouseEvent) => {
@@ -1214,11 +1529,83 @@ export default function LayerManager({
     box.on('click', (e: L.LeafletMouseEvent) => L.DomEvent.stopPropagation(e))
     box.addTo(map)
     lassoBoxRef.current = box
+    const locked = selectionHasLockedRef.current()
+    const buttonPosition = map.containerPointToLatLng(
+      map.latLngToContainerPoint(box.getBounds().getNorthEast()).add([20, -20]),
+    )
+    const button = L.marker(buttonPosition, {
+      icon: L.divIcon({
+        className: 'edit-lock-trigger-wrap',
+        html: `<button type="button" class="${locked ? 'edit-unlock-trigger' : 'edit-lock-trigger'}" title="${locked ? '解锁图形' : '锁定图形'}" aria-label="${locked ? '解锁图形' : '锁定图形'}">${lockIcon(locked)}</button>`,
+        iconSize: [30, 26],
+        iconAnchor: [15, 13],
+      }),
+      pane: DRAW_MARKER_PANE,
+      interactive: true,
+      keyboard: false,
+      zIndexOffset: 1100,
+    })
+    button.on('mousedown', (event: L.LeafletMouseEvent) => {
+      L.DomEvent.stop(event.originalEvent as MouseEvent)
+      L.DomEvent.stopPropagation(event)
+    })
+    button.on('click', (event: L.LeafletMouseEvent) => {
+      L.DomEvent.stop(event.originalEvent as MouseEvent)
+      L.DomEvent.stopPropagation(event)
+      setLassoLockedRef.current(!selectionHasLockedRef.current())
+    })
+    button.addTo(map)
+    const buttonElement = button.getElement()?.querySelector<HTMLElement>('.edit-lock-trigger, .edit-unlock-trigger')
+    if (buttonElement) {
+      buttonElement.dataset.editLassoLock = 'true'
+      buttonElement.dataset.editLockValue = String(!locked)
+    }
+    lassoBoxBtnRef.current = button
   }, [map, computeSelectionBounds])
 
   // 供 early 定义的回调（clearSelection 等）调用最新版
   const updateLassoBoxRef = useRef(updateLassoBox)
   updateLassoBoxRef.current = updateLassoBox
+
+  const selectionHasLocked = useCallback(() => {
+    const locked = lockedKeysRef.current()
+    let found = false
+    fgRef.current?.eachLayer((layer) => {
+      const item = layer as AnyWithFeature
+      if (!item.feature) return
+      const props = item.feature.properties as Record<string, unknown>
+      if (selectedRef.current.has(String(props.uid)) && locked.has(featureKeyOf(props))) found = true
+    })
+    return found
+  }, [])
+  selectionHasLockedRef.current = selectionHasLocked
+
+  const setLassoLocked = useCallback((locked: boolean) => {
+    const selectedKeys = new Set<string>()
+    fgRef.current?.eachLayer((layer) => {
+      const item = layer as AnyWithFeature
+      if (!item.feature) return
+      const props = item.feature.properties as Record<string, unknown>
+      if (selectedRef.current.has(String(props.uid))) selectedKeys.add(featureKeyOf(props))
+    })
+    if (selectedKeys.size === 0) return
+    const before = snapshotNow()
+    let changed = false
+    fgRef.current?.eachLayer((layer) => {
+      const item = layer as AnyWithFeature
+      if (!item.feature) return
+      const props = item.feature.properties as Record<string, unknown>
+      if (selectedKeys.has(featureKeyOf(props)) && props.locked !== locked) {
+        props.locked = locked
+        changed = true
+      }
+    })
+    if (!changed) return
+    if (locked) closeSelPanelRef.current(false)
+    commitDraw(before)
+    updateLassoBoxRef.current()
+  }, [snapshotNow, commitDraw])
+  setLassoLockedRef.current = setLassoLocked
 
   const clearSelection = useCallback(() => {
     for (const uid of selectedRef.current) highlight(uid, false)
@@ -1328,22 +1715,26 @@ export default function LayerManager({
     const before = snapshotNow()
     // 删除选中的绘制图形（含箭头组）
     if (hasDraw && g) {
+      const locked = lockedKeysRef.current()
+      let blocked = false
       const doomed: AnyWithFeature[] = []
       g.eachLayer((l) => {
         const fl = l as AnyWithFeature
         const fp = (fl.feature?.properties ?? {}) as Record<string, unknown>
         const u = String(fp.uid)
         const grp = String(fp.group ?? '')
-        if (selectedRef.current.has(u) || (grp && selectedRef.current.has(grp))) doomed.push(fl)
+        if (!(selectedRef.current.has(u) || (grp && selectedRef.current.has(grp)))) return
+        if (locked.has(featureKeyOf(fp))) { blocked = true; return }
+        doomed.push(fl)
       })
+      if (blocked) showToast(LOCKED_TOAST_MSG)
       for (const d of doomed) {
         const u = String((d.feature?.properties as Record<string, unknown>)?.uid ?? '')
         selectedRef.current.delete(u)
         highlight(u, false)
         g.removeLayer(d)
       }
-      selectedRef.current.clear()
-      commitDraw(before)
+      if (doomed.length > 0) commitDraw(before)
     }
     // 删除选中的载具（第十四轮：套索框选后整体删除）
     if (hasVeh) {
@@ -1363,9 +1754,16 @@ export default function LayerManager({
       selTeamsRef.current.clear()
       onDeleteTeamsRef.current?.(uids)
     }
+    // Remove the editor controls synchronously.  On Android the WebView can defer
+    // the React/Leaflet redraw until the next frame, leaving a stale selection box
+    // visible after the shape itself has already been removed.
+    if (hasDraw) {
+      gizmoRef.current?.clearLayers()
+      if (selectedRef.current.size > 0) buildGizmoRef.current()
+    }
     updateLassoBoxRef.current()
     notifySelection()
-  }, [highlight, snapshotNow, commitDraw, notifySelection])
+  }, [highlight, snapshotNow, commitDraw, notifySelection, showToast])
 
   // 监听"删除选中"信号（第十二轮：工具栏按钮触发；必须放在 deleteSelected 之后，避免 TDZ）
   const prevDeleteSelTick = useRef(deleteSelectedTick)
@@ -1376,19 +1774,49 @@ export default function LayerManager({
     }
   }, [deleteSelectedTick, deleteSelected])
 
+  const prevClearDrawTick = useRef(clearDrawTick)
+  useEffect(() => {
+    if (clearDrawTick === prevClearDrawTick.current) return
+    prevClearDrawTick.current = clearDrawTick
+    const g = fgRef.current
+    if (!g) return
+    const locked = lockedKeysRef.current()
+    const doomed: AnyWithFeature[] = []
+    g.eachLayer((layer) => {
+      const item = layer as AnyWithFeature
+      const p = (item.feature?.properties ?? {}) as Record<string, unknown>
+      if (item.feature && !locked.has(featureKeyOf(p))) doomed.push(item)
+    })
+    if (doomed.length > 0) {
+      const before = snapshotNow()
+      doomed.forEach((item) => {
+        const uid = String(item.feature?.properties?.uid ?? '')
+        selectedRef.current.delete(uid)
+        highlight(uid, false)
+        g.removeLayer(item)
+      })
+      commitDraw(before)
+      updateLassoBoxRef.current()
+      buildGizmoRef.current()
+      notifySelection()
+    }
+    if (locked.size > 0) showToast(LOCKED_TOAST_MSG)
+  }, [clearDrawTick, snapshotNow, commitDraw, highlight, notifySelection, showToast])
+
   /** 删除图形（橡皮擦）：箭头按 group 整体删除（问题4；重构：上报 App 入历史栈） */
   const deleteFeature = useCallback(
     (layer: AnyWithFeature) => {
       const g = fgRef.current
       if (!g) return
-      const before = snapshotNow()
       const props = (layer.feature?.properties ?? {}) as Record<string, unknown>
-      const key = String(props.group ?? props.uid)
+      const key = featureKeyOf(props)
+      if (lockedKeysRef.current().has(key)) { showToast(LOCKED_TOAST_MSG); return }
+      const before = snapshotNow()
       const doomed: AnyWithFeature[] = []
       g.eachLayer((l) => {
         const fl = l as AnyWithFeature
         const fp = (fl.feature?.properties ?? {}) as Record<string, unknown>
-        if (String(fp.group ?? fp.uid) === key) doomed.push(fl)
+        if (featureKeyOf(fp) === key) doomed.push(fl)
       })
       for (const d of doomed) {
         const uid = String((d.feature?.properties as Record<string, unknown>)?.uid ?? '')
@@ -1398,7 +1826,7 @@ export default function LayerManager({
       }
       commitDraw(before)
     },
-    [snapshotNow, commitDraw, highlight],
+    [snapshotNow, commitDraw, highlight, showToast],
   )
 
   /** 图形点击：橡皮擦模式删除；套索模式单选/取消选中（第十一轮） */
@@ -1483,7 +1911,7 @@ export default function LayerManager({
         }
       const marker = L.marker(latlng, {
         icon: textIcon(String(props.text ?? ''), textStyleFromProps(props)),
-        pane: DRAW_PANE,
+        pane: DRAW_MARKER_PANE,
       }) as MarkerWithFeature
       marker.feature = feature
       marker.on('dblclick', () => openEditor(marker))
@@ -1506,7 +1934,7 @@ export default function LayerManager({
       // 防线三角（Polygon）：实心填充（与绘制成稿一致）
       if (props.type === 'defense' && l instanceof L.Polygon) {
         const c = String(props.color ?? SIDE_COLORS[view])
-        pl.setStyle({ color: c, weight: 0, fillColor: c, fillOpacity: 0.95, opacity: 1, pane: DRAW_PANE })
+        pl.setStyle({ color: c, weight: 0, fillColor: c, fillOpacity: DEFENSE_FILL_OPACITY, opacity: 1, pane: DRAW_PANE })
       }
       pl.on('click', onFeatureClick)
       // 套索模式：图形可拖拽移动（阻止冒泡避免触发地图套索）
@@ -1568,7 +1996,7 @@ export default function LayerManager({
         const df = defenseFeatures(pts, draw.weight)
         const layers: L.Layer[] = []
         for (const tri of df.triangles) {
-          layers.push(L.polygon(tri, { ...stylePreview, fillOpacity: 0.9, weight: 0 }))
+          layers.push(L.polygon(tri, { ...stylePreview, fillOpacity: DEFENSE_FILL_OPACITY, opacity: 1, weight: 0 }))
         }
         return layers
       }
@@ -1649,7 +2077,7 @@ export default function LayerManager({
           color: draw.color,
           weight: 0,
           fillColor: draw.color,
-          fillOpacity: 0.95,
+          fillOpacity: DEFENSE_FILL_OPACITY,
           opacity: 1,
           pane: DRAW_PANE,
         }
@@ -1700,7 +2128,7 @@ export default function LayerManager({
     })
     const showCtrlMarker = (pos: L.LatLng) => {
       hideCtrlMarker()
-      const m = L.marker(pos, { icon: ctrlIcon, pane: DRAW_PANE, interactive: true, keyboard: false, zIndexOffset: 1000 })
+      const m = L.marker(pos, { icon: ctrlIcon, pane: DRAW_MARKER_PANE, interactive: true, keyboard: false, zIndexOffset: 1000 })
       m.on('mousedown', (ev: L.LeafletMouseEvent) => {
         if ((ev.originalEvent as MouseEvent).button !== 0) return
         L.DomEvent.stop(ev.originalEvent as MouseEvent)
@@ -2095,7 +2523,13 @@ export default function LayerManager({
       }
       // 第十五轮：包围矩形跟随平移（整体移动时）
       if (d.boxBounds && lassoBoxRef.current) {
-        lassoBoxRef.current.setBounds(translateBounds(d.boxBounds, dLat, dLng))
+        const nextBounds = translateBounds(d.boxBounds, dLat, dLng)
+        lassoBoxRef.current.setBounds(nextBounds)
+        const button = lassoBoxBtnRef.current
+        if (button) {
+          const buttonPoint = map.latLngToContainerPoint(nextBounds.getNorthEast()).add([20, -20])
+          button.setLatLng(map.containerPointToLatLng(buttonPoint))
+        }
       }
     }
     const onUp = () => {
@@ -2245,14 +2679,21 @@ export default function LayerManager({
     const eraseWholeAt = (pt: L.Point) => {
       const keys = new Set(hitTest(pt).map((d) => {
         const p = (d.feature?.properties ?? {}) as Record<string, unknown>
-        return String(p.group ?? p.uid ?? '')
+        return featureKeyOf(p)
       }))
+      if (keys.size === 0) return
+      const locked = lockedKeysRef.current()
+      let blocked = false
+      for (const key of [...keys]) {
+        if (locked.has(key)) { keys.delete(key); blocked = true }
+      }
+      if (blocked) showToast(LOCKED_TOAST_MSG)
       if (keys.size === 0) return
       const doomed: AnyWithFeature[] = []
       fg.eachLayer((candidate) => {
         const any = candidate as AnyWithFeature
         const p = (any.feature?.properties ?? {}) as Record<string, unknown>
-        if (keys.has(String(p.group ?? p.uid ?? ''))) doomed.push(any)
+        if (keys.has(featureKeyOf(p))) doomed.push(any)
       })
       for (const d of doomed) {
         const uid = String((d.feature?.properties as Record<string, unknown> | undefined)?.uid ?? '')
@@ -2352,10 +2793,12 @@ export default function LayerManager({
         fg.eachLayer((candidate) => {
           if (!(candidate instanceof L.Polyline) || candidate instanceof L.Polygon) return
           const layer = candidate as PathWithFeature
+          const layerProps = (layer.feature?.properties ?? {}) as Record<string, unknown>
+          if (lockedKeysRef.current().has(featureKeyOf(layerProps))) return
           strokeSources.push({
             layer,
             points: flatLatLngs(layer).map((ll) => L.latLng(ll.lat, ll.lng)),
-            props: { ...((layer.feature?.properties ?? {}) as Record<string, unknown>) },
+            props: { ...layerProps },
           })
           strokeLiveLayers.add(layer)
         })
@@ -2404,7 +2847,7 @@ export default function LayerManager({
       map.off('mousemove', onMove)
       map.off('mouseup', onUp)
     }
-  }, [map, fg, tool, draw.eraserSize, draw.eraserMode, snapshotNow, commitDraw, highlight, view, onFeatureClick, bindDrag])
+  }, [map, fg, tool, draw.eraserSize, draw.eraserMode, snapshotNow, commitDraw, highlight, view, onFeatureClick, bindDrag, showToast])
 
   // ---- 手绘模式（第二十二轮）：线条工具（line/arrow/defense）路径=手绘时，
   // 按住拖拽自由绘制轨迹，松开生成最终图形（防线沿线生成三角形带） ----
@@ -2426,7 +2869,7 @@ export default function LayerManager({
       color: draw.color,
       weight: 0,
       fillColor: draw.color,
-      fillOpacity: 0.9,
+      fillOpacity: DEFENSE_FILL_OPACITY,
       opacity: 1,
       pane: DRAW_PANE,
     }
@@ -2652,7 +3095,7 @@ export default function LayerManager({
       }
       // 第十二轮：放置前快照（供撤回/恢复）
       const before = snapshotNow()
-      const marker = L.marker(e.latlng, { icon: textIcon('', DEFAULT_TEXT_STYLE), pane: DRAW_PANE }) as MarkerWithFeature
+      const marker = L.marker(e.latlng, { icon: textIcon('', DEFAULT_TEXT_STYLE), pane: DRAW_MARKER_PANE }) as MarkerWithFeature
       marker.feature = feature
       fg.addLayer(marker)
       marker.on('dblclick', () => openEditor(marker))
@@ -2810,6 +3253,44 @@ export default function LayerManager({
     return out
   }, [])
 
+  /** 当前选中图形的实时屏幕包围盒。路径直接投影所有顶点，不读取可能滞后一帧的 SVG DOM。 */
+  const currentSelectionScreenBounds = useCallback((): L.Bounds | null => {
+    const layers = layersOfKeys(selectedKeys())
+    if (layers.length === 0) return null
+    const points: L.Point[] = []
+    let maxStrokePadding = 0
+    for (const layer of layers) {
+      if (layer instanceof L.Marker) {
+        const element = layer.getElement()
+        const rect = element?.getBoundingClientRect()
+        if (rect && rect.width > 0 && rect.height > 0) {
+          const containerRect = map.getContainer().getBoundingClientRect()
+          points.push(
+            L.point(rect.left - containerRect.left, rect.top - containerRect.top),
+            L.point(rect.right - containerRect.left, rect.bottom - containerRect.top),
+          )
+        } else {
+          points.push(map.latLngToContainerPoint(layer.getLatLng()))
+        }
+        continue
+      }
+      if (layer instanceof L.Polyline) {
+        const vertices = flatLatLngs(layer)
+        for (const vertex of vertices) points.push(map.latLngToContainerPoint(vertex))
+        const props = (layer.feature?.properties ?? {}) as Record<string, unknown>
+        maxStrokePadding = Math.max(maxStrokePadding, Math.max(0, Number(props.weight ?? 0)) / 2)
+      }
+    }
+    if (points.length === 0) return null
+    const bounds = L.bounds(points)
+    if (maxStrokePadding <= 0) return bounds
+    return L.bounds(
+      bounds.min!.subtract([maxStrokePadding, maxStrokePadding]),
+      bounds.max!.add([maxStrokePadding, maxStrokePadding]),
+    )
+  }, [layersOfKeys, map, selectedKeys])
+  currentSelectionScreenBoundsRef.current = currentSelectionScreenBounds
+
   /** 图形逻辑键是否已在选中集合中 */
   const isKeySelected = useCallback((key: string): boolean => {
     return targetLayersOf(key).some((l) => {
@@ -2876,7 +3357,7 @@ export default function LayerManager({
         color,
         weight: 0,
         fillColor: color,
-        fillOpacity: 0.95,
+        fillOpacity: DEFENSE_FILL_OPACITY,
         opacity: 1,
         pane: DRAW_PANE,
       }
@@ -2929,8 +3410,9 @@ export default function LayerManager({
         const measuredHeight = rect && rect.height > 0
           ? rect.height
           : Math.max(34, lines.length * fontSize * 1.3 + 12)
-        const hitWidth = Math.ceil(measuredWidth + HIT_PADDING_PX * 2)
-        const hitHeight = Math.ceil(measuredHeight + HIT_PADDING_PX * 2)
+        const hitPadding = platform.kind === 'android' ? 18 : HIT_PADDING_PX
+        const hitWidth = Math.ceil(measuredWidth + hitPadding * 2)
+        const hitHeight = Math.ceil(measuredHeight + hitPadding * 2)
         hl = L.marker(marker.getLatLng(), {
           icon: L.divIcon({
             className: 'draw-text-hit-wrap',
@@ -2938,7 +3420,7 @@ export default function LayerManager({
             iconSize: [hitWidth, hitHeight],
             iconAnchor: [hitWidth / 2, hitHeight / 2],
           }),
-          pane: DRAW_PANE,
+          pane: DRAW_MARKER_PANE,
           interactive: true,
           keyboard: false,
           zIndexOffset: 800,
@@ -2956,8 +3438,9 @@ export default function LayerManager({
         })
       } else if (layer instanceof L.Polygon || layer instanceof L.Polyline) {
         const pts = flatLatLngs(layer)
-        const w = Number(props.weight ?? 3) + HIT_PADDING_PX * 2
-        const opts: L.PathOptions = {
+        const hitPadding = platform.kind === 'android' ? 18 : HIT_PADDING_PX
+        const w = Number(props.weight ?? 3) + hitPadding * 2
+        const opts: L.PathOptions & { smoothFactor?: number; noClip?: boolean } = {
           weight: w,
           color: '#fff',
           opacity: 0.001,
@@ -2967,6 +3450,7 @@ export default function LayerManager({
           pane: DRAW_PANE,
           interactive: true,
           className: 'draw-hit-area',
+          ...(platform.kind === 'android' ? { smoothFactor: 0, noClip: true } : {}),
         }
         hl = layer instanceof L.Polygon ? L.polygon(pts, opts) : L.polyline(pts, opts)
       }
@@ -3037,6 +3521,10 @@ export default function LayerManager({
         }
       })
       h.addLayer(hl)
+      const hitElement = typeof (hl as L.Path).getElement === 'function'
+        ? (hl as L.Path).getElement()
+        : null
+      hitElement?.setAttribute('data-draw-hit-key', keyOf())
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [highlightKey, findByUid, map],
@@ -3071,7 +3559,7 @@ export default function LayerManager({
             iconSize: [0, 0],
             iconAnchor: [0, 0],
           }),
-          pane: DRAW_PANE,
+          pane: DRAW_MARKER_PANE,
           interactive: false,
           zIndexOffset: 2000,
         }).addTo(map)
@@ -3110,6 +3598,7 @@ export default function LayerManager({
   /** 由选中框右侧按钮打开属性面板；选择图形本身不再自动弹出。 */
   const openSelPanel = useCallback(
     (key: string) => {
+      if (lockedKeysRef.current().has(key)) return
       const layers = targetLayersOf(key)
       const first = layers[0]
       if (!first) return
@@ -3194,7 +3683,7 @@ export default function LayerManager({
           }
           if (target instanceof L.Path) {
             if (props.type === 'defense') {
-              target.setStyle({ color: s.color, weight: 0, fillColor: s.color, fillOpacity: 0.95, opacity: 1 })
+              target.setStyle({ color: s.color, weight: 0, fillColor: s.color, fillOpacity: DEFENSE_FILL_OPACITY, opacity: 1 })
             } else {
               target.setStyle(styleFromProps(props, view))
             }
@@ -3227,21 +3716,41 @@ export default function LayerManager({
   const closeSelPanelRef = useRef(closeSelPanel)
   closeSelPanelRef.current = closeSelPanel
 
+  const setKeyLocked = useCallback((key: string, locked: boolean) => {
+    const targets = targetLayersOf(key)
+    if (targets.length === 0) return
+    const current = targets.some((target) => target.feature?.properties?.locked === true)
+    if (current === locked) return
+    const before = snapshotNow()
+    targets.forEach((target) => {
+      const p = (target.feature?.properties ?? {}) as Record<string, unknown>
+      p.locked = locked
+    })
+    if (locked) closeSelPanelRef.current(false)
+    commitDraw(before)
+    buildGizmoRef.current()
+    window.requestAnimationFrame(() => buildGizmoRef.current())
+  }, [targetLayersOf, snapshotNow, commitDraw])
+  setKeyLockedRef.current = setKeyLocked
+
   /** 构建选中手柄组（选中框 + 各类手柄；支持多选：仅单选时显示端点/曲线/拉伸手柄） */
   const buildGizmo = useCallback(() => {
     const gz = gizmoRef.current
     if (!gz) return
     gz.clearLayers()
+    selectionDragBoundsRef.current = null
     const keys = selectedKeys()
     const layers = layersOfKeys(keys)
     if (layers.length === 0) return
     const single = keys.length === 1
     const first = layers[0]
+    const lockedSel = single && layers.some((layer) => layer.feature?.properties?.locked === true)
     const props = (first.feature?.properties ?? {}) as Record<string, unknown>
     const isCircle = props.type === 'circle'
     const isText = props.type === 'text'
     const isDefense = props.type === 'defense' && !!props.group
     const isLine = props.type === 'line' || props.type === 'arrow' || props.type === 'pen'
+    const gizmoPane = platform.kind === 'android' ? DRAW_PANE : DRAW_MARKER_PANE
     // 包围盒
     let bounds: L.LatLngBounds
     if (isText && single && first instanceof L.Marker) {
@@ -3267,6 +3776,15 @@ export default function LayerManager({
     } else {
       bounds = unionBounds(layers)
     }
+    const screenCorners = [
+      bounds.getNorthWest(), bounds.getNorthEast(), bounds.getSouthWest(), bounds.getSouthEast(),
+    ].map((corner) => map.latLngToContainerPoint(corner))
+    const projectedScreenBounds = L.bounds(screenCorners)
+    if (platform.kind === 'android') {
+      selectionDragBoundsRef.current = currentSelectionScreenBounds() ?? projectedScreenBounds
+    } else {
+      selectionDragBoundsRef.current = projectedScreenBounds
+    }
     // 选中框同时作为“框内拖动”命中面；控制手柄随后添加，仍会位于选中框之上。
     const selectionBox = L.rectangle(bounds, {
       pane: DRAW_PANE,
@@ -3277,7 +3795,7 @@ export default function LayerManager({
       fillOpacity: 0.04,
       opacity: 0.9,
       interactive: true,
-      className: 'edit-selection-box',
+      className: 'edit-selection-box edit-selection-drag-hit',
     })
     selectionBox.on('mousedown', (e: L.LeafletMouseEvent) => {
       if ((e.originalEvent as MouseEvent).button !== 0) return
@@ -3304,17 +3822,22 @@ export default function LayerManager({
     selectionBox.on('mouseup', () => finishShapePointerRef.current())
     selectionBox.on('click', (e: L.LeafletMouseEvent) => L.DomEvent.stopPropagation(e))
     selectionBox.addTo(gz)
-    if (single) {
+    if (single && !lockedSel) {
       const eastCenter = L.latLng(bounds.getCenter().lat, bounds.getEast())
-      const stylePos = map.containerPointToLatLng(map.latLngToContainerPoint(eastCenter).add([34, 0]))
+      const mobileActions = platform.kind === 'android'
+      const actionSize: [number, number] = mobileActions ? [44, 44] : [30, 26]
+      const actionAnchor: [number, number] = mobileActions ? [22, 22] : [15, 13]
+      const actionGap = mobileActions ? 50 : 32
+      const actionX = mobileActions ? 42 : 34
+      const stylePos = map.containerPointToLatLng(map.latLngToContainerPoint(eastCenter).add([actionX, 0]))
       const styleButton = L.marker(stylePos, {
         icon: L.divIcon({
           className: 'edit-style-trigger-wrap',
           html: '<button type="button" class="edit-style-trigger" title="编辑图形样式" aria-label="编辑图形样式"><i class="fa-solid fa-sliders"></i></button>',
-          iconSize: [30, 26],
-          iconAnchor: [15, 13],
+          iconSize: actionSize,
+          iconAnchor: actionAnchor,
         }),
-        pane: DRAW_PANE,
+          pane: gizmoPane,
         interactive: true,
         keyboard: false,
         zIndexOffset: 1100,
@@ -3339,15 +3862,15 @@ export default function LayerManager({
         })
       }
 
-      const deletePos = map.containerPointToLatLng(map.latLngToContainerPoint(eastCenter).add([34, 32]))
+      const deletePos = map.containerPointToLatLng(map.latLngToContainerPoint(eastCenter).add([actionX, actionGap]))
       const deleteButton = L.marker(deletePos, {
         icon: L.divIcon({
           className: 'edit-delete-trigger-wrap',
           html: '<button type="button" class="edit-delete-trigger" title="删除图形" aria-label="删除图形"><i class="fa-regular fa-trash-can"></i></button>',
-          iconSize: [30, 26],
-          iconAnchor: [15, 13],
+          iconSize: actionSize,
+          iconAnchor: actionAnchor,
         }),
-        pane: DRAW_PANE,
+          pane: gizmoPane,
         interactive: true,
         keyboard: false,
         zIndexOffset: 1100,
@@ -3357,6 +3880,7 @@ export default function LayerManager({
         L.DomEvent.stopPropagation(e)
       })
       deleteButton.on('click', (e: L.LeafletMouseEvent) => {
+        if (platform.kind === 'android') return
         L.DomEvent.stop(e.originalEvent as MouseEvent)
         L.DomEvent.stopPropagation(e)
         deleteSelected()
@@ -3364,22 +3888,62 @@ export default function LayerManager({
       deleteButton.addTo(gz)
       const deleteButtonElement = deleteButton.getElement()?.querySelector<HTMLElement>('.edit-delete-trigger')
       if (deleteButtonElement) {
-        L.DomEvent.on(deleteButtonElement, 'pointerdown', (event: Event) => L.DomEvent.stop(event))
-        L.DomEvent.on(deleteButtonElement, 'pointerup', (event: Event) => {
+        L.DomEvent.on(deleteButtonElement, 'pointerdown', (event: Event) => {
+          if (platform.kind !== 'android') return
           L.DomEvent.stop(event)
-          deleteSelected()
+        })
+        L.DomEvent.on(deleteButtonElement, 'pointerup', (event: Event) => {
+          if (platform.kind !== 'android') return
+          L.DomEvent.stop(event)
         })
       }
+
+      const lockPos = map.containerPointToLatLng(map.latLngToContainerPoint(eastCenter).add([actionX, actionGap * 2]))
+      const lockButton = L.marker(lockPos, {
+        icon: L.divIcon({ className: 'edit-lock-trigger-wrap', html: `<button type="button" class="edit-lock-trigger" title="锁定图形" aria-label="锁定图形">${lockIcon()}</button>`, iconSize: actionSize, iconAnchor: actionAnchor }),
+        pane: gizmoPane, interactive: true, keyboard: false, zIndexOffset: 1100,
+      })
+      lockButton.on('mousedown', (e: L.LeafletMouseEvent) => { L.DomEvent.stop(e.originalEvent as MouseEvent); L.DomEvent.stopPropagation(e) })
+      lockButton.on('click', (e: L.LeafletMouseEvent) => { if (platform.kind !== 'android') { L.DomEvent.stop(e.originalEvent as MouseEvent); L.DomEvent.stopPropagation(e); setKeyLockedRef.current(keys[0], true) } })
+      lockButton.addTo(gz)
+      const lockButtonElement = lockButton.getElement()?.querySelector<HTMLElement>('.edit-lock-trigger')
+      if (lockButtonElement) {
+        lockButtonElement.dataset.editLockKey = keys[0]
+        lockButtonElement.dataset.editLockValue = 'true'
+        L.DomEvent.on(lockButtonElement, 'pointerdown', (event: Event) => { if (platform.kind === 'android') L.DomEvent.stop(event) })
+      }
+    }
+    if (lockedSel) {
+      const eastCenter = L.latLng(bounds.getCenter().lat, bounds.getEast())
+      const mobileActions = platform.kind === 'android'
+      const unlockPos = map.containerPointToLatLng(map.latLngToContainerPoint(eastCenter).add([mobileActions ? 42 : 34, 0]))
+      const unlockButton = L.marker(unlockPos, {
+        icon: L.divIcon({ className: 'edit-lock-trigger-wrap', html: `<button type="button" class="edit-unlock-trigger" title="解锁图形" aria-label="解锁图形">${lockIcon(true)}</button>`, iconSize: mobileActions ? [44, 44] : [30, 26], iconAnchor: mobileActions ? [22, 22] : [15, 13] }),
+        pane: gizmoPane, interactive: true, keyboard: false, zIndexOffset: 1100,
+      })
+      unlockButton.on('mousedown', (e: L.LeafletMouseEvent) => { L.DomEvent.stop(e.originalEvent as MouseEvent); L.DomEvent.stopPropagation(e) })
+      unlockButton.on('click', (e: L.LeafletMouseEvent) => { if (platform.kind !== 'android') { L.DomEvent.stop(e.originalEvent as MouseEvent); L.DomEvent.stopPropagation(e); setKeyLockedRef.current(keys[0], false) } })
+      unlockButton.addTo(gz)
+      const unlockButtonElement = unlockButton.getElement()?.querySelector<HTMLElement>('.edit-unlock-trigger')
+      if (unlockButtonElement) {
+        unlockButtonElement.dataset.editLockKey = keys[0]
+        unlockButtonElement.dataset.editLockValue = 'false'
+        L.DomEvent.on(unlockButtonElement, 'pointerdown', (event: Event) => { if (platform.kind === 'android') L.DomEvent.stop(event) })
+      }
+      return
     }
     const mk = (pos: L.LatLng, kind: string, cls: string, radius = 6) => {
+      const hitRadius = platform.kind === 'android'
+        ? (kind === 'rotate' ? 6 : 4)
+        : radius
       const h = L.marker(pos, {
         icon: L.divIcon({
           className: `edit-handle-wrap ${cls}`,
-          html: `<div class="edit-handle-dot"></div>`,
-          iconSize: [radius * 2, radius * 2],
-          iconAnchor: [radius, radius],
+          html: `<div class="edit-handle-dot" style="--edit-handle-visual-size:${radius * 2}px"></div>`,
+          iconSize: [hitRadius * 2, hitRadius * 2],
+          iconAnchor: [hitRadius, hitRadius],
         }),
-        pane: DRAW_PANE,
+        pane: gizmoPane,
         interactive: true,
         keyboard: false,
         zIndexOffset: 1000,
@@ -3395,6 +3959,7 @@ export default function LayerManager({
       })
       h.on('click', (e: L.LeafletMouseEvent) => L.DomEvent.stopPropagation(e))
       gz.addLayer(h)
+      h.getElement()?.setAttribute('data-edit-handle-kind', kind)
     }
     // 四角缩放手柄（Shift 锁定宽高比；文字四角 = 缩放字号）
     const nw = bounds.getNorthWest()
@@ -3450,6 +4015,39 @@ export default function LayerManager({
   const buildGizmoRef = useRef(buildGizmo)
   buildGizmoRef.current = buildGizmo
 
+  const scheduleGizmoRefresh = useCallback(() => {
+    if (gizmoRefreshFrameRef.current != null) return
+    gizmoRefreshFrameRef.current = window.requestAnimationFrame(() => {
+      gizmoRefreshFrameRef.current = null
+      if (selectedRef.current.size > 0) buildGizmoRef.current()
+    })
+  }, [])
+  scheduleGizmoRefreshRef.current = scheduleGizmoRefresh
+  useEffect(() => () => {
+    if (gizmoRefreshFrameRef.current != null) window.cancelAnimationFrame(gizmoRefreshFrameRef.current)
+  }, [])
+
+  // 选中框右侧按钮使用屏幕像素偏移计算位置；地图缩放后必须重新计算，
+  // 否则按钮会保留旧的经纬度偏移而逐渐偏离选中框。
+  useEffect(() => {
+    const refresh = () => {
+      scheduleGizmoRefreshRef.current()
+      updateLassoBoxRef.current()
+    }
+    map.on('zoomend', refresh)
+    map.on('moveend', refresh)
+    map.on('rotate', refresh)
+    map.on('viewreset', refresh)
+    map.on('resize', refresh)
+    return () => {
+      map.off('zoomend', refresh)
+      map.off('moveend', refresh)
+      map.off('rotate', refresh)
+      map.off('viewreset', refresh)
+      map.off('resize', refresh)
+    }
+  }, [map])
+
   /** 选中图形（key = 图形逻辑键；additive = Ctrl 多选追加） */
   const selectKey = useCallback(
     (key: string, additive: boolean) => {
@@ -3469,7 +4067,8 @@ export default function LayerManager({
       }
       interactRef.current = null
       notifySelection()
-      buildGizmoRef.current()
+      if (platform.kind === 'android') scheduleGizmoRefreshRef.current()
+      else buildGizmoRef.current()
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [clearSelection, highlight, notifySelection, targetLayersOf],
@@ -3488,7 +4087,8 @@ export default function LayerManager({
       }
       interactRef.current = null
       notifySelection()
-      buildGizmoRef.current()
+      if (platform.kind === 'android') scheduleGizmoRefreshRef.current()
+      else buildGizmoRef.current()
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [highlight, notifySelection, targetLayersOf],
@@ -3515,7 +4115,8 @@ export default function LayerManager({
   /** 启动整体移动（按住已选中的图形本体 → 整个选中集合一起移动） */
   const startBodyMove = useCallback(
     (key: string, e: L.LeafletMouseEvent) => {
-      const keys = selectedKeys()
+      const locked = lockedKeysRef.current()
+      const keys = selectedKeys().filter((item) => !locked.has(item))
       const layers = layersOfKeys(keys)
       if (layers.length === 0) return
       interactRef.current = {
@@ -3550,6 +4151,8 @@ export default function LayerManager({
   /** 启动手柄拖拽（缩放/旋转/拉伸/端点/曲线） */
   const startHandleDrag = useCallback(
     (kind: string, keys: string[], e: L.LeafletMouseEvent) => {
+      const locked = lockedKeysRef.current()
+      keys = keys.filter((item) => !locked.has(item))
       const layers = layersOfKeys(keys)
       if (layers.length === 0) return
       const first = layers[0]
@@ -3630,9 +4233,8 @@ export default function LayerManager({
   /** Android：双指在已选图形上捏合时，对选中集合做等比例缩放。 */
   const startAndroidPinch = useCallback((a: L.Point, b: L.Point): boolean => {
     if (platform.kind !== 'android') return false
-    // 结束第一根手指刚建立的普通点击/拖动候选会话，再切换为双指缩放。
-    finishShapePointerRef.current()
-    const keys = selectedKeys()
+    const locked = lockedKeysRef.current()
+    const keys = selectedKeys().filter((key) => !locked.has(key))
     const layers = layersOfKeys(keys)
     if (layers.length === 0) return false
     const startDistance = a.distanceTo(b)
@@ -3706,7 +4308,9 @@ export default function LayerManager({
       }
     }
     dragMovedRef.current = true
-    buildGizmoRef.current()
+    // Geometry and the eight edit handles must update in the same animation frame. Rebuilding
+    // synchronously for every raw pointer sample both wastes work and can use pre-layout bounds.
+    scheduleGizmoRefreshRef.current()
   }, [])
 
   const endAndroidPinch = useCallback(() => {
@@ -3925,13 +4529,55 @@ export default function LayerManager({
           setFlatLatLngs(layer, bezierPoints(pts[0], cur, pts[pts.length - 1]))
         }
       }
-      buildGizmoRef.current()
+      if (platform.kind === 'android') scheduleGizmoRefreshRef.current()
+      else buildGizmoRef.current()
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [map],
   )
   const applyInteractRef = useRef(applyInteract)
   applyInteractRef.current = applyInteract
+  androidSelectionDragStartRef.current = (event) => {
+    const key = selectedKeys()[0]
+    if (!key) return false
+    dragMovedRef.current = false
+    startBodyMoveRef.current(key, event)
+    if (!interactRef.current || interactRef.current.kind !== 'move') return false
+    editPointerActiveRef.current = true
+    if (map.dragging.enabled()) {
+      map.dragging.disable()
+      handleMapDragLockedRef.current = true
+    }
+    return true
+  }
+  androidSelectionDragMoveRef.current = (event) => {
+    if (interactRef.current) applyInteractRef.current(event)
+  }
+  androidHandleDragStartRef.current = (kind, event) => {
+    const keys = selectedKeys()
+    if (keys.length === 0) return false
+    startHandleDragRef.current(kind, keys, event)
+    if (!interactRef.current) return false
+    editPointerActiveRef.current = true
+    return true
+  }
+  androidSelectionDragEndRef.current = () => {
+    const interaction = interactRef.current
+    const textMarker = interaction?.text && interaction.layers[0]?.layer instanceof L.Marker
+      ? interaction.layers[0].layer as MarkerWithFeature
+      : null
+    interactRef.current = null
+    hideEditLabelRef.current()
+    if (interaction && snapshotNow() !== interaction.before) commitDraw(interaction.before)
+    if (textMarker) window.requestAnimationFrame(() => refreshTextHitRef.current(textMarker))
+    else buildGizmoRef.current()
+    editPointerActiveRef.current = false
+    dragMovedRef.current = false
+    if (handleMapDragLockedRef.current) {
+      handleMapDragLockedRef.current = false
+      if (toolRef.current === 'pan') map.dragging.enable()
+    }
+  }
   const showEditLabelRef = useRef(showEditLabel)
   showEditLabelRef.current = showEditLabel
 
@@ -3993,13 +4639,12 @@ export default function LayerManager({
       if (!press.dragging) {
         const currentPoint = map.latLngToContainerPoint(e.latlng)
         if (press.startPoint.distanceTo(currentPoint) <= CLICK_DRAG_THRESHOLD_PX) return
+        // 未选中的图形第一次操作只负责选中；必须再次按住已选图形才允许移动。
+        // Ctrl/Command 操作保留增减选择语义，也不在本次按下中启动拖动。
+        if (!press.wasSelected || press.additive) return
         press.dragging = true
         dragMovedRef.current = true
-        // 高亮图形可直接拖动：首次拖动先完成选中，再立即进入移动，不要求预先单击一次。
-        if (!press.additive) {
-          if (!press.wasSelected) selectKeyRef.current(press.key, false)
-          startBodyMoveRef.current(press.key, press.downEvent)
-        }
+        startBodyMoveRef.current(press.key, press.downEvent)
       }
       if (interactRef.current) applyInteractRef.current(e)
     }
@@ -4423,5 +5068,5 @@ export default function LayerManager({
       document.body,
     )
 
-  return selPanelUI
+  return <>{selPanelUI}{toast && createPortal(<div className="draw-toast" role="status">{toast}</div>, document.body)}</>
 }

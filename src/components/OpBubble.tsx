@@ -1,165 +1,142 @@
-import { useState } from 'react'
-import type { OperatorClass, OperatorUnit } from '../types'
+import { useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
+import type { OperatorUnit } from '../types'
 import { OPERATOR_CLASSES, operatorClassOf } from '../config/operators'
 import { profileOf, profilesByClass } from '../config/operatorProfiles'
+import { operatorSkillsOf } from '../config/operatorSkills'
 
 interface OpBubbleProps {
-  /** 目标干员 */
   op: OperatorUnit
-  /** 气泡位置（地图容器像素坐标，由 MapView 传入） */
   position: { x: number; y: number }
-  /** 选择具体干员（职业由干员决定，自动跟随） */
   onOperatorChange: (uid: string, operatorId: string) => void
-  /** 切换干员状态（存活/重伤/阵亡） */
   onStatusChange: (uid: string, status: OperatorUnit['status']) => void
+  onSkillUse: (uid: string, slot?: 1 | 2 | 3 | 4) => void
   onClose: () => void
 }
 
-const STATUS_OPTIONS: { value: OperatorUnit['status']; label: string }[] = [
-  { value: 'alive', label: '存活' },
-  { value: 'injured', label: '重伤' },
-  { value: 'killed', label: '阵亡' },
+const STATUS_OPTIONS: { value: OperatorUnit['status']; label: string; icon: string }[] = [
+  { value: 'alive', label: '存活', icon: 'fa-heart-pulse' },
+  { value: 'injured', label: '重伤', icon: 'fa-kit-medical' },
+  { value: 'killed', label: '阵亡', icon: 'fa-skull' },
 ]
 
-/** 三级下拉导航状态 */
-type MenuState =
-  | { level: 1 } // 第一级：职业 / 状态
-  | { level: 2; kind: 'class' } // 第二级：四个职业
-  | { level: 2; kind: 'status' } // 第二级：三个状态
-  | { level: 3; cls: OperatorClass } // 第三级：某职业的干员列表
+type Submenu = 'operator' | 'status' | 'skill' | null
 
-/**
- * 干员三级下拉栏（点击地图干员弹出）：
- * - 第一级：职业 / 状态 两个入口
- * - 选"职业" → 第二级四个职业 → 第三级该职业的干员列表，点击干员即切换并关闭
- * - 选"状态" → 第二级三个状态，点击即切换并关闭
- * - 每级均有返回箭头可回到上一级；点击地图空白处关闭
- */
-export default function OpBubble({ op, position, onOperatorChange, onStatusChange, onClose }: OpBubbleProps) {
-  const [menu, setMenu] = useState<MenuState>({ level: 1 })
-  const clsConf = operatorClassOf(op.cls)
+/** 桌面悬浮展开下一级；触屏点击进入。只有点击最终选项才执行操作。 */
+export default function OpBubble({ op, position, onOperatorChange, onStatusChange, onSkillUse, onClose }: OpBubbleProps) {
+  const [submenu, setSubmenu] = useState<Submenu>(null)
+  const closeTimer = useRef<number | null>(null)
   const profile = profileOf(op.operatorId)
-  const statusLabel = STATUS_OPTIONS.find((s) => s.value === op.status)?.label ?? '存活'
-
-  // 干员靠近地图顶部时，气泡改在干员下方展开，避免溢出
+  const clsConf = operatorClassOf(op.cls)
+  const groupedProfiles = profilesByClass()
+  const statusLabel = STATUS_OPTIONS.find((status) => status.value === op.status)?.label ?? '存活'
+  const skills = operatorSkillsOf(op.operatorId)
   const placeAbove = position.y > 110
+  const openLeft = position.x > window.innerWidth - 430
 
-  /** 面包屑标题：当前所在层级 */
-  const title =
-    menu.level === 1
-      ? `${profile.name} · ${clsConf.name}`
-      : menu.level === 2
-        ? menu.kind === 'class'
-          ? '选择职业'
-          : '选择状态'
-        : `选择${operatorClassOf(menu.cls).name}干员`
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
 
-  /** 返回上一级 */
-  const goBack = () => {
-    if (menu.level === 3) setMenu({ level: 2, kind: 'class' })
-    else if (menu.level === 2) setMenu({ level: 1 })
+  useEffect(() => () => {
+    if (closeTimer.current != null) window.clearTimeout(closeTimer.current)
+  }, [])
+
+  const openSubmenu = (next: Exclude<Submenu, null>) => {
+    if (closeTimer.current != null) window.clearTimeout(closeTimer.current)
+    closeTimer.current = null
+    setSubmenu(next)
+  }
+
+  const scheduleClose = () => {
+    if (closeTimer.current != null) window.clearTimeout(closeTimer.current)
+    closeTimer.current = window.setTimeout(() => setSubmenu(null), 160)
   }
 
   return (
     <div
-      className={`op-bubble ${placeAbove ? 'above' : 'below'}`}
+      className={`op-bubble op-cascade ${placeAbove ? 'above' : 'below'} ${openLeft ? 'open-left' : ''}`}
       style={{ left: position.x, top: position.y }}
-      onClick={(e) => e.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
     >
-      {/* 顶栏：面包屑 + 关闭 */}
-      <div className="op-bubble-head">
-        {menu.level > 1 && (
-          <button type="button" className="op-bubble-back" onClick={goBack} aria-label="返回">
-            ‹
+      <div className="op-bubble-panel op-cascade-root">
+        <div className="op-bubble-head">
+          {submenu && <button type="button" className="op-bubble-back op-cascade-mobile-only" onClick={() => setSubmenu(null)} aria-label="返回"><i className="fa-solid fa-chevron-left" /></button>}
+          <img className="op-cascade-current-avatar" src={profile.avatarUrl} alt="" draggable={false} />
+          <span className="op-bubble-head-title">{profile.name} · {clsConf.name}</span>
+          <button type="button" className="op-bubble-close" onClick={onClose} aria-label="关闭"><i className="fa-solid fa-xmark" /></button>
+        </div>
+        <div className={`op-bubble-menu op-cascade-main ${submenu ? 'has-submenu' : ''}`}>
+          <button type="button" className={`op-bubble-item ${submenu === 'operator' ? 'active' : ''}`} onMouseEnter={() => openSubmenu('operator')} onMouseLeave={scheduleClose} onClick={() => openSubmenu('operator')}>
+            <i className="fa-solid fa-user-group op-cascade-item-icon" />
+            <span className="op-bubble-item-label">更换干员</span>
+            <i className="fa-solid fa-chevron-right op-cascade-chevron" />
           </button>
-        )}
-        <span className="op-bubble-head-title">{title}</span>
-        <button type="button" className="op-bubble-close" onClick={onClose} aria-label="关闭">
-          ×
-        </button>
+          <button type="button" className={`op-bubble-item ${submenu === 'status' ? 'active' : ''}`} onMouseEnter={() => openSubmenu('status')} onMouseLeave={scheduleClose} onClick={() => openSubmenu('status')}>
+            <i className="fa-solid fa-heart-pulse op-cascade-item-icon" />
+            <span className="op-bubble-item-label">调整状态</span>
+            <span className="op-bubble-item-val">{statusLabel}</span>
+            <i className="fa-solid fa-chevron-right op-cascade-chevron" />
+          </button>
+          <button type="button" className={`op-bubble-item ${submenu === 'skill' ? 'active' : ''}`} onMouseEnter={() => openSubmenu('skill')} onMouseLeave={scheduleClose} onClick={() => openSubmenu('skill')}>
+            <i className="fa-solid fa-bolt op-cascade-item-icon" />
+            <span className="op-bubble-item-label">使用技能</span>
+            {op.activeSkillSlot && <span className="op-bubble-item-val">技能 {op.activeSkillSlot}</span>}
+            <i className="fa-solid fa-chevron-right op-cascade-chevron" />
+          </button>
+        </div>
       </div>
 
-      {/* 第一级：职业 / 状态 */}
-      {menu.level === 1 && (
-        <div className="op-bubble-menu">
-          <button
-            type="button"
-            className="op-bubble-item"
-            onClick={() => setMenu({ level: 2, kind: 'class' })}
-          >
-            <span className="op-bubble-item-label">职业</span>
-            <span className="op-bubble-item-val">{clsConf.name}</span>
-            <span className="op-bubble-caret" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="op-bubble-item"
-            onClick={() => setMenu({ level: 2, kind: 'status' })}
-          >
-            <span className="op-bubble-item-label">状态</span>
-            <span className="op-bubble-item-val">{statusLabel}</span>
-            <span className="op-bubble-caret" aria-hidden="true" />
-          </button>
-        </div>
-      )}
-
-      {/* 第二级：四个职业 */}
-      {menu.level === 2 && menu.kind === 'class' && (
-        <div className="op-bubble-menu">
-          {OPERATOR_CLASSES.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              className={`op-bubble-item cls-${c.id} ${op.cls === c.id ? 'active' : ''}`}
-              title={c.desc}
-              onClick={() => setMenu({ level: 3, cls: c.id })}
-            >
-              <span className="op-bubble-item-label">{c.name}</span>
-              <span className="op-bubble-caret" aria-hidden="true" />
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* 第二级：三个状态 */}
-      {menu.level === 2 && menu.kind === 'status' && (
-        <div className="op-bubble-menu">
-          {STATUS_OPTIONS.map((s) => (
-            <button
-              key={s.value}
-              type="button"
-              className={`op-bubble-item st-${s.value} ${op.status === s.value ? 'active' : ''}`}
-              onClick={() => {
-                if (op.status !== s.value) onStatusChange(op.uid, s.value)
+      {submenu === 'operator' && <div className="op-bubble-panel op-cascade-submenu op-cascade-operators" onMouseEnter={() => openSubmenu('operator')} onMouseLeave={scheduleClose}>
+        <div className="op-cascade-subtitle">更换干员</div>
+        <div className="op-cascade-groups">
+          {OPERATOR_CLASSES.map((operatorClass) => <section className="op-cascade-group" key={operatorClass.id}>
+            <div className="op-cascade-group-title" style={{ '--op-class-color': operatorClass.color } as CSSProperties}>
+              <img src={operatorClass.iconUrl} alt="" draggable={false} /><span>{operatorClass.name}</span>
+            </div>
+            <div className="op-cascade-operator-grid">
+              {groupedProfiles[operatorClass.id].map((candidate) => <button type="button" key={candidate.id} className={`op-cascade-operator ${candidate.id === op.operatorId ? 'active' : ''}`} title={`${candidate.name} · ${candidate.fullName}`} onClick={() => {
+                if (candidate.id !== op.operatorId) onOperatorChange(op.uid, candidate.id)
                 onClose()
-              }}
-            >
-              <span className="op-bubble-item-label">{s.label}</span>
-            </button>
-          ))}
+              }}>
+                <img src={candidate.avatarUrl} alt="" draggable={false} /><span>{candidate.name}</span>
+              </button>)}
+            </div>
+          </section>)}
         </div>
-      )}
+      </div>}
 
-      {/* 第三级：某职业的干员列表 */}
-      {menu.level === 3 && (
+      {submenu === 'status' && <div className="op-bubble-panel op-cascade-submenu op-cascade-status" onMouseEnter={() => openSubmenu('status')} onMouseLeave={scheduleClose}>
+        <div className="op-cascade-subtitle">调整状态</div>
         <div className="op-bubble-menu">
-          {profilesByClass()[menu.cls].map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className={`op-bubble-item ${op.operatorId === p.id ? 'active' : ''}`}
-              title={p.fullName}
-              onClick={() => {
-                if (op.operatorId !== p.id) onOperatorChange(op.uid, p.id)
-                onClose()
-              }}
-            >
-              <span className="op-bubble-item-label">{p.name}</span>
-              {op.operatorId === p.id && <span className="op-bubble-item-check">✓</span>}
-            </button>
-          ))}
+          {STATUS_OPTIONS.map((status) => <button type="button" key={status.value} className={`op-bubble-item st-${status.value} ${op.status === status.value ? 'active' : ''}`} onClick={() => {
+            if (op.status !== status.value) onStatusChange(op.uid, status.value)
+            onClose()
+          }}>
+            <i className={`fa-solid ${status.icon} op-cascade-item-icon`} /><span className="op-bubble-item-label">{status.label}</span>
+            {op.status === status.value && <i className="fa-solid fa-check op-bubble-item-check" />}
+          </button>)}
         </div>
-      )}
+      </div>}
+
+      {submenu === 'skill' && <div className="op-bubble-panel op-cascade-submenu op-cascade-skills" onMouseEnter={() => openSubmenu('skill')} onMouseLeave={scheduleClose}>
+        <div className="op-cascade-subtitle">{profile.name} · 使用技能</div>
+        <div className="op-cascade-skill-grid">
+          {skills.map((skill) => <button type="button" key={skill.slot} disabled={skill.kind === 'passive'} className={`op-cascade-skill ${skill.kind === 'passive' ? 'passive' : ''} ${op.activeSkillSlot === skill.slot ? 'active' : ''}`} onClick={() => {
+            if (skill.kind === 'passive') return
+            onSkillUse(op.uid, skill.slot)
+            onClose()
+          }} title={`${profile.name} · ${skill.name}${skill.kind === 'passive' ? '（被动，仅展示）' : ''}`}>
+            <img src={skill.iconUrl} alt="" draggable={false} />
+            <span>{skill.name}</span>
+          </button>)}
+        </div>
+        {op.activeSkillSlot && <button type="button" className="op-cascade-skill-clear" onClick={() => { onSkillUse(op.uid, undefined); onClose() }}>清除当前技能</button>}
+      </div>}
     </div>
   )
 }

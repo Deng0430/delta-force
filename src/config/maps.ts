@@ -117,7 +117,8 @@ export const MAPS: MapConfig[] = [
     name: '烬区',
     enName: 'Ember',
     layerName: 'map_jq',
-    tileUrl: `${TILE_BASE}/map_jq/{z}_{x}_{y}.jpg`,
+    // 官方总览瓦片与 map_jq 使用相同坐标系，但不含烘焙在普通瓦片中的活动区黑色遮罩。
+    tileUrl: `${TILE_BASE}/map_jq_zl/{z}_{x}_{y}.jpg`,
     minZoom: 3,
     initZoom: 3,
     maxZoom: 8,

@@ -2,7 +2,7 @@
    取自官网 main.css 统计：近黑底 #0e1112 / 浅灰白文字 #eaebeb / 荧光绿 #01ff84 /
    金色 #f4cf67 高亮 / 1px solid 细线 / 直角无阴影 / hover 灰 #2f3233 */
 :root {
-  --left-panel-width: 300px;
+  --left-panel-width: 340px;
   --bg-0: #0e1112;      /* 页面底层 / 地图底色 */
   --bg-1: #10181c;      /* 侧栏面板 */
   --bg-2: #191e21;      /* 卡片 / 列表项底 */
@@ -178,6 +178,301 @@ body {
   background: linear-gradient(180deg, #131a20, #0b0f15);
   border-bottom: 1px solid var(--line-0);
   user-select: none;
+}
+
+.toolbar .toolbar-collapse-btn,
+.toolbar.collapsed .toolbar-expand-btn {
+  border: 1px solid var(--line-2);
+  background: var(--bg-btn);
+  color: var(--tx-2);
+  cursor: pointer;
+}
+
+.toolbar .toolbar-collapse-btn {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 3px;
+}
+
+.toolbar .toolbar-collapse-btn:hover,
+.toolbar.collapsed .toolbar-expand-btn:hover {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.toolbar.collapsed {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 1200;
+  justify-content: center;
+  height: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+  border: 0;
+}
+
+.toolbar.collapsed .toolbar-expand-btn {
+  position: absolute;
+  top: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  padding: 0 12px;
+  border-top: 0;
+  border-radius: 0 0 4px 4px;
+  font-size: 9px;
+}
+
+.map-rotation-control {
+  display: grid;
+  grid-template-columns: 34px 84px 34px 30px;
+  align-items: center;
+  gap: 5px;
+  overflow: visible;
+  border: 0 !important;
+  background: transparent;
+  box-shadow: none !important;
+}
+
+.map-rotation-control button {
+  width: auto;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--line-1);
+  border-radius: 3px;
+  background: rgba(9, 14, 17, .94);
+  color: var(--tx-2);
+  font: 700 15px/40px sans-serif;
+  cursor: pointer;
+}
+
+.map-rotation-control button:last-child { border-right: 1px solid var(--line-1); }
+.map-rotation-control button:hover { background: var(--bg-hover); color: var(--green); }
+
+.map-rotation-control .map-bearing-compass {
+  position: relative;
+  display: grid;
+  width: 78px;
+  height: 78px;
+  justify-self: center;
+  place-items: center;
+  overflow: visible;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 50%;
+  touch-action: none;
+  cursor: crosshair;
+  background: transparent;
+  outline: 0;
+  box-shadow: none;
+  isolation: isolate;
+}
+
+.map-rotation-control .map-bearing-compass::before,
+.map-rotation-control .map-bearing-compass::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* 使用真实边框绘制两层完整圆环，避免深色地图上右缘被阴影吞没。 */
+.map-rotation-control .map-bearing-compass::before {
+  z-index: 1;
+  inset: 3px;
+  border: 1px solid rgba(108, 137, 145, .72);
+}
+
+.map-rotation-control .map-bearing-compass::after {
+  z-index: 1;
+  inset: 6px;
+  border: 1px solid rgba(1, 255, 132, .2);
+}
+
+.map-rotation-control .map-bearing-compass:hover {
+  background: radial-gradient(circle, rgba(1, 255, 132, .11), transparent 68%);
+}
+
+.map-bearing-column {
+  position: relative;
+  display: grid;
+  grid-template-rows: 24px 78px 30px;
+  gap: 4px;
+  justify-items: center;
+  overflow: visible;
+  border-right: 0;
+}
+
+/* 圆形底衬独立于 button 盒模型，避免右侧被相邻控件的矩形区域裁掉。 */
+.map-bearing-column::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  top: 29px;
+  left: 2px;
+  box-sizing: border-box;
+  width: 78px;
+  height: 78px;
+  border: 1px solid #63767d;
+  border-radius: 50%;
+  outline: 1px solid rgba(0, 0, 0, .9);
+  outline-offset: 1px;
+  background: radial-gradient(circle, rgba(1, 255, 132, .09), transparent 62%), linear-gradient(180deg, #131c20, #080d10);
+  box-shadow: 0 0 7px rgba(1, 255, 132, .11);
+  pointer-events: none;
+}
+
+.map-bearing-column > * {
+  position: relative;
+  z-index: 1;
+}
+
+.map-rotation-control .map-bearing-column button,
+.map-rotation-control .map-bearing-column label { border-right: 1px solid var(--line-1); }
+
+.map-rotation-control .map-bearing-reset {
+  width: 32px;
+  height: 22px;
+  border: 1px solid var(--line-1);
+  border-radius: 3px;
+  color: var(--green);
+  font: 800 9px/20px sans-serif;
+}
+
+.map-rotation-control .map-rotation-step,
+.map-rotation-control .map-rotation-collapse {
+  display: grid;
+  place-items: center;
+  line-height: 1;
+}
+
+.map-rotation-control .map-rotation-step {
+  width: 30px;
+  height: 30px;
+  border-radius: 3px;
+  font-size: 15px;
+}
+
+.map-bearing-dial {
+  position: absolute;
+  width: 60px;
+  height: 60px;
+  border: 1px solid rgba(155, 174, 181, .62);
+  border-radius: 50%;
+  background: radial-gradient(circle, transparent 0 54%, rgba(1, 255, 132, .12) 55% 58%, transparent 59%), repeating-conic-gradient(from -1deg, rgba(188, 204, 209, .8) 0 1deg, transparent 1deg 15deg);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, .5), inset 0 0 8px rgba(0, 0, 0, .75), 0 0 7px rgba(1, 255, 132, .12);
+  pointer-events: none;
+}
+
+.map-bearing-dial > span {
+  position: absolute;
+  z-index: 1;
+  color: #819096;
+  font: 700 14px/1 Consolas, monospace;
+}
+
+.map-bearing-dial .north { top: 3px; left: 50%; color: var(--green); transform: translateX(-50%); }
+.map-bearing-dial .east { top: 50%; right: 3px; transform: translateY(-50%); }
+.map-bearing-dial .south { bottom: 3px; left: 50%; transform: translateX(-50%); }
+.map-bearing-dial .west { top: 50%; left: 3px; transform: translateY(-50%); }
+
+.map-bearing-needle {
+  position: relative;
+  z-index: 2;
+  width: 52px;
+  height: 52px;
+  transform-origin: 50% 50%;
+  pointer-events: none;
+}
+
+.map-bearing-needle > b,
+.map-bearing-needle > em {
+  position: absolute;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-right: 3px solid transparent;
+  border-left: 3px solid transparent;
+  transform: translateX(-50%);
+}
+
+.map-bearing-needle > b {
+  top: 1px;
+  border-bottom: 25px solid var(--green);
+  filter: drop-shadow(0 0 2px rgba(1, 255, 132, .85));
+}
+
+.map-bearing-needle > em {
+  bottom: 1px;
+  border-top: 25px solid #d9574d;
+  filter: drop-shadow(0 0 1px rgba(217, 87, 77, .7));
+}
+
+.map-bearing-pivot {
+  position: absolute;
+  z-index: 3;
+  width: 7px;
+  height: 7px;
+  border: 1px solid #d8e2e5;
+  border-radius: 50%;
+  background: #10181b;
+  box-shadow: 0 0 3px rgba(1, 255, 132, .7);
+  pointer-events: none;
+}
+
+.map-bearing-input {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 4px;
+  border: 1px solid var(--line-1);
+  border-radius: 3px;
+  background: rgba(9, 14, 17, .94);
+  color: var(--gold);
+}
+
+.map-bearing-input input {
+  box-sizing: border-box;
+  width: 44px;
+  padding: 2px;
+  border: 1px solid var(--line-2);
+  border-radius: 2px;
+  outline: none;
+  background: #080d10;
+  color: var(--gold);
+  font: 700 10px/1.2 Consolas, monospace;
+  text-align: right;
+}
+
+.map-bearing-input input:focus { border-color: var(--green); }
+.map-bearing-input span { margin-left: 2px; font-size: 10px; }
+
+.map-rotation-control .map-rotation-collapse {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line-1);
+  border-radius: 3px;
+  color: var(--tx-4);
+  font-size: 12px;
+}
+
+.map-rotation-control.collapsed {
+  display: block;
+  width: 30px;
+  height: 30px;
+}
+
+.map-rotation-control.collapsed > :not(.map-rotation-collapse) { display: none; }
+.map-rotation-control.collapsed .map-rotation-collapse {
+  width: 30px;
+  height: 30px;
 }
 
 /* 左上角 Logo 区与可调节左侧栏保持对齐。 */
@@ -495,8 +790,8 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   border: 1px solid var(--line-2);
   background: rgba(14, 17, 18, 0.9);
   color: var(--tx-2);
@@ -524,6 +819,12 @@ body {
 .collapse-float.right {
   right: 12px;
   top: calc(var(--toolbar-height) + 12px);
+}
+
+/* 顶栏收起后不再占据布局高度，侧栏入口应随地图回到视口顶端。 */
+.app:has(> .toolbar.collapsed) .collapse-float.left,
+.app:has(> .toolbar.collapsed) .collapse-float.right {
+  top: 12px;
 }
 
 /* ---------- 左侧综合面板（图层控制 + 绘制工具 + 载具库） ---------- */
@@ -796,7 +1097,7 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
+  width: 24px;
   height: 22px;
   border: none;
   background: transparent;
@@ -1103,8 +1404,8 @@ body {
 
 .toolbar-draw .draw-btn {
   position: relative;
-  width: 28px;
-  height: 28px;
+  width: 23px;
+  height: 30px;
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -1344,6 +1645,7 @@ body {
   }
 
   .toolbar .logo-area {
+    width: clamp(132px, 17vw, 188px);
     padding-right: 10px;
   }
 
@@ -1398,7 +1700,23 @@ body {
   }
 
   .toolbar .logo-area {
+    width: clamp(92px, 14vw, 126px);
     padding-inline: 8px;
+  }
+
+  .toolbar .mode-area > .topbar-select .map-select-value {
+    max-width: 54px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .toolbar .shortcut-help-trigger span {
+    display: none;
+  }
+
+  .toolbar .shortcut-help-trigger {
+    width: 30px;
+    padding-inline: 0;
   }
 
   .toolbar-draw {
@@ -1432,6 +1750,13 @@ body {
 }
 
 @media (max-width: 720px) {
+  .toolbar .logo-area {
+    width: 76px;
+    padding-inline: 6px;
+  }
+
+  .toolbar .logo-mark-img { max-width: 64px; }
+
   .toolbar-draw {
     flex-basis: 40px;
     min-width: 40px;
@@ -1622,9 +1947,53 @@ body {
 .left-panel .wg-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 5px;
+  flex-wrap: nowrap;
 }
+.left-panel .wg-controls .wg-round { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.left-panel .wg-controls .wg-round:first-of-type select { width: 38px; }
+.left-panel .wg-controls .wg-round:nth-of-type(2) select { width: 26px; }
+.left-panel .wg-controls .wg-round select { border-color: var(--line-0); background: var(--bg-btn); color: var(--tx-1); color-scheme: dark; }
+.left-panel .wg-controls .wg-round select:focus { border-color: var(--green); outline: none; box-shadow: 0 0 0 1px rgba(1, 255, 132, .18); }
+.left-panel .wg-controls .wg-round select option { background: var(--bg-1); color: var(--tx-1); }
+.left-panel .wg-controls .wg-reset { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+
+.left-panel .wg-display-controls { display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; padding: 7px 8px; border: 1px solid var(--line-0); background: rgba(7,12,14,.58); }
+.left-panel .wg-display-controls .layer-item,
+.left-panel .wg-display-controls .layer-item.small { min-width: 0; min-height: 22px; margin: 0; font-size: 10px; line-height: 1.3; }
+.left-panel .wg-display-controls .layer-item span:last-child { min-width: 0; font-size: 10px; line-height: 1.3; white-space: normal; }
+.left-panel .wg-notes-anchor { display: contents; }
+
+.left-panel .wg-battle-context { border: 1px solid var(--line-0); background: rgba(7, 12, 14, .58); }
+.left-panel .wg-battle-context > summary { min-height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 8px; color: var(--tx-2); font-size: 11px; cursor: pointer; list-style: none; }
+.left-panel .wg-battle-context > summary::-webkit-details-marker { display: none; }
+.left-panel .wg-battle-context > summary .caret {
+  transform: rotate(-45deg);
+  transition: transform .12s ease;
+}
+.left-panel .wg-battle-context[open] > summary .caret { transform: rotate(45deg); }
+.left-panel .wg-battle-context > summary > i { color: var(--green); }
+.left-panel .wg-battle-context > summary > em { min-width: 0; margin-left: auto; overflow: hidden; color: var(--tx-4); font-size: 8px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.left-panel .wg-battle-context-body { display: grid; gap: 8px; padding: 8px; border-top: 1px solid var(--line-0); }
+.left-panel .wg-battle-context-tip { color: var(--tx-4); font-size: 8px; line-height: 1.45; }
+.left-panel .wg-battle-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+.left-panel .wg-battle-fields label,
+.left-panel .wg-countdown-field { min-width: 0; display: grid; gap: 3px; color: var(--tx-4); font-size: 8px; }
+.left-panel .wg-battle-fields input,
+.left-panel .wg-countdown-field input { min-width: 0; width: 100%; height: 28px; padding: 0 6px; border: 1px solid var(--line-0); border-radius: 2px; outline: 0; background: var(--bg-input); color: var(--tx-1); font-size: 10px; }
+.left-panel .wg-battle-fields input:focus,
+.left-panel .wg-countdown-field input:focus { border-color: var(--green); }
+.left-panel .wg-objective-state-summary { display: flex; flex-wrap: wrap; gap: 4px; }
+.left-panel .wg-objective-state-summary > span { display: inline-flex; align-items: center; gap: 3px; min-height: 21px; padding: 0 5px; border: 1px solid currentColor; border-radius: 2px; font-size: 8px; }
+.left-panel .wg-objective-state-summary > span b { font-size: 9px; }
+.left-panel .wg-objective-state-summary > span.own { color: var(--green); }
+.left-panel .wg-objective-state-summary > span.enemy { color: #ff766c; }
+.left-panel .wg-objective-state-summary > span.neutral { color: var(--gold); }
+.left-panel .wg-event-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.left-panel .wg-event-grid button,
+.left-panel .wg-clear-battle { min-height: 27px; display: flex; align-items: center; justify-content: center; gap: 5px; padding: 0 6px; border: 1px solid var(--line-0); border-radius: 2px; background: var(--bg-btn); color: var(--tx-3); font-size: 8px; cursor: pointer; }
+.left-panel .wg-event-grid button.active { border-color: var(--green); color: var(--green); }
+.left-panel .wg-clear-battle:hover { border-color: var(--danger); color: #ff8b84; }
 
 /* 步兵 / 载具一级切换：信息与操作彻底分区。 */
 .left-panel .wg-unit-tabs {
@@ -2448,11 +2817,33 @@ body {
 
 .tm-marker:hover .tm-route { display: inline-flex; }
 .tm-marker .tm-route:hover { color: #111; background: var(--tm-team); }
+.tm-marker .tm-fireline {
+  display: none;
+  position: absolute;
+  right: -17px;
+  top: -17px;
+  z-index: 9;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--tm-team);
+  border-radius: 50%;
+  color: var(--tm-team);
+  background: rgba(8, 13, 15, .96);
+  font-size: 8px;
+  cursor: pointer;
+}
+.tm-marker:hover .tm-fireline,
+.tm-marker.expanded .tm-fireline { display: inline-flex; }
+.tm-marker .tm-fireline.active { color: #111; background: var(--green); border-color: var(--green); }
 
 /* ================= 干员地图标记 ================= */
 .op-marker-wrap {
   background: transparent;
   border: none;
+  overflow: visible !important;
 }
 
 .op-marker {
@@ -2566,7 +2957,7 @@ body {
 /* 干员名（头像下方） */
 .op-marker .op-name {
   position: absolute;
-  bottom: -14px;
+  bottom: -18px;
   left: 50%;
   transform: translateX(-50%);
   font-size: 11px;
@@ -2678,11 +3069,34 @@ body {
 }
 
 /* 干员悬停路线入口 */
+.op-marker .op-action-fan {
+  display: none;
+  position: absolute;
+  left: -34px;
+  top: -34px;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: rgba(8, 13, 15, .34);
+  clip-path: polygon(50% 50%, 73.3% 0, 100% 0, 100% 100%, 73.3% 100%);
+  filter: drop-shadow(3px 0 4px rgba(0, 0, 0, .42));
+  pointer-events: auto;
+}
+.left-panel.collapsed {
+  width: 0;
+  min-width: 0;
+  border-right: 0;
+  pointer-events: none;
+}
+.left-panel.collapsed > * { display: none; }
+.op-marker:hover .op-action-fan,
+.op-marker:focus-within .op-action-fan,
+.op-marker.expanded .op-action-fan { display: block; }
 .op-marker .op-route {
   display: none;
   position: absolute;
-  right: -18px;
-  top: 1px;
+  left: 27px;
+  top: 27px;
   z-index: 8;
   width: 20px;
   height: 20px;
@@ -2698,10 +3112,83 @@ body {
 }
 .op-marker:hover .op-route,
 .op-marker:focus .op-route,
-.op-marker:focus-within .op-route { display: inline-flex; }
+.op-marker:focus-within .op-route,
+.op-marker.expanded .op-route { display: inline-flex; }
 .op-marker.connect .op-route,
 .op-marker.dead .op-route { display: none; }
 .op-marker .op-route:hover { color: #111; background: var(--op-team); }
+.op-marker .op-fireline,
+.op-marker .op-info,
+.op-marker .op-rotate-control,
+.veh-marker .veh-fireline,
+.building-unit .building-fireline,
+.building-unit .building-route {
+  display: none;
+  position: absolute;
+  z-index: 9;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  background: rgba(8, 13, 15, .96);
+  cursor: pointer;
+  font-size: 8px;
+}
+.op-marker .op-fireline { left: 27px; top: -25px; color: var(--op-team); }
+.op-marker .op-info { left: 37px; top: 1px; color: var(--op-team); }
+.op-marker .op-rotate-control { right: -18px; bottom: -24px; color: var(--op-team); cursor: grab; }
+.op-marker .op-rotate-control:active { cursor: grabbing; }
+.veh-marker .veh-fireline { right: -18px; top: -14px; color: var(--veh-team); }
+.building-unit .building-route { right: -15px; top: 13px; color: var(--building-fill); }
+.building-unit .building-fireline {
+  right: -15px;
+  top: -12px;
+  width: 22px;
+  height: 22px;
+  color: var(--building-fill);
+}
+.building-unit .building-fireline::before {
+  content: '';
+  position: absolute;
+  inset: -6px -6px -2px;
+  border-radius: 50%;
+}
+.op-marker:hover .op-fireline,
+.op-marker:hover .op-info,
+.op-marker:focus-within .op-fireline,
+.op-marker:focus-within .op-info,
+.veh-marker:hover .veh-fireline,
+.building-unit:hover .building-route,
+.building-unit:hover .building-fireline,
+.op-marker.expanded .op-fireline,
+.op-marker.expanded .op-info,
+.veh-marker.expanded .veh-fireline,
+.building-unit.expanded .building-route,
+.building-unit.expanded .building-fireline { display: inline-flex; }
+.op-marker .op-fireline.active,
+.veh-marker .veh-fireline.active,
+.building-unit .building-fireline.active { color: #111; background: var(--green); border-color: var(--green); }
+.op-marker .op-fireline:hover,
+.op-marker .op-info:hover,
+.veh-marker .veh-fireline:hover,
+.building-unit .building-fireline:hover,
+.tm-marker .tm-fireline:hover {
+  color: #07110c;
+  background: var(--green);
+  border-color: #b9ffdc;
+  box-shadow: 0 0 8px rgba(1, 255, 132, .72);
+  transform: scale(1.08);
+}
+.building-unit .building-route:hover {
+  color: #07110c;
+  background: var(--building-fill);
+  border-color: #fff;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--building-fill) 72%, transparent);
+  transform: scale(1.08);
+}
 
 /* 重伤：橙色泛底 + 黄色单斜杠（不加发光边框，避免与阵营外圈/存活绿点抢视觉） */
 .op-marker.injured {
@@ -2828,7 +3315,7 @@ body {
   color: var(--tx-2);
   font-size: 13px;
   line-height: 1;
-  width: 18px;
+  width: 22px;
   height: 18px;
   border-radius: 2px;
   cursor: pointer;
@@ -2973,6 +3460,245 @@ body {
 
 .op-bubble-item.st-killed .op-bubble-item-label {
   color: var(--danger);
+}
+
+/* 悬浮操作按钮最终统一规格与几何覆盖。 */
+.veh-marker .veh-side,
+.veh-marker .veh-fireline,
+.veh-marker .veh-route,
+.building-unit .building-side,
+.building-unit .building-fireline,
+.building-unit .building-route,
+.tm-marker .tm-fireline,
+.tm-marker .tm-route,
+.tm-marker .tm-delete {
+  width: 22px !important;
+  height: 22px !important;
+  min-width: 22px;
+  min-height: 22px;
+  box-sizing: border-box;
+  padding: 0;
+  line-height: 1;
+}
+
+/* 载具：中心(15,15)，半径36px，-45°/0°/45°。 */
+.veh-marker .veh-side { left: 30px !important; top: -22px !important; right: auto !important; }
+.veh-marker .veh-fireline { left: 40px !important; top: 4px !important; right: auto !important; }
+.veh-marker .veh-route { left: 30px !important; top: 30px !important; right: auto !important; }
+
+/* 建筑：中心(19,19)，半径36px，-45°/0°/45°。 */
+.building-unit .building-side { left: 34px !important; top: -18px !important; right: auto !important; }
+.building-unit .building-fireline { left: 44px !important; top: 8px !important; right: auto !important; }
+.building-unit .building-route { left: 34px !important; top: 34px !important; right: auto !important; }
+
+/* 队标：缩减为标准90°扇区，按钮同样按-45°/0°/45°排列。 */
+.tm-marker .tm-action-fan {
+  clip-path: polygon(50% 50%, 100% 0, 100% 100%);
+}
+.tm-marker .tm-fireline { left: 30px !important; top: -22px !important; right: auto !important; }
+.tm-marker .tm-delete { left: 40px !important; top: 4px !important; right: auto !important; }
+.tm-marker .tm-route { left: 30px !important; top: 30px !important; right: auto !important; }
+
+/* Must remain after the shared fan rule: team markers use a 90-degree sector. */
+.tm-marker .tm-action-fan {
+  clip-path: polygon(50% 50%, 100% 0, 100% 100%) !important;
+}
+
+/* 队标移动端三按钮：90°扇区内按 -30° / 0° / 30° 均匀排布。 */
+.tm-marker:has(.tm-delete) .tm-fireline { left: 35px !important; top: -14px !important; }
+.tm-marker:has(.tm-delete) .tm-delete { left: 40px !important; top: 4px !important; }
+.tm-marker:has(.tm-delete) .tm-route { left: 35px !important; top: 22px !important; }
+
+/* 队标桌面端仅有两按钮：按 -22.5° / 22.5° 对称排布。 */
+.tm-marker:not(:has(.tm-delete)) .tm-fireline { left: 37px !important; top: -10px !important; }
+.tm-marker:not(:has(.tm-delete)) .tm-route { left: 37px !important; top: 18px !important; }
+
+/* 单兵桌面端与载具使用相同的单一 hover 展开机制。
+   移动端继续由 mobile-layout 下的 expanded 状态控制。 */
+.desktop-layout .op-marker .op-action-fan,
+.desktop-layout .op-marker .op-route,
+.desktop-layout .op-marker .op-fireline,
+.desktop-layout .op-marker .op-info { display: none; }
+.desktop-layout .op-marker-wrap:hover .op-action-fan { display: block; }
+.desktop-layout .op-marker-wrap:hover .op-route,
+.desktop-layout .op-marker-wrap:hover .op-fireline,
+.desktop-layout .op-marker-wrap:hover .op-info { display: inline-flex; }
+
+/* 载具、建筑、队标统一使用右侧 130° 操作扇区。按钮中心均以棋子中心为圆心、36px 为半径。 */
+.veh-marker .veh-action-fan,
+.building-unit .building-action-fan,
+.tm-marker .tm-action-fan {
+  display: none;
+  position: absolute;
+  left: -34px;
+  top: -34px;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: rgba(8, 13, 15, .34);
+  clip-path: polygon(50% 50%, 73.3% 0, 100% 0, 100% 100%, 73.3% 100%);
+  filter: drop-shadow(3px 0 4px rgba(0, 0, 0, .42));
+  pointer-events: auto;
+}
+.veh-marker .veh-action-fan { left: -30px; top: -30px; }
+.building-unit .building-action-fan { left: -26px; top: -26px; }
+.tm-marker .tm-action-fan { left: -30px; top: -30px; }
+.veh-marker:hover .veh-action-fan,
+.veh-marker:focus-within .veh-action-fan,
+.veh-marker.expanded .veh-action-fan,
+.building-unit:hover .building-action-fan,
+.building-unit:focus-within .building-action-fan,
+.building-unit.expanded .building-action-fan,
+.tm-marker:hover .tm-action-fan,
+.tm-marker:focus-within .tm-action-fan,
+.tm-marker.expanded .tm-action-fan { display: block; }
+
+.veh-marker .veh-side,
+.veh-marker .veh-fireline,
+.veh-marker .veh-route,
+.building-unit .building-side,
+.building-unit .building-fireline,
+.building-unit .building-route,
+.tm-marker .tm-fireline,
+.tm-marker .tm-route,
+.tm-marker .tm-delete {
+  z-index: 9;
+}
+.veh-marker:hover .veh-side,
+.veh-marker:hover .veh-fireline,
+.veh-marker:hover .veh-route,
+.veh-marker:focus-within .veh-side,
+.veh-marker:focus-within .veh-fireline,
+.veh-marker:focus-within .veh-route,
+.veh-marker.expanded .veh-side,
+.veh-marker.expanded .veh-fireline,
+.veh-marker.expanded .veh-route,
+.building-unit:hover .building-side,
+.building-unit:hover .building-fireline,
+.building-unit:hover .building-route,
+.building-unit:focus-within .building-side,
+.building-unit:focus-within .building-fireline,
+.building-unit:focus-within .building-route,
+.building-unit.expanded .building-side,
+.building-unit.expanded .building-fireline,
+.building-unit.expanded .building-route,
+.tm-marker:hover .tm-fireline,
+.tm-marker:hover .tm-route,
+.tm-marker:hover .tm-delete,
+.tm-marker:focus-within .tm-fireline,
+.tm-marker:focus-within .tm-route,
+.tm-marker:focus-within .tm-delete,
+.tm-marker.expanded .tm-fireline,
+.tm-marker.expanded .tm-route,
+.tm-marker.expanded .tm-delete { display: inline-flex; }
+
+/* 极坐标位置：上 / 中 / 下三个按钮等半径分布。 */
+.veh-marker .veh-side,
+.building-unit .building-side,
+.tm-marker .tm-fireline { left: 31px; top: -21px; right: auto; }
+.veh-marker .veh-fireline,
+.building-unit .building-fireline,
+.tm-marker .tm-delete { left: 41px; top: 5px; right: auto; }
+.veh-marker .veh-route,
+.building-unit .building-route,
+.tm-marker .tm-route { left: 31px; top: 31px; right: auto; }
+
+.veh-marker .veh-side { left: 31px; top: -21px; }
+.veh-marker .veh-fireline { left: 41px; top: 5px; }
+.veh-marker .veh-route { left: 31px; top: 31px; }
+.building-unit .building-side { left: 35px; top: -17px; }
+.building-unit .building-fireline { left: 45px; top: 9px; }
+.building-unit .building-route { left: 35px; top: 35px; }
+
+.veh-marker .veh-side:hover,
+.veh-marker .veh-fireline:hover,
+.veh-marker .veh-route:hover,
+.building-unit .building-side:hover,
+.building-unit .building-fireline:hover,
+.building-unit .building-route:hover,
+.tm-marker .tm-fireline:hover,
+.tm-marker .tm-route:hover,
+.tm-marker .tm-delete:hover {
+  transform: scale(1.08);
+  filter: brightness(1.15);
+}
+
+.left-panel .wg-support-entry { width: 100%; min-height: 34px; display: grid; grid-template-columns: 20px minmax(0, 1fr) auto 10px; align-items: center; gap: 7px; padding: 5px 8px; border: 1px solid var(--line-0); border-left: 2px solid var(--gold); background: rgba(7,12,14,.64); color: var(--tx-2); text-align: left; cursor: pointer; }
+.left-panel .wg-support-entry:hover, .left-panel .wg-support-entry.active { border-color: var(--gold); background: rgba(244,207,103,.09); color: var(--gold); }
+.left-panel .wg-support-entry > span { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.left-panel .wg-support-entry b { font-size: 10px; }
+.left-panel .wg-support-entry small { color: var(--tx-4); font-size: 8px; }
+.left-panel .wg-support-entry em { min-width: 18px; height: 17px; border: 1px solid var(--line-1); color: var(--tx-1); font: 700 9px/15px sans-serif; text-align: center; }
+
+.field-support-marker-wrap { background: transparent; border: 0; overflow: visible !important; }
+.field-support-marker { position: relative; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border: 2px solid var(--support-color); border-radius: 50%; background: rgba(8,13,15,.92); box-shadow: 0 0 7px color-mix(in srgb, var(--support-color) 65%, transparent); cursor: move; }
+.field-support-marker img { position: relative; z-index: 1; width: 27px; height: 27px; object-fit: contain; filter: drop-shadow(0 1px 2px #000); pointer-events: none; }
+.field-support-glow { position: absolute; inset: 3px; border-radius: 50%; background: color-mix(in srgb, var(--support-color) 26%, transparent); }
+.tactical-map.placing-field-support { cursor: crosshair; }
+
+/* 干员悬浮级联菜单 */
+.op-cascade { min-width: 168px; max-width: none; filter: none; }
+.op-bubble-panel { background: rgba(14, 17, 18, .97); border: 1px solid var(--line-2); border-radius: 3px; box-shadow: 0 6px 18px rgba(0, 0, 0, .58); }
+.op-cascade-root .op-bubble-head { border: 0; border-bottom: 1px solid var(--line-1); }
+.op-cascade-root .op-bubble-menu, .op-cascade-status .op-bubble-menu { border: 0; border-radius: 0; background: transparent; }
+.op-cascade-current-avatar { width: 22px; height: 22px; border: 1px solid var(--line-2); border-radius: 50%; object-fit: cover; flex: 0 0 auto; }
+.op-cascade-item-icon { width: 14px; color: var(--tx-3); text-align: center; flex: 0 0 auto; }
+.op-cascade-chevron { color: var(--tx-3); font-size: 9px; flex: 0 0 auto; }
+.op-cascade-submenu { position: absolute; left: calc(100% + 5px); top: 0; width: 330px; padding: 5px; }
+.op-cascade.open-left .op-cascade-submenu { right: calc(100% + 5px); left: auto; }
+.op-cascade-subtitle { padding: 4px 6px 7px; color: var(--tx-1); font-size: 11px; border-bottom: 1px solid var(--line-1); }
+.op-cascade-groups { max-height: min(440px, calc(100vh - 80px)); overflow-y: auto; padding: 3px; }
+.op-cascade-group + .op-cascade-group { margin-top: 6px; }
+.op-cascade-group-title { display: flex; align-items: center; gap: 5px; height: 22px; color: var(--op-class-color); font-size: 11px; }
+.op-cascade-group-title img { width: 15px; height: 15px; object-fit: contain; }
+.op-cascade-operator-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; }
+.op-cascade-operator { min-width: 0; height: 54px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 1px solid var(--line-1); border-radius: 2px; background: var(--bg-2); color: var(--tx-2); font-size: 10px; cursor: pointer; }
+.op-cascade-operator:hover { border-color: var(--line-2); background: var(--bg-3); color: #fff; }
+.op-cascade-operator.active { border-color: var(--gold); color: var(--gold); background: rgba(1, 255, 132, .08); }
+.op-cascade-operator img { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; pointer-events: none; }
+.op-cascade-operator span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.op-cascade-status { width: 150px; }
+.op-cascade-skills { width: 230px; }
+.op-cascade-skill-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 5px 0; }
+.op-cascade-skill { min-width: 0; height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 1px solid var(--line-1); border-radius: 2px; background: var(--bg-2); color: var(--tx-2); font-size: 9px; cursor: pointer; }
+.op-cascade-skill:hover, .op-cascade-skill.active { border-color: var(--gold); color: var(--gold); background: rgba(244, 207, 103, .08); }
+.op-cascade-skill img { width: 34px; height: 34px; object-fit: contain; pointer-events: none; }
+.op-cascade-skill-clear { width: 100%; height: 25px; border: 1px solid var(--line-1); border-radius: 2px; background: transparent; color: var(--tx-3); font-size: 10px; cursor: pointer; }
+.op-cascade-skill-clear:hover { border-color: var(--danger); color: var(--danger); }
+.op-active-skill { position: absolute; right: -13px; top: -13px; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--gold); border-radius: 50%; background: rgba(8, 13, 15, .96); box-shadow: 0 0 5px rgba(244, 207, 103, .55); pointer-events: none; z-index: 4; }
+.op-active-skill img { width: 13px; height: 13px; object-fit: contain; }
+
+/* 桌面端单兵及其路线统一使用拖动语义，避免鼠标在 Leaflet 默认 pointer、
+   透明扇区的 default 和路线元素的 move/grab 之间频繁跳变。 */
+.desktop-layout .op-marker-wrap,
+.desktop-layout .op-marker,
+.desktop-layout .op-marker *,
+.desktop-layout .route-hit-area,
+.desktop-layout .route-waypoint-wrap .route-waypoint,
+.desktop-layout .route-passive-node-wrap,
+.desktop-layout .route-order-label-wrap,
+.desktop-layout .route-order-label,
+.desktop-layout .route-move-wrap,
+.desktop-layout .route-move { cursor: grab; }
+.desktop-layout .op-marker-wrap:active,
+.desktop-layout .op-marker:active,
+.desktop-layout .op-marker:active *,
+.desktop-layout .route-hit-area:active,
+.desktop-layout .route-waypoint-wrap .route-waypoint:active,
+.desktop-layout .route-passive-node-wrap:active,
+.desktop-layout .route-order-label-wrap:active,
+.desktop-layout .route-order-label:active,
+.desktop-layout .route-move-wrap:active,
+.desktop-layout .route-move:active { cursor: grabbing; }
+
+.op-cascade-mobile-only { display: none; }
+
+@media (hover: none), (pointer: coarse) {
+  .op-cascade { min-width: min(330px, calc(100vw - 24px)); }
+  .op-cascade-mobile-only { display: inline-flex; align-items: center; justify-content: center; }
+  .op-cascade-main.has-submenu { display: none; }
+  .op-cascade-submenu, .op-cascade.open-left .op-cascade-submenu { position: static; width: auto; border-top: 0; border-radius: 0 0 3px 3px; box-shadow: none; }
+  .op-cascade-subtitle { display: none; }
 }
 
 /* 更多入口 */
@@ -3279,7 +4005,8 @@ body {
 .tactical-map.mode-config-tool-zone,
 .tactical-map.mode-config-tool-spawn,
 .tactical-map.mode-config-tool-objective,
-.tactical-map.mode-config-tool-prop {
+.tactical-map.mode-config-tool-prop,
+.tactical-map.mode-config-tool-vehicle-refresh {
   cursor: crosshair;
 }
 
@@ -3840,8 +4567,8 @@ body {
   gap: 5px;
   padding: 6px;
   color: var(--tx-3);
-  background: rgba(63, 140, 255, 0.08);
-  border: 1px solid rgba(63, 140, 255, 0.34);
+  background: rgba(1, 255, 132, 0.08);
+  border: 1px solid rgba(1, 255, 132, 0.34);
   font-size: 10px;
 }
 
@@ -3856,9 +4583,235 @@ body {
 
 .mode-config-summary {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 4px;
   margin-top: 7px;
+}
+
+.mode-vehicle-refresh-editor {
+  margin-top: 7px;
+  border: 1px solid rgba(1, 255, 132, 0.34);
+  background: rgba(1, 255, 132, 0.045);
+}
+
+.mode-vehicle-refresh-editor > summary {
+  padding: 6px 7px;
+  color: var(--gold);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.mode-vehicle-refresh-editor > summary b {
+  float: right;
+  color: var(--gold);
+}
+
+.mode-vehicle-refresh-import,
+.mode-vehicle-refresh-actions,
+.mode-vehicle-refresh-rule-list {
+  margin: 0 6px 6px;
+}
+
+.mode-vehicle-refresh-import textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 5px 6px;
+  resize: vertical;
+  border: 1px solid var(--line-0);
+  background: var(--bg-2);
+  color: var(--tx-1);
+  font: 9px/1.4 Consolas, monospace;
+}
+
+.mode-vehicle-refresh-import button {
+  width: 100%;
+  margin-top: 4px;
+  padding: 5px;
+  font-size: 9px;
+}
+
+.mode-vehicle-refresh-import small,
+.mode-vehicle-refresh-empty,
+.mode-vehicle-refresh-hint {
+  display: block;
+  margin: 4px 0 0;
+  color: var(--tx-4);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.mode-vehicle-refresh-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.mode-vehicle-refresh-actions button {
+  padding: 4px 3px;
+  font-size: 9px;
+}
+
+.mode-vehicle-refresh-hint {
+  margin: 0 6px 6px;
+  padding: 5px;
+  border: 1px solid rgba(1, 255, 132, 0.3);
+  background: rgba(1, 255, 132, 0.06);
+  color: #a9f4ce;
+}
+
+.mode-vehicle-refresh-rule-list {
+  max-height: 230px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.mode-vehicle-refresh-rule-list > label {
+  display: grid;
+  grid-template-columns: 14px 25px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px;
+  padding: 5px;
+  border: 1px solid var(--line-1);
+  background: rgba(0, 0, 0, 0.16);
+  cursor: pointer;
+}
+
+.mode-vehicle-refresh-rule-list > label + label {
+  margin-top: 3px;
+}
+
+.mode-vehicle-refresh-rule-list > label.selected {
+  border-color: var(--gold);
+  background: rgba(244, 207, 103, 0.08);
+}
+
+.mode-vehicle-refresh-rule-list > label.pending em {
+  color: #ff9a90;
+}
+
+.mode-vehicle-refresh-rule-list input {
+  accent-color: var(--gold);
+}
+
+.mode-vehicle-refresh-rule-list img {
+  width: 25px;
+  height: 25px;
+  object-fit: contain;
+}
+
+.mode-vehicle-refresh-rule-list span,
+.mode-vehicle-refresh-rule-list strong,
+.mode-vehicle-refresh-rule-list small {
+  min-width: 0;
+}
+
+.mode-vehicle-refresh-rule-list span {
+  display: flex;
+  flex-direction: column;
+}
+
+.mode-vehicle-refresh-rule-list strong,
+.mode-vehicle-refresh-rule-list small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mode-vehicle-refresh-rule-list strong {
+  color: var(--tx-2);
+  font-size: 9px;
+}
+
+.mode-vehicle-refresh-rule-list small,
+.mode-vehicle-refresh-rule-list em {
+  color: var(--tx-4);
+  font-size: 8px;
+  font-style: normal;
+}
+
+.mode-vehicle-refresh-rule-list em {
+  max-width: 58px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mode-vehicle-refresh-empty {
+  margin: 0 6px 7px;
+}
+
+.mode-vehicle-refresh-point-wrap {
+  background: transparent;
+  border: 0;
+}
+
+.mode-vehicle-refresh-point {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 2px solid var(--gold-accent);
+  border-radius: 6px;
+  background: rgba(11, 23, 39, 0.94);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.72), 0 0 10px rgba(244, 207, 103, 0.46);
+}
+
+.mode-vehicle-refresh-point-wrap.selected .mode-vehicle-refresh-point {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(244, 207, 103, 0.28), 0 0 14px rgba(244, 207, 103, 0.74);
+}
+
+.mode-vehicle-refresh-point img {
+  width: 27px;
+  height: 27px;
+  object-fit: contain;
+}
+
+.mode-vehicle-refresh-point > b {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: var(--gold);
+  color: #121212;
+  font: 700 9px/15px Arial, sans-serif;
+  text-align: center;
+}
+
+.mode-vehicle-refresh-point > span {
+  position: absolute;
+  top: 35px;
+  left: 50%;
+  max-width: 128px;
+  overflow: hidden;
+  padding: 2px 4px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.8);
+  color: #dce8ff;
+  font: 9px/1.2 sans-serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* React-Leaflet does not reliably update Path/Marker `interactive` after mount.
+   During refresh-point placement, existing zones and map objects must let the
+   click reach the map; refresh-point markers remain clickable for shared binding. */
+.tactical-map.mode-config-editing.mode-config-vehicle-refresh-active .mode-config-pane .leaflet-interactive,
+.tactical-map.mode-config-editing.mode-config-vehicle-refresh-active .mode-config-selected-zone-pane .leaflet-interactive,
+.tactical-map.mode-config-editing.mode-config-vehicle-refresh-active .mode-config-controls-pane .leaflet-interactive,
+.tactical-map.mode-config-editing.mode-config-vehicle-refresh-active .mode-config-markers-pane .leaflet-marker-icon:not(.mode-vehicle-refresh-point-wrap) {
+  pointer-events: none !important;
+}
+
+.tactical-map.mode-config-editing.mode-config-vehicle-refresh-active .mode-config-markers-pane .mode-vehicle-refresh-point-wrap {
+  pointer-events: auto !important;
 }
 
 .mode-config-summary span {
@@ -4230,7 +5183,7 @@ body {
 }
 
 .mode-config-spawn.selected .mode-config-spawn-core {
-  outline: 3px solid rgba(63, 140, 255, 0.9);
+  outline: 3px solid rgba(1, 255, 132, 0.9);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -4288,7 +5241,7 @@ body {
 }
 
 .mode-config-prop-wrap.selected .prop-marker {
-  outline: 3px solid rgba(63, 140, 255, 0.92);
+  outline: 3px solid rgba(1, 255, 132, 0.92);
   outline-offset: 3px;
   border-radius: 50%;
 }
@@ -4385,6 +5338,12 @@ body {
   height: 80%;
 }
 
+/* 这两张原始图例留白较多，需要在不改变兵棋外框的前提下放大主体。 */
+.veh-marker.enlarged-legend-icon .veh-icon {
+  width: 96%;
+  height: 96%;
+}
+
 /* 载具名字（第二十轮：常驻显示在卡片下方，仿兵棋名字标签：阵营色底 + 白字 + 阵营色描边） */
 .veh-marker .veh-name {
   position: absolute;
@@ -4425,6 +5384,77 @@ body {
 .veh-marker .veh-route::before { content: ''; position: absolute; inset: -4px; border-radius: 50%; }
 .veh-marker:hover .veh-route { display: inline-flex; }
 .veh-marker .veh-route:hover { color: #111; background: var(--veh-team); }
+
+.veh-marker .veh-refresh-origin {
+  position: absolute;
+  z-index: 9;
+  top: -9px;
+  right: -9px;
+  width: 19px;
+  height: 19px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid #f4cf67;
+  border-radius: 50%;
+  background: #101719;
+  color: #f4cf67;
+  font-size: 8px;
+  cursor: pointer;
+  box-shadow: 0 0 5px rgba(244, 207, 103, .42);
+}
+.veh-marker .veh-refresh-origin:hover { color: #07100b; background: #f4cf67; }
+.veh-marker.refresh-origin .veh-side-ring { filter: drop-shadow(0 0 2px var(--vc)) drop-shadow(0 0 5px var(--vc)) drop-shadow(0 0 4px rgba(244, 207, 103, .72)); }
+
+/* 胜者为王载具刷新点：官方规则标记，不等同于可移动的载具兵棋。 */
+.vehicle-refresh-marker-wrap { overflow: visible !important; border: 0; background: transparent; }
+.vehicle-refresh-marker {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #69747a;
+  border-radius: 50%;
+  background: rgba(9, 14, 17, .94);
+  color: #89949a;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .72);
+}
+.vehicle-refresh-marker img { width: 25px; height: 25px; object-fit: contain; filter: grayscale(.72) brightness(.72); }
+.vehicle-refresh-marker > b { position: absolute; top: -5px; right: -5px; min-width: 15px; padding: 1px 3px; border-radius: 8px; background: #11191d; color: #fff; font: 800 9px/1.2 sans-serif; text-align: center; }
+.vehicle-refresh-marker .refresh-symbol { position: absolute; right: -4px; bottom: -4px; width: 15px; height: 15px; display: grid; place-items: center; border: 1px solid currentColor; border-radius: 50%; background: #101719; font-size: 7px; }
+.vehicle-refresh-marker.eligible { border-color: var(--green); color: var(--green); box-shadow: 0 0 10px rgba(1, 255, 132, .48); }
+.vehicle-refresh-marker.eligible img { filter: none; }
+.vehicle-refresh-marker.eligible .vehicle-refresh-pulse { position: absolute; inset: -5px; border: 1px solid rgba(1, 255, 132, .68); border-radius: 50%; box-shadow: 0 0 5px rgba(1, 255, 132, .24); pointer-events: none; }
+.vehicle-refresh-marker.used { opacity: .48; border-style: dashed; color: #f4cf67; }
+.vehicle-refresh-marker.partial { border-color: #f4cf67; color: #f4cf67; }
+
+.vehicle-refresh-popup .leaflet-popup-content-wrapper { border: 1px solid var(--line-1); border-radius: 3px; background: rgba(10, 15, 17, .98); color: var(--tx-1); }
+.vehicle-refresh-popup .leaflet-popup-tip { background: rgba(10, 15, 17, .98); }
+.vehicle-refresh-popup .leaflet-popup-content { margin: 10px; }
+.vehicle-refresh-card > header { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line-1); }
+.vehicle-refresh-card > header > i { color: var(--green); }
+.vehicle-refresh-card > header span { display: flex; flex-direction: column; }
+.vehicle-refresh-card > header strong { color: #fff; font-size: 12px; }
+.vehicle-refresh-card > header small { color: var(--tx-4); font-size: 9px; }
+.vehicle-refresh-rule-list { max-height: 300px; overflow-y: auto; }
+.vehicle-refresh-rule-list section { padding: 9px 0; border-bottom: 1px solid var(--line-0); }
+.vehicle-refresh-rule-main { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 7px; }
+.vehicle-refresh-rule-main > img { width: 27px; height: 27px; object-fit: contain; }
+.vehicle-refresh-rule-main > span { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.vehicle-refresh-rule-main strong { color: var(--tx-1); font-size: 11px; }
+.vehicle-refresh-rule-main small { color: var(--tx-4); font-size: 9px; }
+.vehicle-refresh-rule-main em { color: #909aa0; font-size: 9px; font-style: normal; }
+.vehicle-refresh-rule-list section.eligible .vehicle-refresh-rule-main em { color: var(--green); }
+.vehicle-refresh-rule-list section.used .vehicle-refresh-rule-main em { color: #f4cf67; }
+.vehicle-refresh-rule-list section > p { margin: 6px 0 0; color: var(--tx-3); font-size: 9px; line-height: 1.45; }
+.vehicle-refresh-rule-list section > p.note { color: #b99e55; }
+.vehicle-refresh-rule-actions { display: flex; justify-content: flex-end; gap: 5px; margin-top: 7px; }
+.vehicle-refresh-rule-actions button { min-height: 25px; padding: 0 8px; border: 1px solid var(--line-1); border-radius: 2px; background: var(--bg-btn); color: var(--tx-2); font-size: 9px; cursor: pointer; }
+.vehicle-refresh-rule-actions button:hover { border-color: var(--green); color: var(--green); }
+.vehicle-refresh-rule-actions button.deploy { border-color: var(--green); background: var(--green); color: var(--on-accent); font-weight: 700; }
+.vehicle-refresh-rule-actions button.restore { border-color: #f4cf67; color: #f4cf67; }
 
 /* 进攻路线节点 */
 .route-waypoint-wrap { background: transparent; border: none; }
@@ -4491,7 +5521,7 @@ body {
   align-items: center;
   gap: 3px;
   min-width: 42px;
-  max-width: 76px;
+  max-width: 112px;
   height: 18px;
   padding: 0 4px 0 3px;
   color: #fff;
@@ -4562,6 +5592,30 @@ body {
   font-size: 7px;
 }
 .route-order-label .route-status-icon i { color: currentColor; }
+.route-order-label .route-label-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 13px;
+  width: 13px;
+  height: 13px;
+  margin: 0 0 0 1px;
+  padding: 0;
+  border: 0;
+  line-height: 13px;
+  font-size: 7px;
+  color: #d7e5e7;
+  background: transparent;
+  transform: translateY(0);
+}
+.route-order-label .route-label-toggle i {
+  display: block;
+  width: 7px;
+  height: 7px;
+  line-height: 7px;
+  text-align: center;
+}
+.route-order-label .route-label-toggle:hover { color: var(--green); }
 .route-order-label.status-pending .route-status-icon { color: var(--gold-accent); }
 .route-order-label.status-executing .route-status-icon { color: var(--green); }
 .route-order-label.status-completed .route-status-icon { color: #9aa1a8; }
@@ -4819,7 +5873,8 @@ body {
 .route-order-statuses button.status-cancelled.active { color: var(--danger); border-color: var(--danger); }
 .route-editor-style-row { position: relative; display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 8px; margin-bottom: 3px; }
 .route-editor-style-row .route-editor-field { margin-bottom: 0; }
-.route-editor-style-row .route-editor-field.opacity input { margin-top: 3px; }
+.route-editor-style-row .route-editor-field select { box-sizing: border-box; width: 100%; }
+.route-editor-style-row .route-editor-field.opacity input { box-sizing: border-box; width: 100%; margin: 3px 0 0; }
 .route-editor-color-control { display:grid; grid-template-columns:auto minmax(0, 1fr) auto auto; align-items:center; gap:4px; margin:0 0 7px; }
 .route-editor-color-control > span { color:var(--tx-4); font-size:10px; }
 .route-editor-color-control > label { display:flex; align-items:center; min-width:0; height:27px; padding:2px 6px 2px 3px; background:var(--bg-2); border:1px solid var(--line-0); cursor:pointer; }
@@ -5057,6 +6112,23 @@ body {
 .draw-hit-area {
   cursor: pointer;
 }
+
+/* 路线的选中态由编辑节点和指令面板表达，不显示浏览器生成的 SVG 焦点矩形框。 */
+.route-hit-area:focus,
+.route-selected-line:focus,
+.route-hit-area:focus-visible,
+.route-selected-line:focus-visible,
+.leaflet-overlay-pane path.route-hit-area:focus,
+.leaflet-overlay-pane path.route-selected-line:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* 路线选中时会主动 focus 命中路径；SVG path 的浏览器焦点框不是路线选中框，
+   因此统一禁用其原生绘制。绘制图形不使用这些 class，不受影响。 */
+.leaflet-overlay-pane path.route-hit-area,
+.leaflet-overlay-pane path.route-selected-hit-area,
+.leaflet-overlay-pane path.route-selected-line { -webkit-tap-highlight-color: transparent; }
 
 /* 绘制手势独占鼠标：轨迹经过已有图形时事件继续落到地图绘制状态机。 */
 .drawing-gesture-active .leaflet-draw-pane .leaflet-interactive {
@@ -5355,9 +6427,25 @@ body {
   filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.6));
 }
 
+.cap-progress-frame {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  width: 44px;
+  height: 44px;
+  overflow: visible;
+  pointer-events: none;
+}
+.cap-progress-frame polyline { fill: none; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.cap-progress-frame .value {
+  stroke: var(--progress-color);
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
+}
+
 .cap-marker .cap-tag {
   position: absolute;
-  bottom: -14px;
+  bottom: -18px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 3;
@@ -5427,6 +6515,91 @@ body {
   filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.6));
 }
 
+/* 带载具部署的复活点：主框—连接线—方向盘副框。 */
+.spawn-marker.vehicle-deploy::before,
+.mode-config-spawn.vehicle-deploy::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: -3px;
+  border: 3px solid var(--sp-c, var(--mode-spawn-color));
+  background: rgba(7, 18, 18, .12);
+  pointer-events: none;
+}
+.spawn-vehicle-link {
+  position: absolute;
+  z-index: 1;
+  top: 3px;
+  left: 68px;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 3px solid var(--sp-c, var(--mode-spawn-color));
+  background: transparent;
+  color: var(--sp-c, var(--mode-spawn-color));
+  pointer-events: none;
+}
+.spawn-marker .spawn-vehicle-link { pointer-events: auto; cursor: pointer; }
+.spawn-marker.vehicle-deploy::after,
+.mode-config-spawn.vehicle-deploy::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 47px;
+  width: 21px;
+  border-top: 3px solid var(--sp-c, var(--mode-spawn-color));
+  pointer-events: none;
+}
+.spawn-vehicle-link > i {
+  position: relative;
+  width: 19px;
+  height: 19px;
+  display: block;
+  border: 3px solid currentColor;
+  border-radius: 50%;
+}
+.spawn-vehicle-link > i::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: -2px;
+  right: -2px;
+  transform: translateY(-50%);
+  border-top: 3px solid currentColor;
+}
+.spawn-vehicle-link > i::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  bottom: -2px;
+  left: 50%;
+  border-left: 3px solid currentColor;
+  transform: translateX(-50%);
+}
+.spawn-vehicle-link > i > b {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.mode-config-spawn .spawn-vehicle-link {
+  top: -2px;
+  left: 63px;
+}
+.mode-config-spawn.vehicle-deploy::before {
+  inset: -8px;
+}
+.mode-config-spawn.vehicle-deploy::after { left: 42px; width: 21px; }
+.mode-config-spawn.vehicle-deploy .mode-config-spawn-name { top: 49px; }
+
 .spawn-marker .spawn-tag {
   position: absolute;
   bottom: -14px;
@@ -5443,6 +6616,8 @@ body {
   white-space: nowrap;
   text-shadow: 0 1px 2px #000;
 }
+
+.spawn-marker.vehicle-deploy .spawn-tag { bottom: -24px; }
 
 .spawn-marker:hover {
   transform: scale(1.15);
@@ -5717,6 +6892,45 @@ body {
   color: var(--tx-1);
 }
 
+.wg-support-list { display: grid; gap: 5px; margin-top: 8px; }
+.wg-support-list button { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 48px; padding: 5px 7px; border: 1px solid var(--line-1); border-radius: 3px; background: var(--bg-btn); color: var(--tx-1); text-align: left; cursor: pointer; }
+.wg-support-list button:hover { border-color: var(--green); background: rgba(1,255,132,.08); }
+.wg-support-list button:disabled { opacity: .45; cursor: not-allowed; }
+.wg-support-list img { width: 34px; height: 34px; object-fit: contain; }
+.wg-support-list span { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.wg-support-list b { font-size: 11px; }
+.wg-support-list small { color: var(--tx-3); font-size: 9px; }
+.wg-support-list em { color: var(--green); font-size: 10px; font-style: normal; }
+
+.tb-wargame-row { align-items: stretch; }
+.tb-wargame-selectors { display: flex; flex: 1; gap: 8px; }
+.tb-wargame-selectors label { display: flex; align-items: center; gap: 5px; min-width: 0; color: var(--tx-3); font-size: 11px; }
+.tb-wargame-selectors label:first-child { flex: 1; }
+.tb-wargame-selectors label span { flex: 0 0 auto; }
+.tb-select { min-width: 0; height: 28px; border: 1px solid var(--line-1); border-radius: 2px; padding: 0 7px; background: var(--bg-btn); color: var(--tx-1); font: inherit; }
+.tb-wargame-selectors label:first-child .tb-select { width: 100%; }
+.tb-round-select { width: 62px; }
+.tb-native-actions { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.tb-native-actions .tb-mini { width: 100%; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 6px 10px; }
+.tb-native-export-menu { position: relative; min-width: 0; }
+.tb-native-trigger span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tb-native-trigger.active { border-color: var(--gold); color: var(--gold); background: rgba(244,207,103,.08); }
+.tb-native-chevron { margin-left: auto; font-size: 9px; color: var(--tx-3); }
+.tb-native-import i { color: var(--green); }
+.tb-native-submenu { position: absolute; z-index: 120; left: 0; bottom: calc(100% + 6px); width: max(100%, 242px); padding: 5px; border: 1px solid var(--line-1); border-radius: 3px; background: var(--bg-btn); box-shadow: 0 12px 28px rgba(0,0,0,.45); }
+.tb-native-submenu::after { content: ''; position: absolute; left: 18px; bottom: -5px; width: 8px; height: 8px; border-right: 1px solid var(--line-1); border-bottom: 1px solid var(--line-1); background: var(--bg-btn); transform: rotate(45deg); }
+.tb-native-submenu button { position: relative; z-index: 1; width: 100%; min-height: 46px; display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; gap: 8px; padding: 6px 8px; border: 0; border-radius: 2px; background: transparent; color: var(--tx-2); text-align: left; cursor: pointer; }
+.tb-native-submenu button:hover { background: rgba(244,207,103,.09); color: var(--gold); }
+.tb-native-submenu button > i { width: 28px; color: var(--green); font-size: 13px; text-align: center; }
+.tb-native-submenu button span { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tb-native-submenu b { color: var(--tx-1); font-size: 11px; font-weight: 600; }
+.tb-native-submenu small { color: var(--tx-3); font-size: 9px; }
+.tb-native-submenu button:hover b { color: var(--gold); }
+@media (max-width: 680px) {
+  .tb-native-actions { grid-template-columns: minmax(0, 1fr); }
+  .tb-native-submenu { width: 100%; }
+}
+
 .tb-seg {
   display: inline-flex;
   border: 1px solid var(--line-1);
@@ -5885,6 +7099,32 @@ body {
   color: var(--danger);
 }
 
+.tb-battle-state { gap: 12px; }
+.tb-state-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.tb-state-grid label,
+.tb-objective-state label { min-width: 0; display: flex; flex-direction: column; gap: 4px; color: var(--tx-3); font-size: 10px; }
+.tb-state-grid input,
+.tb-objective-state input { min-width: 0; height: 31px; padding: 0 8px; border: 1px solid var(--line-1); border-radius: 2px; outline: 0; background: rgba(255, 255, 255, .04); color: var(--tx-1); font-size: 12px; }
+.tb-state-grid input:focus,
+.tb-objective-state input:focus { border-color: var(--green); }
+.tb-state-section { display: flex; flex-direction: column; gap: 6px; padding: 9px; border: 1px solid var(--line-1); background: rgba(255,255,255,.018); }
+.tb-state-section > strong { color: var(--tx-1); font-size: 11px; }
+.tb-objective-state { display: grid; grid-template-columns: minmax(0, 1fr) 116px; align-items: end; gap: 8px; }
+.tb-objective-state > button,
+.tb-event-grid button { min-height: 31px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border: 1px solid var(--line-1); border-radius: 2px; background: var(--bg-btn); color: var(--tx-3); font-size: 10px; cursor: pointer; }
+.tb-objective-state > button.active,
+.tb-event-grid button.active { border-color: var(--green); background: rgba(1,255,132,.08); color: var(--green); }
+.tb-event-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+
+.refresh-vehicle-dialog-options { display: grid; gap: 8px; margin-top: 16px; }
+.refresh-vehicle-dialog-options button { min-height: 40px; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: 4px; background: #182126; color: #fff; text-align: left; cursor: pointer; }
+.refresh-vehicle-dialog-options button strong,
+.refresh-vehicle-dialog-options button small { display: block; }
+.refresh-vehicle-dialog-options button small { margin-top: 3px; color: #9ca8ad; font-size: 10px; }
+.refresh-vehicle-dialog-options button:hover { border-color: var(--green); }
+.refresh-vehicle-dialog-options button.danger { border-color: #a9443f; }
+.refresh-vehicle-dialog-options button.danger:hover { background: #7f2926; }
+
 /* ---------- 复活点标记 ---------- */
 
 /* ---------- 点位详情卡 ---------- */
@@ -5938,6 +7178,28 @@ body {
   color: var(--tx-3);
   background: rgba(138, 149, 165, 0.15);
 }
+
+.objective-state-editor { border-color: var(--objective-state-color); }
+.point-detail-status.objective-owner { color: var(--objective-state-color); background: color-mix(in srgb, var(--objective-state-color) 14%, transparent); }
+.objective-state-controls { display: grid; gap: 7px; margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line-1); }
+.objective-control-label { color: var(--tx-4); font-size: 10px; }
+.objective-owner-segments,
+.objective-capturing-segments { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.objective-capturing-segments { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.objective-owner-segments button,
+.objective-capturing-segments button,
+.objective-contested-toggle { min-height: 29px; border: 1px solid var(--line-1); border-radius: 2px; background: var(--bg-btn); color: var(--tx-3); font-size: 10px; cursor: pointer; }
+.objective-owner-segments button.active.own,
+.objective-capturing-segments button.active.own { border-color: var(--green); background: rgba(1,255,132,.1); color: var(--green); }
+.objective-owner-segments button.active.enemy,
+.objective-capturing-segments button.active.enemy { border-color: #e0453a; background: rgba(224,69,58,.1); color: #ff766c; }
+.objective-owner-segments button.active.neutral { border-color: var(--gold); background: rgba(244,207,103,.1); color: var(--gold); }
+.objective-contested-toggle { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.objective-contested-toggle.active { border-color: var(--gold); color: var(--gold); }
+.objective-progress-control { display: grid; gap: 5px; color: var(--tx-3); font-size: 10px; }
+.objective-progress-control > span { display: flex; justify-content: space-between; }
+.objective-progress-control b { color: var(--objective-progress-color); }
+.objective-progress-control input { width: 100%; accent-color: var(--objective-progress-color); }
 
 .point-detail-row {
   display: flex;
@@ -6154,6 +7416,7 @@ body {
 .point-item .point-name {
   font-weight: 600;
 }
+.point-item .point-owner-state { margin-left: auto; color: var(--tx-3); font-size: 10px; white-space: nowrap; }
 
 .point-item .point-note {
   margin-left: auto;
@@ -6466,3 +7729,251 @@ body {
 }
 .app-touch-demo-point.contact::after { animation: app-touch-contact .48s ease-out both; }
 @keyframes app-touch-contact { 0% { opacity:0; scale:.45 } 35% { opacity:1; scale:1 } 100% { opacity:0; scale:1.85 } }
+.op-marker,
+.op-marker img {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+  touch-action: none;
+}
+.wg-notes-tabs { display: flex; gap: 4px; margin: 4px 0; }
+.wg-notes-tabs button { cursor: pointer; }
+.wg-notes-preview { min-height: 76px; padding: 8px; overflow: auto; background: rgba(0,0,0,.18); }
+.wg-notes-dock { position: fixed; right: 14px; bottom: 14px; z-index: 1180; width: min(500px, calc(100vw - 28px)); border: 1px solid var(--line-0); border-radius: 5px; background: rgba(10, 16, 18, .96); box-shadow: 0 8px 28px rgba(0,0,0,.48); color: var(--tx-1); }
+.wg-notes-dock > header { height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 7px 0 10px; border-bottom: 1px solid var(--line-0); }
+.wg-notes-dock.collapsed > header { border-bottom: 0; }
+.wg-notes-dock.collapsed { width: 126px; }
+.wg-notes-dock.collapsed > header { height: 34px; padding: 0 3px 0 9px; }
+.wg-notes-dock.collapsed > header span { min-width: 0; flex: 1 1 auto; display: inline-flex; align-items: center; white-space: nowrap; }
+.wg-notes-dock.collapsed > header em { display: none; }
+.wg-notes-dock.collapsed > header button { flex: 0 0 32px; width: 32px; height: 32px; }
+.wg-notes-dock > header span { font-size: 11px; font-weight: 700; }
+.wg-notes-dock > header span i { margin-right: 6px; color: var(--green); }
+.wg-notes-dock > header em { margin-left: auto; color: var(--tx-4); font-size: 9px; font-style: normal; }
+.wg-notes-dock > header button { width: 26px; height: 26px; padding: 0; border: 0; background: transparent; color: var(--tx-2); }
+.wg-notes-dock > header button:hover,
+.wg-notes-dock > header button:focus-visible { border-radius: 3px; outline: none; background: var(--bg-hover); color: var(--green); }
+.wg-notes-dock:not(.expanded):not(.collapsed) { max-height: min(48vh, 480px); display: flex; flex-direction: column; overflow: hidden; }
+.wg-notes-dock:not(.expanded):not(.collapsed) .wg-notes-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.wg-notes-dock:not(.expanded):not(.collapsed) .wg-notes-tabs { flex: 0 0 auto; }
+.wg-notes-dock:not(.expanded):not(.collapsed) .wg-notes-body > div:last-child { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.wg-notes-dock.expanded { top: calc(var(--toolbar-height, 58px) + 10px); bottom: 14px; height: auto; width: min(1100px, calc(100vw - 48px)); max-height: none; display: flex; flex-direction: column; }
+@media (max-width: 900px) and (pointer: coarse) {
+  .wg-notes-dock.expanded { top: calc(42px + env(safe-area-inset-top, 0px) + 8px); bottom: max(10px, env(safe-area-inset-bottom, 0px)); }
+}
+.wg-notes-dock.collapsed,
+.wg-notes-dock.collapsed.expanded { width: 126px; }
+.wg-notes-dock.expanded .wg-notes-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.wg-notes-dock.expanded .wg-notes-tabs { flex: 0 0 auto; }
+.wg-notes-dock.expanded > .wg-notes-body > div:last-child { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.wg-notes-dock.expanded > .wg-notes-body > div:last-child > .wg-markdown-wysiwyg { min-height: 104px; }
+.wg-notes-dock.expanded .wg-notes-preview,
+.wg-notes-dock.expanded .wg-notes-all-edit { flex: 1 1 auto; min-height: 0; max-height: none; overflow: auto; }
+.wg-notes-dock.expanded .wg-notes-preview { flex: 1 1 auto; min-height: 0; max-height: none; overflow: auto; }
+.wg-notes-body { padding: 8px; }
+.wg-notes-body textarea { box-sizing: border-box; width: 100%; min-height: 104px; resize: vertical; border: 1px solid var(--line-0); border-radius: 3px; padding: 8px; outline: none; background: var(--bg-input); color: var(--tx-1); font: inherit; line-height: 1.5; }
+.wg-notes-body textarea:focus { border-color: var(--green); }
+.wg-notes-tabs button { min-height: 24px; padding: 0 10px; border: 1px solid var(--line-0); background: var(--bg-btn); color: var(--tx-3); }
+.wg-notes-tabs button.active { border-color: var(--green); color: var(--green); background: rgba(1,255,132,.08); }
+.wg-notes-tabs select { min-width: 52px; border: 1px solid var(--line-0); background: var(--bg-btn); color: var(--tx-1); }
+.wg-notes-stage-picker { position: relative; flex: 0 0 52px; }
+.wg-notes-tabs .wg-notes-stage-trigger { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 5px; padding: 0 7px; color: var(--tx-1); }
+.wg-notes-stage-trigger i { font-size: 10px; }
+.wg-notes-stage-menu { position: absolute; z-index: 20; top: calc(100% + 2px); left: 0; width: 100%; padding: 2px; border: 1px solid var(--line-0); background: var(--bg-1); box-shadow: 0 5px 14px rgba(0,0,0,.4); }
+.wg-notes-tabs .wg-notes-stage-menu button { width: 100%; min-height: 24px; padding: 0 5px; border: 0; background: transparent; color: var(--tx-2); text-align: left; }
+.wg-notes-tabs .wg-notes-stage-menu button:hover, .wg-notes-tabs .wg-notes-stage-menu button.selected { background: rgba(1,255,132,.1); color: var(--green); }
+.tactical-note-image { display: block; max-width: 100%; height: auto; margin: 8px 0; border: 1px solid var(--line-0); border-radius: 3px; }
+.wg-notes-all-edit { max-height: min(58vh, 580px); overflow: auto; display: grid; gap: 12px; }
+.wg-notes-all-edit section + section { padding-top: 10px; border-top: 1px solid var(--line-0); }
+.wg-notes-all-edit h1 { margin: 0 0 6px; font-size: 15px; }
+.wg-notes-all-edit textarea { min-height: 88px; }
+.wg-notes-inline-preview:empty { display: none; }
+.wg-notes-inline-preview { display: flex; gap: 6px; overflow-x: auto; padding-top: 6px; }
+.wg-notes-inline-preview p { margin: 0; }
+.wg-notes-inline-preview .tactical-note-image { width: auto; max-width: 180px; max-height: 120px; margin: 0; object-fit: contain; }
+.wg-markdown-wysiwyg { box-sizing: border-box; min-height: 104px; width: 100%; padding: 8px; border: 1px solid var(--line-0); border-radius: 3px; outline: none; background: var(--bg-input); color: var(--tx-1); line-height: 1.5; }
+.wg-markdown-wysiwyg:focus { border-color: var(--green); }
+.wg-notes-preview .wg-markdown-wysiwyg { min-height: 0; padding: 0; border: 0; background: transparent; }
+.wg-markdown-wysiwyg:empty::before { content: attr(data-placeholder); color: var(--tx-4); pointer-events: none; }
+.wg-markdown-wysiwyg h1, .wg-markdown-wysiwyg h2, .wg-markdown-wysiwyg h3 { margin: .45em 0 .25em; }
+.wg-markdown-wysiwyg p { margin: .3em 0; }
+.wg-markdown-wysiwyg img { display: block; max-width: 100%; height: auto; margin: 8px 0; }
+.route-label-toggle { margin-left: 4px; border: 0; padding: 0 2px; background: transparent; color: inherit; cursor: pointer; }
+.route-label-toggle-marker-wrap { background: transparent; border: 0; pointer-events: none; }
+.route-label-toggle-marker { width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; margin: 0; padding: 0; border: 1px solid rgba(255,255,255,.45); border-radius: 50%; background: rgba(12,20,23,.9); color: #d7e5e7; box-shadow: 0 2px 8px rgba(0,0,0,.35); cursor: pointer; line-height: 1; pointer-events: auto; transform: translateX(-50%); }
+.route-label-toggle-marker i { display: block; width: 12px; height: 12px; line-height: 12px; text-align: center; font-size: 11px; }
+.route-label-toggle-marker:hover { border-color: #6fe0ae; color: #6fe0ae; transform: translateX(-50%) scale(1.08); }
+.route-label-toggle-marker.hidden { color: #f4cf67; }
+
+/* 阶段/回合控制条：把当前状态与回合操作分成两个稳定的控制单元。 */
+.wg-stage-control,
+.wg-round-control { min-width: 0; display: inline-flex; align-items: center; gap: 5px; }
+.wg-stage-control > span,
+.wg-round-label { color: var(--tx-3); font-size: 10px; white-space: nowrap; }
+.wg-stage-control select,
+.wg-round-control select { min-width: 0; height: 28px; border: 1px solid rgba(117, 151, 157, .38); border-radius: 4px; background: rgba(7, 13, 15, .9); color: var(--tx-1); font-size: 11px; }
+.wg-stage-control select { max-width: 132px; }
+.wg-round-control select { width: 92px; }
+.wg-round-btn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 1px solid rgba(117, 151, 157, .38); border-radius: 4px; background: rgba(7, 13, 15, .9); color: var(--tx-2); }
+.wg-round-btn:hover:not(:disabled) { border-color: var(--green); color: var(--green); background: rgba(1, 255, 132, .08); }
+@media (max-width: 680px) {
+  .left-panel .wg-controls { gap: 5px; }
+  .left-panel .wg-controls .layer-label { max-width: 58px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .left-panel .wg-controls .wg-round:first-of-type select { width: 32px; }
+  .left-panel .wg-controls .wg-round:nth-of-type(2) select { width: 26px; }
+  .wg-stage-control select, .wg-round-control select { flex: 1 1 auto; max-width: none; }
+}
+.veh-marker:not(.controls-enabled) .veh-side,
+.veh-marker:not(.controls-enabled) .veh-team-letter,
+.veh-marker:not(.controls-enabled) .veh-route,
+.veh-marker:not(.controls-enabled) .veh-fireline,
+.veh-marker:not(.controls-enabled) .veh-delete-control,
+.veh-marker:not(.controls-enabled) .veh-rotate-control { display: none !important; }
+.operator-skill-action-icon {
+  width: 24px !important;
+  height: 24px !important;
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.operator-skill-action-icon > span {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  overflow: hidden;
+  border: 2px solid var(--skill-side-color, rgba(255, 255, 255, .9));
+  border-radius: 50%;
+  background: rgba(18, 23, 29, .92);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 20px 20px;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, .55);
+}
+
+.operator-skill-action-icon.selected > span {
+  border-color: #f6c453;
+  box-shadow: 0 0 0 3px rgba(246, 196, 83, .28), 0 2px 7px rgba(0, 0, 0, .6);
+}
+
+.operator-skill-action-icon.selected { cursor: grab; }
+.operator-skill-action-icon.selected:active { cursor: grabbing; }
+
+.operator-skill-action-icon img {
+  position: relative;
+  z-index: 2;
+  display: block !important;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.operator-skill-action-icon b {
+  position: absolute;
+  z-index: 1;
+  color: rgba(255, 255, 255, .65);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.operator-skill-curve-handle {
+  display: grid !important;
+  width: 24px !important;
+  height: 24px !important;
+  place-items: center;
+  border: 0 !important;
+  background: transparent !important;
+  cursor: grab;
+}
+
+.operator-skill-curve-handle > span {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--skill-side-color, #f6c453);
+  border-radius: 50%;
+  background: rgba(18, 23, 29, .95);
+  box-sizing: border-box;
+}
+
+.op-cascade-skill.passive,
+.op-cascade-skill:disabled {
+  cursor: default;
+  opacity: .58;
+  filter: grayscale(.35);
+}
+
+.placing-operator-skill {
+  cursor: crosshair;
+}
+
+.skill-action-mode {
+  cursor: crosshair;
+}
+
+.skill-action-hint {
+  position: absolute;
+  z-index: 1200;
+  top: 12px;
+  left: 50%;
+  display: grid;
+  grid-template-columns: 28px auto 28px;
+  grid-template-rows: 18px 16px;
+  align-items: center;
+  min-width: 210px;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-radius: 6px;
+  background: rgba(19, 24, 30, .94);
+  color: #f5f7f9;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, .35);
+  transform: translateX(-50%);
+}
+
+.skill-action-hint > img { grid-row: 1 / 3; width: 24px; height: 24px; border-radius: 50%; }
+.skill-action-hint > span { font-size: 12px; line-height: 18px; }
+.skill-action-hint > small { grid-column: 2; color: #aeb8c3; font-size: 10px; line-height: 16px; }
+.skill-action-hint > button { grid-column: 3; grid-row: 1 / 3; width: 26px; height: 26px; border: 0; background: transparent; color: #cbd3dc; }
+.skill-action-hint > button:hover { color: #fff; background: rgba(255, 255, 255, .1); }
+.route-editor-segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--panel-border, rgba(255,255,255,.16));
+  border-radius: 5px;
+  background: var(--panel-muted, rgba(255,255,255,.06));
+}
+
+.route-editor-segmented button {
+  border: 0;
+  border-radius: 3px;
+  padding: 3px 8px;
+  color: var(--text-muted, #aab3c4);
+  background: transparent;
+  cursor: pointer;
+}
+
+.route-editor-segmented button.active {
+  color: #fff;
+  background: var(--accent, #3478f6);
+}
+.edit-lock-trigger-wrap { background: transparent; border: none; }
+.edit-lock-trigger,
+.edit-unlock-trigger {
+  width: 30px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; background: rgba(14, 17, 18, .96); border-radius: 3px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .55); cursor: pointer;
+}
+.edit-lock-trigger { color: #ffe1a8; border: 1px solid #e6a23c; }
+.edit-lock-trigger:hover { color: #0e1112; background: #e6a23c; box-shadow: 0 0 9px rgba(230, 162, 60, .8); }
+.edit-unlock-trigger { color: #9dffc9; border: 1px solid #01ff84; }
+.edit-unlock-trigger:hover { color: #0e1112; background: #01ff84; box-shadow: 0 0 9px rgba(1, 255, 132, .8); }
+.edit-lock-trigger svg, .edit-unlock-trigger svg { display: block; }
+.draw-toast {
+  position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 5000;
+  padding: 8px 18px; color: #ffe1a8; background: rgba(14, 17, 18, .96);
+  border: 1px solid #e6a23c; border-radius: 4px; box-shadow: 0 2px 10px rgba(0, 0, 0, .55);
+  font-size: 13px; line-height: 1.5; white-space: nowrap; pointer-events: none;
+}

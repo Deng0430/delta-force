@@ -8,6 +8,9 @@ import type {
   ModeObjectivePoint,
   ModeSpawnPoint,
   ModeStageDefinition,
+  ModeVehicleRefreshPoint,
+  ModeVehicleRefreshRule,
+  ModeVehicleRefreshTriggerType,
   ModeZone,
   ModeZoneKind,
   ModeZoneRole,
@@ -19,20 +22,22 @@ import type {
 import { MAPS } from '../config/maps'
 import { STAGES_BY_MAP } from '../config/points'
 import { MAP_PROPS } from '../config/pointsStages'
-import { DEPLOY_BY_MAP, localDeployIconUrl, type DeployVehicleEntry, type StageDeploy } from '../config/deployVehicles'
+import { DEPLOY_BY_MAP, DEPLOY_VEHICLE_CATALOG, localDeployIconUrl, type DeployVehicleEntry, type StageDeploy } from '../config/deployVehicles'
 import winnerTakesAllOfficial from '../config/winnerTakesAllOfficial.json'
+import { deployForPlatform, propsForPlatform, stagesForPlatform, type GameDataPlatform } from '../config/gameDataPlatform'
 
 /** 正式应用模式配置的本地存储键。 */
 export const MODE_CONFIG_STORAGE_KEY = 'deltaforce-mode-configs-v1'
 export const MODE_CONFIG_SYNC_CHANNEL = 'deltaforce-mode-config-sync-v1'
 export const MODE_CONFIG_SYNC_MESSAGE = 'deltaforce-mode-config-sync'
-const MODE_STORAGE_VERSION = 8 as const
+const MODE_STORAGE_VERSION = 19 as const
 
 const SIDES: Side[] = ['attack', 'defense']
 const VERIFICATIONS: ModeConfigVerification[] = ['draft', 'confirmed']
 const ZONE_KINDS: ModeZoneKind[] = ['own', 'enemy', 'neutral', 'restricted']
 const ZONE_ROLES: ModeZoneRole[] = ['attack-base', 'defense-base', 'capture', 'frontline', 'custom']
 const VEHICLE_CATEGORIES: VehicleCategory[] = ['tank', 'ifv', 'apc', 'recon', 'helo', 'water', 'supply']
+const VEHICLE_REFRESH_TRIGGER_TYPES: ModeVehicleRefreshTriggerType[] = ['tickets', 'match-time', 'objective-countdown', 'objective-captured', 'map-event']
 
 export function emptyModeMapOverride(mapId: string): ModeMapOverride {
   return {
@@ -43,6 +48,8 @@ export function emptyModeMapOverride(mapId: string): ModeMapOverride {
     spawns: [],
     objectives: [],
     props: [],
+    vehicleRefreshPoints: [],
+    vehicleRefreshRules: [],
     updatedAt: Date.now(),
   }
 }
@@ -60,6 +67,12 @@ export function createModeProfile(name = '新模式', id?: string): GameModeProf
 }
 
 function defaultStore(): ModeConfigStore {
+  const attackDefense = createModeProfile('攻防模式', 'attack-defense')
+  attackDefense.description = '内置攻防模式数据，可分别编辑 PC 端与移动端。'
+  const pcMaps = Object.fromEntries(MAPS.map((map) => [map.id, syncModeMapFromAttackDefense(map.id, stagesForPlatform('pc')[map.id] ?? [], propsForPlatform('pc'))]))
+  const mobileMaps = Object.fromEntries(MAPS.map((map) => [map.id, syncModeMapFromAttackDefense(map.id, stagesForPlatform('mobile')[map.id] ?? [], propsForPlatform('mobile'), deployForPlatform('mobile'))]))
+  attackDefense.platformMaps = { pc: pcMaps, mobile: mobileMaps }
+  attackDefense.maps = pcMaps
   const winner = createModeProfile('胜者为王', 'winner-takes-all')
   winner.description = winnerTakesAllOfficial.mode.description
   winner.maps = Object.fromEntries(
@@ -76,7 +89,7 @@ function defaultStore(): ModeConfigStore {
   return {
     version: MODE_STORAGE_VERSION,
     activeModeId: 'attack-defense',
-    profiles: [winner],
+    profiles: [attackDefense, winner],
   }
 }
 
@@ -84,6 +97,8 @@ interface OfficialModeMapData {
   stages: StageConfig[]
   props: MapProp[]
   deploy: Record<string, StageDeploy>
+  vehicleRefreshPoints?: ModeVehicleRefreshPoint[]
+  vehicleRefreshRules?: ModeVehicleRefreshRule[]
 }
 
 /** 将编辑器导出的正式版地图数据还原为可继续编辑、可持久化的模式地图。 */
@@ -155,7 +170,11 @@ function modeMapFromOfficial(mapId: string, official: OfficialModeMapData): Mode
         const name = names?.[index] || `${stage.id} · ${side === 'attack' ? '进攻方' : '防守方'}复活点 ${index + 1}`
         const deployVehicles = deployments
           .filter((vehicle) => vehicle.note === name)
-          .map(({ note: _note, ...vehicle }) => vehicle)
+          .map(({ note: _note, ...vehicle }) => {
+            // 官方固化 JSON 可能保留抓取时的旧 iconUrl；统一通过当前载具目录重解析，
+            // 确保图例资源迁移后（例如 AA 防空车）不会继续引用已删除的旧路径。
+            return normalizeDeployVehicle(vehicle) ?? vehicle
+          })
         spawns.push({
           uid: `builtin_wta_${mapId}_${stage.id}_${side}-spawn-${index}`,
           stageId: stage.id,
@@ -174,7 +193,7 @@ function modeMapFromOfficial(mapId: string, official: OfficialModeMapData): Mode
 
   return {
     mapId,
-    notes: '内置数据：攀升 · 胜者为王（2026-08-14）。',
+    notes: '内置数据：胜者为王（2026-08-21）。',
     stages: official.stages.map((stage) => ({ id: stage.id, label: stage.label })),
     zones,
     spawns,
@@ -188,11 +207,23 @@ function modeMapFromOfficial(mapId: string, official: OfficialModeMapData): Mode
       lng: prop.lng,
       verification: 'confirmed',
     })),
+    vehicleRefreshPoints: (official.vehicleRefreshPoints ?? []).map((point) => ({ ...point, verification: 'confirmed' })),
+    vehicleRefreshRules: (official.vehicleRefreshRules ?? []).map((rule) => ({
+      ...rule,
+      trigger: { ...rule.trigger },
+      vehicle: normalizeDeployVehicle(rule.vehicle) ?? { ...rule.vehicle },
+      verification: 'confirmed',
+    })),
     updatedAt: Date.now(),
   }
 }
 
-export function syncModeMapFromAttackDefense(mapId: string, stages: StageConfig[]): ModeMapOverride {
+export function syncModeMapFromAttackDefense(
+  mapId: string,
+  stages: StageConfig[],
+  propsByMap: Record<string, MapProp[]> = MAP_PROPS,
+  deployByMap: Record<string, Record<string, StageDeploy>> = DEPLOY_BY_MAP,
+): ModeMapOverride {
   const zones: ModeZone[] = []
   const spawns: ModeSpawnPoint[] = []
   const objectives: ModeObjectivePoint[] = []
@@ -265,7 +296,7 @@ export function syncModeMapFromAttackDefense(mapId: string, stages: StageConfig[
     stage.attackSpawns.forEach((point, index) => {
       const baseName = stage.attackSpawnNames?.[index] ?? null
       const deployVehicles = baseName
-        ? (DEPLOY_BY_MAP[mapId]?.[stage.id]?.attack ?? []).filter((vehicle) => vehicle.note === baseName).map(asModeVehicle)
+        ? (deployByMap[mapId]?.[stage.id]?.attack ?? []).filter((vehicle) => vehicle.note === baseName).map(asModeVehicle)
         : []
       spawns.push({
         uid: `sync_${mapId}_${stage.id}_attack-spawn-${index}`,
@@ -283,7 +314,7 @@ export function syncModeMapFromAttackDefense(mapId: string, stages: StageConfig[
     stage.defenseSpawns.forEach((point, index) => {
       const baseName = stage.defenseSpawnNames?.[index] ?? null
       const deployVehicles = baseName
-        ? (DEPLOY_BY_MAP[mapId]?.[stage.id]?.defense ?? []).filter((vehicle) => vehicle.note === baseName).map(asModeVehicle)
+        ? (deployByMap[mapId]?.[stage.id]?.defense ?? []).filter((vehicle) => vehicle.note === baseName).map(asModeVehicle)
         : []
       spawns.push({
         uid: `sync_${mapId}_${stage.id}_defense-spawn-${index}`,
@@ -302,7 +333,7 @@ export function syncModeMapFromAttackDefense(mapId: string, stages: StageConfig[
 
   const propKeys = new Set<string>()
   const props: ModeMapProp[] = []
-  for (const prop of MAP_PROPS[mapId] ?? []) {
+  for (const prop of propsByMap[mapId] ?? []) {
     const stageId = prop.stage.match(/S\d+/i)?.[0].toUpperCase() ?? '*'
     const key = `${stageId}:${prop.name}:${prop.icon}:${prop.lat}:${prop.lng}`
     if (propKeys.has(key)) continue
@@ -320,12 +351,14 @@ export function syncModeMapFromAttackDefense(mapId: string, stages: StageConfig[
 
   return {
     mapId,
-    notes: '已从攻防模式同步；请根据胜者为王实际数据修改差异。',
+    notes: '已从对应游戏数据端的攻防模式同步。',
     stages: stages.map((stage) => ({ id: stage.id, label: stage.label })),
     zones,
     spawns,
     objectives,
     props,
+    vehicleRefreshPoints: [],
+    vehicleRefreshRules: [],
     updatedAt: Date.now(),
   }
 }
@@ -402,12 +435,19 @@ function normalizeDeployVehicle(value: unknown): ModeDeployVehicle | null {
   const category = VEHICLE_CATEGORIES.includes(vehicle.category as VehicleCategory)
     ? (vehicle.category as VehicleCategory)
     : 'recon'
+  // 图例资源会持续更新；载入固化数据或旧存档时按 deploy key 重新解析，
+  // 避免刷新规则永久保留导入当时的旧 base64 / deploy 图标。
+  // 名称优先于旧 deploy key：历史数据曾把“轻型坦克”误存为主战坦克 key。
+  const currentCatalogVehicle = DEPLOY_VEHICLE_CATALOG.find((entry) => entry.name === vehicle.name)
+    ?? DEPLOY_VEHICLE_CATALOG.find((entry) => entry.icon === vehicle.icon)
   const storedIconUrl = typeof vehicle.iconUrl === 'string' ? vehicle.iconUrl : localDeployIconUrl(vehicle.icon)
-  const iconUrl = vehicle.icon === 'ucb9597' && storedIconUrl.endsWith('.png')
-    ? localDeployIconUrl(vehicle.icon)
-    : storedIconUrl
+  const iconUrl = currentCatalogVehicle?.iconUrl
+    ?? (vehicle.icon === 'ucb9597' && storedIconUrl.endsWith('.png')
+      ? localDeployIconUrl(vehicle.icon)
+      : storedIconUrl)
   return {
-    name: vehicle.name,
+    // 合并官方旧字段“轻型坦克”和正式字段 GTQ-35轻型坦克。
+    name: vehicle.icon === 'qxtk' ? 'GTQ-35轻型坦克' : vehicle.name,
     icon: vehicle.icon,
     iconUrl,
     legendKey: typeof vehicle.legendKey === 'string' ? vehicle.legendKey : undefined,
@@ -459,6 +499,52 @@ function normalizeProp(value: unknown): ModeMapProp | null {
   }
 }
 
+function normalizeVehicleRefreshPoint(value: unknown): ModeVehicleRefreshPoint | null {
+  if (!value || typeof value !== 'object') return null
+  const point = value as Partial<ModeVehicleRefreshPoint>
+  const lat = Number(point.lat)
+  const lng = Number(point.lng)
+  if (typeof point.uid !== 'string' || !point.uid || !Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  return {
+    uid: point.uid,
+    name: typeof point.name === 'string' && point.name.trim() ? point.name.trim() : '载具刷新位置',
+    lat,
+    lng,
+    verification: VERIFICATIONS.includes(point.verification as ModeConfigVerification)
+      ? (point.verification as ModeConfigVerification)
+      : 'draft',
+  }
+}
+
+function normalizeVehicleRefreshRule(value: unknown): ModeVehicleRefreshRule | null {
+  if (!value || typeof value !== 'object') return null
+  const rule = value as Partial<ModeVehicleRefreshRule>
+  const trigger = rule.trigger && typeof rule.trigger === 'object' ? rule.trigger : null
+  const triggerType = trigger && VEHICLE_REFRESH_TRIGGER_TYPES.includes(trigger.type as ModeVehicleRefreshTriggerType)
+    ? (trigger.type as ModeVehicleRefreshTriggerType)
+    : null
+  const vehicle = normalizeDeployVehicle(rule.vehicle)
+  if (typeof rule.uid !== 'string' || !rule.uid || !trigger || !triggerType || !vehicle) return null
+  const triggerValue = trigger.type === 'tickets' || trigger.type === 'objective-countdown'
+    ? Number(trigger.value)
+    : String(trigger.value ?? '')
+  if ((typeof triggerValue === 'number' && !Number.isFinite(triggerValue)) || triggerValue === '') return null
+  return {
+    uid: rule.uid,
+    objective: typeof rule.objective === 'string' && rule.objective.trim() ? rule.objective.trim().toUpperCase() : '?',
+    side: SIDES.includes(rule.side as Side) ? (rule.side as Side) : 'attack',
+    action: rule.action === 'disable' ? 'disable' : 'refresh',
+    trigger: { type: triggerType, value: triggerValue },
+    vehicle,
+    quantity: Number.isFinite(rule.quantity) ? Math.max(1, Number(rule.quantity)) : 1,
+    refreshPointUid: typeof rule.refreshPointUid === 'string' ? rule.refreshPointUid : '',
+    note: typeof rule.note === 'string' ? rule.note : '',
+    verification: VERIFICATIONS.includes(rule.verification as ModeConfigVerification)
+      ? (rule.verification as ModeConfigVerification)
+      : 'draft',
+  }
+}
+
 function normalizeMapOverride(mapId: string, value: unknown): ModeMapOverride {
   if (!value || typeof value !== 'object') return emptyModeMapOverride(mapId)
   const map = value as Partial<ModeMapOverride>
@@ -501,6 +587,12 @@ function normalizeMapOverride(mapId: string, value: unknown): ModeMapOverride {
     props: Array.isArray(map.props)
       ? map.props.map(normalizeProp).filter((prop): prop is ModeMapProp => prop != null)
       : [],
+    vehicleRefreshPoints: Array.isArray(map.vehicleRefreshPoints)
+      ? map.vehicleRefreshPoints.map(normalizeVehicleRefreshPoint).filter((point): point is ModeVehicleRefreshPoint => point != null)
+      : [],
+    vehicleRefreshRules: Array.isArray(map.vehicleRefreshRules)
+      ? map.vehicleRefreshRules.map(normalizeVehicleRefreshRule).filter((rule): rule is ModeVehicleRefreshRule => rule != null)
+      : [],
     updatedAt: Number.isFinite(map.updatedAt) ? Number(map.updatedAt) : Date.now(),
   }
 }
@@ -513,12 +605,20 @@ function normalizeProfile(value: unknown): GameModeProfile | null {
   if (profile.maps && typeof profile.maps === 'object') {
     for (const [mapId, map] of Object.entries(profile.maps)) maps[mapId] = normalizeMapOverride(mapId, map)
   }
+  const platformMaps = profile.platformMaps && typeof profile.platformMaps === 'object'
+    ? Object.fromEntries((['pc', 'mobile'] as const).flatMap((platform) => {
+        const source = profile.platformMaps?.[platform]
+        if (!source || typeof source !== 'object') return []
+        return [[platform, Object.fromEntries(Object.entries(source).map(([mapId, map]) => [mapId, normalizeMapOverride(mapId, map)]))]]
+      })) as GameModeProfile['platformMaps']
+    : undefined
   const now = Date.now()
   return {
     id: profile.id,
     name: profile.name.trim() || '未命名模式',
     description: typeof profile.description === 'string' ? profile.description : '',
     maps,
+    platformMaps,
     createdAt: Number.isFinite(profile.createdAt) ? Number(profile.createdAt) : now,
     updatedAt: Number.isFinite(profile.updatedAt) ? Number(profile.updatedAt) : now,
   }
@@ -532,6 +632,75 @@ export function normalizeModeConfigStore(value: unknown): ModeConfigStore | null
     ? store.profiles.map(normalizeProfile).filter((profile): profile is GameModeProfile => profile != null)
     : []
   if (profiles.length === 0) return null
+  let attackDefense = profiles.find((profile) => profile.id === 'attack-defense')
+  if (!attackDefense) {
+    attackDefense = createModeProfile('攻防模式', 'attack-defense')
+    profiles.unshift(attackDefense)
+  }
+  if (!attackDefense.platformMaps?.pc || !attackDefense.platformMaps?.mobile) {
+    const pcMaps = attackDefense.platformMaps?.pc ?? (Object.keys(attackDefense.maps).length > 0 ? attackDefense.maps : Object.fromEntries(MAPS.map((map) => [map.id, syncModeMapFromAttackDefense(map.id, stagesForPlatform('pc')[map.id] ?? [], propsForPlatform('pc'))])))
+    const mobileMaps = attackDefense.platformMaps?.mobile ?? Object.fromEntries(MAPS.map((map) => [map.id, syncModeMapFromAttackDefense(map.id, stagesForPlatform('mobile')[map.id] ?? [], propsForPlatform('mobile'), deployForPlatform('mobile'))]))
+    attackDefense.platformMaps = { pc: pcMaps, mobile: mobileMaps }
+    attackDefense.maps = pcMaps
+  }
+  // v18 从腾讯官方 map_dg.js 的 init 数据补回断轨 S4 守方活动区。
+  // 两个游戏数据端的官方边界一致；仅替换该区域，保留其他已有编辑。
+  if (sourceVersion < 18) {
+    for (const gameDataPlatform of ['pc', 'mobile'] as const) {
+      const platformMaps = attackDefense.platformMaps?.[gameDataPlatform]
+      const current = platformMaps?.brokentrack
+      if (!platformMaps || !current) continue
+      const builtin = syncModeMapFromAttackDefense(
+        'brokentrack',
+        stagesForPlatform(gameDataPlatform).brokentrack ?? [],
+        propsForPlatform(gameDataPlatform),
+        deployForPlatform(gameDataPlatform),
+      )
+      const correctedZone = builtin.zones.find((zone) => zone.stageId === 'S4' && zone.role === 'defense-base')
+      if (!correctedZone) continue
+      const hasZone = current.zones.some((zone) => zone.stageId === 'S4' && zone.role === 'defense-base')
+      platformMaps.brokentrack = {
+        ...current,
+        zones: hasZone
+          ? current.zones.map((zone) => zone.stageId === 'S4' && zone.role === 'defense-base' ? correctedZone : zone)
+          : [...current.zones, correctedZone],
+        updatedAt: Date.now(),
+      }
+    }
+    attackDefense.maps = attackDefense.platformMaps!.pc!
+  }
+  // v13 同步官方断层复活点与克劳狄斗兽场密集阵，PC/移动端官方数据一致。
+  if (sourceVersion < 13) {
+    const platformMaps = attackDefense.platformMaps!
+    const pcMaps = platformMaps.pc!
+    const mobileMaps = platformMaps.mobile!
+    for (const mapId of ['fault', 'colosseum']) {
+      pcMaps[mapId] = syncModeMapFromAttackDefense(mapId, stagesForPlatform('pc')[mapId] ?? [], propsForPlatform('pc'))
+      mobileMaps[mapId] = syncModeMapFromAttackDefense(
+        mapId,
+        stagesForPlatform('mobile')[mapId] ?? [],
+        propsForPlatform('mobile'),
+        deployForPlatform('mobile'),
+      )
+    }
+    attackDefense.maps = pcMaps
+  }
+  // v11 固化“烬区·攻防·移动端”编辑数据。仅覆盖移动端烬区，PC端及其他地图保持不变。
+  if (sourceVersion < 11) {
+    const mobileMaps = attackDefense.platformMaps?.mobile ?? {}
+    attackDefense.platformMaps = {
+      ...attackDefense.platformMaps,
+      mobile: {
+        ...mobileMaps,
+        ember: syncModeMapFromAttackDefense(
+          'ember',
+          stagesForPlatform('mobile').ember ?? [],
+          propsForPlatform('mobile'),
+          deployForPlatform('mobile'),
+        ),
+      },
+    }
+  }
   const activeModeId =
     store.activeModeId === 'attack-defense' || profiles.some((profile) => profile.id === store.activeModeId)
       ? String(store.activeModeId)
@@ -563,6 +732,73 @@ export function normalizeModeConfigStore(value: unknown): ModeConfigStore | null
       // 更早的旧格式仍需补齐其他地图；已有数据在本轮只迁移对应新增地图。
       if (sourceVersion < 4 || !winner.maps[map.id]) {
         winner.maps[map.id] = syncModeMapFromAttackDefense(map.id, STAGES_BY_MAP[map.id] ?? [])
+      }
+    }
+    // v12 固化全部地图的胜者为王载具刷新数据。仅同步刷新位置和规则，
+    // 保留用户对阶段、区域、复活点、据点及地图道具的已有编辑。
+    if (sourceVersion < 12) {
+      for (const map of MAPS) {
+        const official = (winnerTakesAllOfficial.maps as unknown as Partial<Record<string, OfficialModeMapData>>)[map.id]
+        if (!official) continue
+        const current = winner.maps[map.id] ?? modeMapFromOfficial(map.id, official)
+        const builtin = modeMapFromOfficial(map.id, official)
+        winner.maps[map.id] = {
+          ...current,
+          vehicleRefreshPoints: builtin.vehicleRefreshPoints,
+          vehicleRefreshRules: builtin.vehicleRefreshRules,
+          updatedAt: Date.now(),
+        }
+      }
+    }
+    // v14 更新“烬区·胜者为王”载具刷新信息：A/B 点共用同一刷新位置。
+    // 仅替换刷新点和规则，保留该地图其他已有编辑。
+    if (sourceVersion < 14) {
+      const official = winnerTakesAllOfficial.maps.ember as unknown as OfficialModeMapData
+      const current = winner.maps.ember ?? modeMapFromOfficial('ember', official)
+      const builtin = modeMapFromOfficial('ember', official)
+      winner.maps.ember = {
+        ...current,
+        vehicleRefreshPoints: builtin.vehicleRefreshPoints,
+        vehicleRefreshRules: builtin.vehicleRefreshRules,
+        updatedAt: Date.now(),
+      }
+    }
+    // v15 修正“断层·胜者为王” S2 守方活动区的重复边界。
+    // 只替换对应的阶段区域，不覆盖该地图的其他编辑内容。
+    if (sourceVersion < 15) {
+      const official = winnerTakesAllOfficial.maps.fault as unknown as OfficialModeMapData
+      const current = winner.maps.fault ?? modeMapFromOfficial('fault', official)
+      const builtin = modeMapFromOfficial('fault', official)
+      const correctedZone = builtin.zones.find((zone) => zone.stageId === 'S2' && zone.role === 'defense-base')
+      if (correctedZone) {
+        const hasZone = current.zones.some((zone) => zone.stageId === 'S2' && zone.role === 'defense-base')
+        winner.maps.fault = {
+          ...current,
+          zones: hasZone
+            ? current.zones.map((zone) => zone.stageId === 'S2' && zone.role === 'defense-base' ? correctedZone : zone)
+            : [...current.zones, correctedZone],
+          updatedAt: Date.now(),
+        }
+      }
+    }
+    // v16 固化 2026-08-17“堑壕战·胜者为王”官方区域数据。
+    if (sourceVersion < 16) {
+      const official = winnerTakesAllOfficial.maps.trench as unknown as OfficialModeMapData
+      winner.maps.trench = modeMapFromOfficial('trench', official)
+    }
+    // v17 固化 2026-08-17“断轨·胜者为王”官方数据。
+    if (sourceVersion < 17) {
+      const official = winnerTakesAllOfficial.maps.brokentrack as unknown as OfficialModeMapData
+      winner.maps.brokentrack = modeMapFromOfficial('brokentrack', official)
+    }
+    // v19 固化 2026-08-21 导出的全部 11 张“胜者为王”地图数据。
+    // 本轮是全量正式数据发布，统一替换旧内置地图，避免局部迁移遗留旧阶段、
+    // 区域、复活点、道具、部署或载具刷新规则。
+    if (sourceVersion < 19) {
+      for (const map of MAPS) {
+        const official = (winnerTakesAllOfficial.maps as unknown as Partial<Record<string, OfficialModeMapData>>)[map.id]
+        if (!official) continue
+        winner.maps[map.id] = modeMapFromOfficial(map.id, official)
       }
     }
   }
@@ -612,12 +848,19 @@ export function publishModeConfigStore(store: ModeConfigStore): void {
  * 将编辑器模型转换为项目正式版直接使用的 StageConfig / MAP_PROPS / DEPLOY 数据形状。
  * uid、权限等编辑器元数据不会混入运行时配置。
  */
-export function buildOfficialModeData(profile: GameModeProfile) {
-  const maps: Record<string, { stages: StageConfig[]; props: MapProp[]; deploy: Record<string, StageDeploy> }> = {}
+export function buildOfficialModeData(profile: GameModeProfile, gameDataPlatform: GameDataPlatform = 'pc') {
+  const maps: Record<string, {
+    stages: StageConfig[]
+    props: MapProp[]
+    deploy: Record<string, StageDeploy>
+    vehicleRefreshPoints: Omit<ModeVehicleRefreshPoint, 'verification'>[]
+    vehicleRefreshRules: Omit<ModeVehicleRefreshRule, 'verification'>[]
+  }> = {}
 
   for (const map of MAPS) {
-    const config = profile.maps[map.id] ?? emptyModeMapOverride(map.id)
-    const baseStages = STAGES_BY_MAP[map.id] ?? []
+    const profileMaps = profile.id === 'attack-defense' ? profile.platformMaps?.[gameDataPlatform] ?? profile.maps : profile.maps
+    const config = profileMaps[map.id] ?? emptyModeMapOverride(map.id)
+    const baseStages = stagesForPlatform(gameDataPlatform)[map.id] ?? []
     const stages = config.stages.map((definition): StageConfig => {
       const base = baseStages.find((stage) => stage.id === definition.id)
       const zones = config.zones.filter((zone) => zone.stageId === definition.id)
@@ -669,6 +912,12 @@ export function buildOfficialModeData(profile: GameModeProfile) {
         stage: prop.stageId === '*' ? '' : prop.stageId,
       })),
       deploy,
+      vehicleRefreshPoints: config.vehicleRefreshPoints.map(({ verification: _verification, ...point }) => point),
+      vehicleRefreshRules: config.vehicleRefreshRules.map(({ verification: _verification, ...rule }) => ({
+        ...rule,
+        trigger: { ...rule.trigger },
+        vehicle: { ...rule.vehicle },
+      })),
     }
   }
 

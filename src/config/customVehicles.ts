@@ -7,7 +7,7 @@
  */
 
 import type { VehicleCategory } from '../types'
-import { LEGEND_VEHICLE_ICONS } from './legendIcons'
+import { vehicleLegendAssetUrl } from './vehicleLegendAssets'
 
 export interface CustomVehicleTemplate {
   name: string
@@ -24,11 +24,12 @@ export interface CustomVehicleTemplate {
 }
 
 function legend(key: string): string | undefined {
-  return LEGEND_VEHICLE_ICONS.find((i) => i.key === key)?.url
+  const deployKey = key.replace(/^nav_/, '')
+  return vehicleLegendAssetUrl(deployKey)
 }
 
 function deployPng(key: string): string {
-  return `/icons/vehicles/deploy_${key}.png`
+  return vehicleLegendAssetUrl(key) ?? `/icons/vehicles/deploy/deploy_${key}.png`
 }
 
 export const CUSTOM_VEHICLES: CustomVehicleTemplate[] = [
@@ -68,9 +69,8 @@ export const CUSTOM_VEHICLES: CustomVehicleTemplate[] = [
     iconUrl: deployPng('atvqdxc'), maps: ['ascent', 'flashpoint', 'fault', 'brokentrack', 'colosseum', 'stormeye', 'ember', 'pyramid', 'trench', 'umuscanal', 'aftershock'], group: '地面载具',
   },
   {
-    name: 'AAV两栖装甲运输车', badge: '两', category: 'apc', iconKey: 'nav_sxzjc',
-    // 有图例图标 nav_sxzjc（官网 两栖装甲车）
-    iconUrl: legend('nav_sxzjc') ?? deployPng('sxzjc'),
+    name: 'AAV两栖装甲运输车', badge: '两', category: 'apc', iconKey: 'sxzjc',
+    iconUrl: deployPng('sxzjc'),
     maps: ['ascent', 'flashpoint', 'fault', 'brokentrack', 'colosseum', 'stormeye', 'ember', 'pyramid', 'trench', 'umuscanal', 'aftershock'], group: '地面载具',
   },
   {
@@ -105,7 +105,7 @@ export const CUSTOM_VEHICLES: CustomVehicleTemplate[] = [
   },
   {
     name: 'UCB-95/97攻击艇', badge: '攻', category: 'water', iconKey: 'ucb9597',
-    iconUrl: '/icons/vehicles/deploy_ucb9597.svg', maps: ['ascent', 'flashpoint', 'fault', 'brokentrack', 'colosseum', 'stormeye', 'ember', 'pyramid', 'trench', 'umuscanal', 'aftershock'], group: '水上载具',
+    iconUrl: deployPng('ucb9597'), maps: ['ascent', 'flashpoint', 'fault', 'brokentrack', 'colosseum', 'stormeye', 'ember', 'pyramid', 'trench', 'umuscanal', 'aftershock'], group: '水上载具',
   },
   {
     name: '冲锋舟', badge: '舟', category: 'supply', iconKey: 'nav_cfz',

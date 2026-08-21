@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { CircleMarker, Marker, Polyline, Tooltip, useMap, useMapEvents } from 'react-leaflet'
+import { CircleMarker, Marker, Polyline, Rectangle, Tooltip, useMap, useMapEvents } from 'react-leaflet'
 import * as L from 'leaflet'
 import type { BuildingUnit, OperatorTeam, OperatorUnit, Side, TacticalRoute, TacticalRouteTarget, TeamMarker, VehicleItem } from '../types'
 import { ORDER_STATUS_OPTIONS, orderStatusLabel, orderTypeOf, routeVisual } from '../config/routes'
@@ -40,17 +40,28 @@ interface RouteLayerProps {
   selectedUid: string | null
   branchPicking: boolean
   interactive: boolean
+  showRouteLabels: boolean
   onSelect: (uid: string | null) => void
   onBranchPoint: (waypointIndex: number) => void
   onDraftEnd: () => void
   onCreate: (route: TacticalRoute) => void
   onPatch: (uid: string, patch: Partial<TacticalRoute>) => void
   onDelete: (uid: string) => void
+  onMoveAnchor: (route: TacticalRoute, lat: number, lng: number) => void
 }
 
 const waypointIconCache = new Map<string, L.DivIcon>()
 const passiveWaypointIconCache = new Map<string, L.DivIcon>()
 const routeMoveIconCache = new Map<string, L.DivIcon>()
+
+function routeLabelToggleIcon(visible: boolean): L.DivIcon {
+  return L.divIcon({
+    className: 'route-label-toggle-marker-wrap',
+    html: `<button type="button" class="route-label-toggle-marker ${visible ? 'visible' : 'hidden'}" title="${visible ? '隐藏此路线标签' : '显示此路线标签'}" aria-label="${visible ? '隐藏此路线标签' : '显示此路线标签'}"><i class="fa-solid ${visible ? 'fa-eye' : 'fa-eye-slash'}" aria-hidden="true"></i></button>`,
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
+  })
+}
 
 function routeSideColor(side: TacticalRoute['side'], view: Side): string {
   return side === view ? '#01ff84' : '#e0453a'
@@ -111,7 +122,6 @@ function routeLabelIcon(route: TacticalRoute, color: string, view: Side, operato
         : route.vehicleIds.length > 0
           ? `载${route.vehicleIds.length}`
           : '—'
-  const executorClass = wholeTeam ? 'team' : selectedOperators.length === 1 ? 'single' : selectedOperators.length > 1 ? 'group' : route.vehicleIds.length > 0 ? 'vehicle' : 'none'
   const executorTitle = wholeTeam
     ? `${route.team}队全队`
     : selectedOperators.length > 0
@@ -122,8 +132,8 @@ function routeLabelIcon(route: TacticalRoute, color: string, view: Side, operato
   const affiliation = route.side === view ? '己方' : '敌方'
   const title = `${affiliation} · ${route.team}队 · ${executorTitle} · ${type.label} · ${status}`
   return L.divIcon({
-    className: 'route-order-label-wrap',
-    html: `<span class="route-order-label status-${route.status}" title="${escapeHtml(title)}" style="--route-label-color:${color};--route-team-color:${teamColor};--route-side-color:${sideColor}"><span class="route-executor-badge ${executorClass}" title="${escapeHtml(executorTitle)}">${escapeHtml(executorText)}</span><span class="route-type-text" title="${escapeHtml(type.label)}">${route.orderType === 'hold' ? '<i class="fa-solid fa-shield" aria-hidden="true"></i>' : ''}${escapeHtml(type.label)}</span><em class="route-status-icon" title="${escapeHtml(status)}"><i class="fa-solid ${statusIcon}" aria-hidden="true"></i></em></span>`,
+      className: 'route-order-label-wrap',
+      html: `<span class="route-order-label status-${route.status}" title="${escapeHtml(title)}" style="--route-label-color:${color};--route-team-color:${teamColor};--route-side-color:${sideColor}"><span class="route-executor-badge" title="${escapeHtml(executorTitle)}">${escapeHtml(executorText)}</span><span class="route-type-text" title="${escapeHtml(type.label)}">${route.orderType === 'hold' ? '<i class="fa-solid fa-shield" aria-hidden="true"></i>' : ''}${escapeHtml(type.label)}</span><em class="route-status-icon" title="${escapeHtml(status)}"><i class="fa-solid ${statusIcon}" aria-hidden="true"></i></em><button class="route-label-toggle" type="button" title="${route.showLabel === false ? '显示此路线标签' : '隐藏此路线标签'}" aria-label="${route.showLabel === false ? '显示此路线标签' : '隐藏此路线标签'}"><i class="fa-solid ${route.showLabel === false ? 'fa-eye-slash' : 'fa-eye'}" aria-hidden="true"></i></button></span>`,
     iconSize: [76, 20],
     iconAnchor: [38, 10],
   })
@@ -149,10 +159,10 @@ function routeMoveIcon(color: string, teamColor: string): L.DivIcon {
   return icon
 }
 
-function routeArrowIcon(route: TacticalRoute, color: string): L.DivIcon {
+function routeArrowIcon(route: TacticalRoute, color: string, bearing = 0): L.DivIcon {
   const end = route.waypoints.at(-1) ?? [0, 0]
   const prev = route.waypoints.at(-2) ?? end
-  const angle = Math.atan2(-(end[0] - prev[0]), end[1] - prev[1]) * 180 / Math.PI
+  const angle = Math.atan2(-(end[0] - prev[0]), end[1] - prev[1]) * 180 / Math.PI + bearing
   return L.divIcon({
     className: 'route-arrow-wrap',
     html: `<span class="route-arrow type-${route.orderType}" style="--route-color:${color};transform:rotate(${angle}deg)"></span>`,
@@ -169,6 +179,24 @@ function routeCenter(points: [number, number][]): [number, number] {
     lng += point[1]
   }
   return [lat / points.length, lng / points.length]
+}
+
+function smoothRoute(points: [number, number][]): [number, number][] {
+  if (points.length < 3) return points
+  const result: [number, number][] = [points[0]]
+  const steps = 12
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const p0 = points[Math.max(0, i - 1)], p1 = points[i], p2 = points[i + 1], p3 = points[Math.min(points.length - 1, i + 2)]
+    for (let step = 1; step <= steps; step += 1) {
+      const t = step / steps, t2 = t * t, t3 = t2 * t
+      result.push([0.5 * (2 * p1[0] + (-p0[0] + p2[0]) * t + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3), 0.5 * (2 * p1[1] + (-p0[1] + p2[1]) * t + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3)])
+    }
+  }
+  return result
+}
+
+function routeRenderPoints(route: TacticalRoute, points = route.waypoints): [number, number][] {
+  return route.geometryType === 'curve' ? smoothRoute(points) : points
 }
 
 function snapPoint(map: L.Map, point: [number, number], targets: RouteSnapTarget[], threshold = 18) {
@@ -274,20 +302,54 @@ function RouteInput({ active, onPoint, onFinish, onCancel, onClearSelection }: {
 }
 
 /** 选中路线的节点和整线拖动器；拖动预览直接更新 Leaflet 引用，dragend 才提交。 */
-function SelectedRouteEditor({ route, interactive, snapTargets, branchPicking, onBranchPoint, onPatch }: {
+function SelectedRouteEditor({ route, interactive, showRouteLabels, view, operators, snapTargets, branchPicking, onBranchPoint, onPatch, onRestoreRouteFocus, onMoveAnchor }: {
   route: TacticalRoute
   interactive: boolean
+  showRouteLabels: boolean
+  view: Side
+  operators: OperatorUnit[]
   snapTargets: RouteSnapTarget[]
   branchPicking: boolean
   onBranchPoint: (waypointIndex: number) => void
   onPatch: (uid: string, patch: Partial<TacticalRoute>) => void
+  onRestoreRouteFocus: (uid: string) => void
+  onMoveAnchor: (route: TacticalRoute, lat: number, lng: number) => void
 }) {
   const map = useMap()
+  const [mapBearing, setMapBearing] = useState(() => map.getBearing?.() ?? 0)
+  useEffect(() => {
+    const updateBearing = () => setMapBearing(map.getBearing?.() ?? 0)
+    map.on('rotate', updateBearing)
+    return () => { map.off('rotate', updateBearing) }
+  }, [map])
   const visual = routeVisual(route, true)
   const teamColor = teamOf(route.team).color
   const [dragPreview, setDragPreview] = useState<[number, number][] | null>(null)
+  const [dragLabelPreview, setDragLabelPreview] = useState<[number, number] | null>(null)
   const moveSession = useRef<{ center: L.LatLng; points: [number, number][] } | null>(null)
-  const renderedWaypoints = dragPreview ?? route.waypoints
+  const labelToggleMarkerRef = useRef<L.Marker | null>(null)
+  const rawRenderedWaypoints = dragPreview ?? route.waypoints
+  const renderedWaypoints = routeRenderPoints(route, rawRenderedWaypoints)
+  const renderedLabelPosition = dragLabelPreview ?? route.labelPosition ?? routeLabelPosition(renderedWaypoints)
+  // 使用绘制图形相同的自定义选中框，避免浏览器对 SVG 路径绘制原生焦点矩形。
+  const selectionBounds = useMemo(() => {
+    const bounds = L.latLngBounds(renderedWaypoints)
+    const pad = 14
+    const sw = map.latLngToContainerPoint(bounds.getSouthWest())
+    const ne = map.latLngToContainerPoint(bounds.getNorthEast())
+    return L.latLngBounds(
+      map.containerPointToLatLng(L.point(sw.x - pad, sw.y + pad)),
+      map.containerPointToLatLng(L.point(ne.x + pad, ne.y - pad)),
+    )
+  }, [map, renderedWaypoints])
+  const offsetLabelTogglePosition = useCallback((position: L.LatLngExpression) => {
+    const point = map.latLngToContainerPoint(position)
+    return map.containerPointToLatLng(point.subtract([42, 0]))
+  }, [map])
+  const labelTogglePosition = useMemo(
+    () => offsetLabelTogglePosition(renderedLabelPosition),
+    [offsetLabelTogglePosition, renderedLabelPosition],
+  )
 
   const updateWaypoint = useCallback((index: number, point: [number, number]) => {
     if (index === 0 && route.anchorMode !== 'free') return
@@ -299,6 +361,7 @@ function SelectedRouteEditor({ route, interactive, snapTargets, branchPicking, o
         anchorMode: 'free',
         anchorOperatorUid: undefined,
         anchorVehicleUid: undefined,
+        anchorBuildingUid: undefined,
         teamMarkerUid: '',
         branchFromRouteUid: undefined,
         branchFromWaypointIndex: undefined,
@@ -323,6 +386,9 @@ function SelectedRouteEditor({ route, interactive, snapTargets, branchPicking, o
       } else if (source?.kind === 'vehicle') {
         base.anchorMode = 'vehicle'
         base.anchorVehicleUid = source.uid
+      } else if (source?.kind === 'building') {
+        base.anchorMode = 'building'
+        base.anchorBuildingUid = source.uid
       }
       onPatch(route.uid, base)
       return
@@ -345,18 +411,81 @@ function SelectedRouteEditor({ route, interactive, snapTargets, branchPicking, o
     const dLng = center.lng - session.center.lng
     const points = session.points.map((point) => [point[0] + dLat, point[1] + dLng] as [number, number])
     setDragPreview(points)
-  }, [])
+    setDragLabelPreview(route.labelPosition ? [route.labelPosition[0] + dLat, route.labelPosition[1] + dLng] : null)
+    onMoveAnchor(route, points[0][0], points[0][1])
+    const anchor = route.anchorMode === 'operator' ? { kind: 'operator' as const, uid: route.anchorOperatorUid } : route.anchorMode === 'vehicle' ? { kind: 'vehicle' as const, uid: route.anchorVehicleUid } : route.anchorMode === 'building' ? { kind: 'building' as const, uid: route.anchorBuildingUid } : route.anchorMode === 'team' ? { kind: 'team' as const, uid: route.teamMarkerUid } : null
+    if (anchor?.uid) window.dispatchEvent(new CustomEvent('mobile-route-anchor-drag', { detail: { phase: 'move', kind: anchor.kind, uid: anchor.uid, lat: points[0][0], lng: points[0][1] } }))
+  }, [route, onMoveAnchor])
+
+  const insertWaypoint = useCallback((event: L.LeafletMouseEvent) => {
+    L.DomEvent.stopPropagation(event)
+    const index = nearestSegmentIndex(map, route.waypoints, event.latlng)
+    const waypoints = [...route.waypoints]
+    waypoints.splice(index + 1, 0, [event.latlng.lat, event.latlng.lng])
+    onPatch(route.uid, { waypoints })
+  }, [map, route, onPatch])
 
   return (
     <>
+      <Rectangle
+        bounds={selectionBounds}
+        pathOptions={{ color: '#3f8cff', weight: 1.5, dashArray: '6 4', fillColor: '#3f8cff', fillOpacity: 0.04, opacity: 0.9, interactive: false, className: 'edit-selection-box' }}
+      />
+      {interactive && (
+        <Marker
+          ref={labelToggleMarkerRef}
+          position={labelTogglePosition}
+          icon={routeLabelToggleIcon(route.showLabel !== false)}
+          interactive
+          zIndexOffset={1300}
+          eventHandlers={{
+            click: (event) => {
+              L.DomEvent.stopPropagation(event)
+              onPatch(route.uid, { showLabel: route.showLabel === false })
+            },
+          }}
+        />
+      )}
+      {showRouteLabels && route.showLabel !== false && (
+        <Marker
+          position={renderedLabelPosition}
+          icon={routeLabelIcon(route, route.color, view, operators)}
+          interactive={interactive}
+          draggable={interactive}
+          zIndexOffset={1250}
+          eventHandlers={{
+            click: (e) => {
+              L.DomEvent.stopPropagation(e)
+            },
+            dragend: (e) => {
+              const ll = (e.target as L.Marker).getLatLng()
+              onPatch(route.uid, { labelPosition: [ll.lat, ll.lng] })
+              onRestoreRouteFocus(route.uid)
+            },
+            drag: (e) => {
+              const ll = (e.target as L.Marker).getLatLng()
+              labelToggleMarkerRef.current?.setLatLng(offsetLabelTogglePosition(ll))
+            },
+          }}
+        />
+      )}
       <Polyline positions={renderedWaypoints} pathOptions={{ ...visual, interactive: false, className: 'route-selected-line' }} />
-      <Marker position={renderedWaypoints.at(-1)!} icon={routeArrowIcon({ ...route, waypoints: renderedWaypoints }, visual.color)} interactive={false} zIndexOffset={950} />
-      {renderedWaypoints.map((point, index) => (
+      {platform.kind === 'android' && (
+        <Polyline
+          positions={renderedWaypoints}
+          pathOptions={{ color: teamColor, weight: 24, opacity: 0, interactive, bubblingMouseEvents: false, className: 'route-hit-area route-selected-hit-area' }}
+          pane="routeSelectedHitPane"
+          eventHandlers={{ click: insertWaypoint } as unknown as L.LeafletEventHandlerFnMap}
+        />
+      )}
+      <Marker position={renderedWaypoints.at(-1)!} icon={routeArrowIcon({ ...route, waypoints: renderedWaypoints }, visual.color, mapBearing)} interactive={false} zIndexOffset={950} />
+      {rawRenderedWaypoints.map((point, index) => (
         <Marker
           key={`${route.uid}-${index}`}
           position={point}
           icon={waypointIcon(index, route.waypoints.length, visual.color, teamColor, route.anchorMode)}
           draggable={interactive && !branchPicking && (index > 0 || route.anchorMode === 'free')}
+          bubblingMouseEvents={false}
           zIndexOffset={1100}
           eventHandlers={{
             click: (e) => {
@@ -381,26 +510,10 @@ function SelectedRouteEditor({ route, interactive, snapTargets, branchPicking, o
               const ll = (e.target as L.Marker).getLatLng()
               setDragPreview(null)
               updateWaypoint(index, [ll.lat, ll.lng])
+              onRestoreRouteFocus(route.uid)
             },
           }}
         >
-          <Tooltip direction="top" offset={[0, -8]} opacity={0.94}>
-            {branchPicking
-              ? `节点 ${index} · 点击从此处创建分支`
-              : index === 0
-              ? route.anchorMode === 'team'
-                ? `${route.team}队兵棋锚点`
-                : route.anchorMode === 'operator'
-                  ? '干员兵棋锚点'
-                  : route.anchorMode === 'vehicle'
-                    ? '载具兵棋锚点'
-                    : route.anchorMode === 'branch'
-                      ? '路线节点锚点'
-                      : '自由起点 · 拖到兵棋或其他路线节点可吸附绑定'
-              : route.waypoints.length > 2
-                ? `${index === route.waypoints.length - 1 ? '终点' : `途经点 ${index}`} · 拖动调整 · ${platform.kind === 'android' ? '轻触删除' : '右键删除'}`
-                : '终点 · 拖动调整 · 路线至少保留一个终点'}
-          </Tooltip>
         </Marker>
       ))}
       {route.anchorMode !== 'branch' && (
@@ -408,12 +521,15 @@ function SelectedRouteEditor({ route, interactive, snapTargets, branchPicking, o
           position={routeCenter(renderedWaypoints)}
           icon={routeMoveIcon(visual.color, teamColor)}
           draggable={interactive}
+          bubblingMouseEvents={false}
           zIndexOffset={1200}
           eventHandlers={{
             click: (e) => L.DomEvent.stopPropagation(e),
             dragstart: (e) => {
+              L.DomEvent.stopPropagation(e as L.LeafletEvent)
               moveSession.current = { center: (e.target as L.Marker).getLatLng(), points: route.waypoints.map((point) => [...point] as [number, number]) }
               setDragPreview(route.waypoints.map((point) => [...point] as [number, number]))
+              setDragLabelPreview(route.labelPosition ? [...route.labelPosition] as [number, number] : null)
             },
             drag: (e) => previewTranslate((e.target as L.Marker).getLatLng()),
             dragend: (e) => {
@@ -421,6 +537,7 @@ function SelectedRouteEditor({ route, interactive, snapTargets, branchPicking, o
               const session = moveSession.current
               moveSession.current = null
               setDragPreview(null)
+              setDragLabelPreview(null)
               if (!session) return
               const dLat = center.lat - session.center.lat
               const dLng = center.lng - session.center.lng
@@ -431,25 +548,47 @@ function SelectedRouteEditor({ route, interactive, snapTargets, branchPicking, o
                   : undefined,
                 target: undefined,
               })
+              const anchor = route.anchorMode === 'operator' ? { kind: 'operator' as const, uid: route.anchorOperatorUid } : route.anchorMode === 'vehicle' ? { kind: 'vehicle' as const, uid: route.anchorVehicleUid } : route.anchorMode === 'building' ? { kind: 'building' as const, uid: route.anchorBuildingUid } : route.anchorMode === 'team' ? { kind: 'team' as const, uid: route.teamMarkerUid } : null
+              if (anchor?.uid) window.dispatchEvent(new CustomEvent('mobile-route-anchor-drag', { detail: { phase: 'end', kind: anchor.kind, uid: anchor.uid, lat: center.lat, lng: center.lng } }))
+              onRestoreRouteFocus(route.uid)
             },
           }}
         >
-          {platform.kind !== 'android' && <Tooltip direction="top" offset={[0, -11]}>拖动整条路线</Tooltip>}
         </Marker>
       )}
     </>
   )
 }
 
-export default function RouteLayer({ routes, view, teams, operators, vehicles, buildings, snapTargets, draftSource, selectedUid, branchPicking, interactive, onSelect, onBranchPoint, onDraftEnd, onCreate, onPatch, onDelete }: RouteLayerProps) {
+export default function RouteLayer({ routes, view, teams, operators, vehicles, buildings, snapTargets, draftSource, selectedUid, branchPicking, interactive, showRouteLabels, onSelect, onBranchPoint, onDraftEnd, onCreate, onPatch, onDelete, onMoveAnchor }: RouteLayerProps) {
   const map = useMap()
+  useEffect(() => {
+    if (!map.getPane('routeSelectedHitPane')) {
+      const pane = map.createPane('routeSelectedHitPane', map.getPane('overlayPane') ?? undefined)
+      pane.style.zIndex = '550'
+    }
+  }, [map])
+  const [mapBearing, setMapBearing] = useState(() => map.getBearing?.() ?? 0)
+  useEffect(() => {
+    const updateBearing = () => setMapBearing(map.getBearing?.() ?? 0)
+    map.on('rotate', updateBearing)
+    return () => { map.off('rotate', updateBearing) }
+  }, [map])
   const [draftPoints, setDraftPoints] = useState<[number, number][]>([])
   const [passiveDragPreview, setPassiveDragPreview] = useState<{ uid: string; waypoints: [number, number][] } | null>(null)
-  const [anchorDragPreview, setAnchorDragPreview] = useState<{ kind: 'operator' | 'team'; uid: string; point: [number, number] } | null>(null)
+  const [hoveredRouteUid, setHoveredRouteUid] = useState<string | null>(null)
+  const [anchorDragPreview, setAnchorDragPreview] = useState<{ kind: 'operator' | 'team' | 'vehicle' | 'building'; uid: string; point: [number, number] } | null>(null)
   const anchorDragFrameRef = useRef<number | null>(null)
-  const pendingAnchorDragRef = useRef<{ kind: 'operator' | 'team'; uid: string; point: [number, number] } | null>(null)
+  const pendingAnchorDragRef = useRef<{ kind: 'operator' | 'team' | 'vehicle' | 'building'; uid: string; point: [number, number] } | null>(null)
   const draftPointsRef = useRef<[number, number][]>([])
   const mobileActionsRef = useRef<HTMLDivElement | null>(null)
+  const routeHitAreasRef = useRef(new Map<string, L.Polyline>())
+  const restoreRouteFocus = useCallback((uid: string) => {
+    window.requestAnimationFrame(() => {
+      const element = routeHitAreasRef.current.get(uid)?.getElement() as HTMLElement | null | undefined
+      element?.focus()
+    })
+  }, [])
 
   // 兵棋拖动只在 RouteLayer 内生成轻量预览，并按动画帧节流；最终数据仍在 dragend 提交。
   useEffect(() => {
@@ -457,7 +596,7 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, b
     const onAnchorDrag = (event: Event) => {
       const detail = (event as CustomEvent<{
         phase: 'move' | 'end'
-        kind: 'operator' | 'team'
+        kind: 'operator' | 'team' | 'vehicle' | 'building'
         uid: string
         lat: number
         lng: number
@@ -488,7 +627,11 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, b
     if (!anchorDragPreview) return route.waypoints
     const matches = anchorDragPreview.kind === 'operator'
       ? route.anchorMode === 'operator' && route.anchorOperatorUid === anchorDragPreview.uid
-      : route.anchorMode === 'team' && route.teamMarkerUid === anchorDragPreview.uid
+      : anchorDragPreview.kind === 'vehicle'
+        ? route.anchorMode === 'vehicle' && route.anchorVehicleUid === anchorDragPreview.uid
+      : anchorDragPreview.kind === 'building'
+        ? route.anchorMode === 'building' && route.anchorBuildingUid === anchorDragPreview.uid
+        : route.anchorMode === 'team' && route.teamMarkerUid === anchorDragPreview.uid
     return matches ? [anchorDragPreview.point, ...route.waypoints.slice(1)] : route.waypoints
   }, [anchorDragPreview])
 
@@ -535,8 +678,13 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, b
   useEffect(() => {
     if (!draftContext) return
     const wasEnabled = map.doubleClickZoom.enabled()
+    const wasDraggingEnabled = map.dragging.enabled()
     map.doubleClickZoom.disable()
-    return () => { if (wasEnabled) map.doubleClickZoom.enable() }
+    map.dragging.disable()
+    return () => {
+      if (wasEnabled) map.doubleClickZoom.enable()
+      if (wasDraggingEnabled) map.dragging.enable()
+    }
   }, [map, draftContext])
 
   useEffect(() => {
@@ -584,15 +732,18 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, b
       side: draftContext.side,
       team: draftContext.team,
       teamMarkerUid: draftContext.teamMarkerUid,
-      anchorMode: parent ? 'branch' : operator ? 'operator' : vehicle ? 'vehicle' : building ? 'free' : 'team',
+      anchorMode: parent ? 'branch' : operator ? 'operator' : vehicle ? 'vehicle' : building ? 'building' : 'team',
       anchorOperatorUid: operator?.uid,
       anchorVehicleUid: vehicle?.uid,
+      anchorBuildingUid: building?.uid,
       name: draftContext.name,
       orderType: parent?.orderType ?? defaultType,
       status: 'planned',
       color: teamOf(draftContext.team).color,
       lineStyle: parent?.lineStyle ?? meta.lineStyle,
+      geometryType: parent?.geometryType ?? 'straight',
       opacity: parent?.opacity ?? 0.92,
+      strokeWidth: parent?.strokeWidth ?? 3.5,
       waypoints: points,
       operatorIds: operator ? [operator.uid] : [],
       vehicleIds: vehicle ? [vehicle.uid] : [],
@@ -637,44 +788,69 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, b
             ? `${route.vehicleIds.length}辆载具`
             : '未指定执行单位'
         const teamColor = teamOf(route.team).color
-        const renderedWaypoints = passiveDragPreview?.uid === route.uid ? passiveDragPreview.waypoints : previewWaypoints(route)
+        const rawRenderedWaypoints = passiveDragPreview?.uid === route.uid ? passiveDragPreview.waypoints : previewWaypoints(route)
+        const renderedWaypoints = routeRenderPoints(route, rawRenderedWaypoints)
+        const selectedTooltipPosition = selected
+          ? map.containerPointToLatLng(
+              map.latLngToContainerPoint(L.latLngBounds(renderedWaypoints).getNorthEast()).add([10, -10]),
+            )
+          : undefined
         return (
           <Fragment key={route.uid}>
             <Polyline
+              ref={(layer) => {
+                if (layer) routeHitAreasRef.current.set(route.uid, layer)
+                else routeHitAreasRef.current.delete(route.uid)
+              }}
               positions={renderedWaypoints}
-              pathOptions={{ color: teamColor, weight: 18, opacity: 0, interactive, bubblingMouseEvents: false, className: 'route-hit-area' }}
+              pathOptions={{ color: teamColor, weight: platform.kind === 'android' ? 24 : 18, opacity: 0, interactive, bubblingMouseEvents: false, className: 'route-hit-area' }}
               eventHandlers={{
-                click: (e) => {
+                mouseover: () => setHoveredRouteUid(route.uid),
+                mouseout: () => setHoveredRouteUid((uid) => uid === route.uid ? null : uid),
+                click: (e: L.LeafletMouseEvent) => {
                   L.DomEvent.stopPropagation(e)
                   onSelect(route.uid)
                 },
-                dblclick: (e) => {
+                dblclick: (e: L.LeafletMouseEvent) => {
                   L.DomEvent.stop(e.originalEvent)
+                  if (platform.kind === 'android') return
                   const index = nearestSegmentIndex(map, route.waypoints, e.latlng)
                   const waypoints = [...route.waypoints]
                   waypoints.splice(index + 1, 0, [e.latlng.lat, e.latlng.lng])
                   onPatch(route.uid, { waypoints })
                   onSelect(route.uid)
                 },
-              }}
+              } as unknown as L.LeafletEventHandlerFnMap}
             >
-              {platform.kind !== 'android' && (
+              {platform.kind !== 'android' && !selected && (
                 <Tooltip sticky direction="top" opacity={0.96}>
                   {type.label} · {orderStatusLabel(route.status)} · {route.name}<br />
                   {route.operatorIds.length} 干员 · {route.vehicleIds.length} 载具 · 双击线段插入途经点
                 </Tooltip>
               )}
             </Polyline>
+            {platform.kind !== 'android' && selected && hoveredRouteUid === route.uid && selectedTooltipPosition && (
+              <Marker
+                position={selectedTooltipPosition}
+                icon={L.divIcon({ className: 'route-tooltip-anchor', iconSize: [1, 1], iconAnchor: [0, 0] })}
+                interactive={false}
+              >
+                <Tooltip permanent direction="right" opacity={0.96}>
+                  {type.label} · {orderStatusLabel(route.status)} · {route.name}<br />
+                  {route.operatorIds.length} 干员 · {route.vehicleIds.length} 载具 · 双击线段插入途经点
+                </Tooltip>
+              </Marker>
+            )}
             {!selected && (
               <Polyline positions={renderedWaypoints} pathOptions={{ ...visual, interactive: false }} />
             )}
-            {!selected && <Marker position={renderedWaypoints.at(-1)!} icon={routeArrowIcon({ ...route, waypoints: renderedWaypoints }, visual.color)} interactive={false} zIndexOffset={700} />}
+            {!selected && <Marker position={renderedWaypoints.at(-1)!} icon={routeArrowIcon({ ...route, waypoints: renderedWaypoints }, visual.color, mapBearing)} interactive={false} zIndexOffset={700} />}
             {!selected && route.waypoints.slice(1, -1).map((point, offset) => {
               const index = offset + 1
               return (
               <Marker
                 key={`${route.uid}-passive-${index}`}
-                position={renderedWaypoints[index] ?? point}
+                position={rawRenderedWaypoints[index] ?? point}
                 icon={passiveWaypointIcon(index, visual.color, teamColor)}
                 interactive={interactive}
                 draggable={interactive}
@@ -682,14 +858,7 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, b
                 eventHandlers={{
                   click: (e) => {
                     L.DomEvent.stopPropagation(e)
-                    if (platform.kind === 'android' && route.waypoints.length > 2) {
-                      onPatch(route.uid, {
-                        waypoints: route.waypoints.filter((_, waypointIndex) => waypointIndex !== index),
-                        target: route.target,
-                      })
-                    } else {
-                      onSelect(route.uid)
-                    }
+                    onSelect(route.uid)
                   },
                   contextmenu: (e) => {
                     L.DomEvent.stop(e.originalEvent)
@@ -731,7 +900,7 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, b
               </Marker>
               )
             })}
-            <Marker
+            {!selected && showRouteLabels && route.showLabel !== false && <Marker
               position={route.labelPosition ?? routeLabelPosition(renderedWaypoints)}
               icon={routeLabelIcon(route, route.color, view, operators)}
               interactive={interactive}
@@ -740,12 +909,18 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, b
               eventHandlers={{
                 click: (e) => {
                   L.DomEvent.stopPropagation(e)
+                  const target = e.originalEvent.target as HTMLElement | null
+                  if (target?.closest('.route-label-toggle')) {
+                    onPatch(route.uid, { showLabel: route.showLabel === false })
+                    return
+                  }
                   onSelect(route.uid)
                 },
                 dragend: (e) => {
                   const ll = (e.target as L.Marker).getLatLng()
                   onPatch(route.uid, { labelPosition: [ll.lat, ll.lng] })
                   onSelect(route.uid)
+                  restoreRouteFocus(route.uid)
                 },
               }}
             >
@@ -753,12 +928,12 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, b
                 {`${route.side === view ? '己方' : '敌方'} · ${route.team}队 · ${executorTooltip} · ${type.label} · ${orderStatusLabel(route.status)}`}<br />
                 拖动调整指令标签位置
               </Tooltip>
-            </Marker>
+            </Marker>}
           </Fragment>
         )
       })}
 
-      {selectedRoute && <SelectedRouteEditor route={selectedRoute} interactive={interactive} snapTargets={snapTargets} branchPicking={branchPicking} onBranchPoint={onBranchPoint} onPatch={onPatch} />}
+      {selectedRoute && <SelectedRouteEditor route={selectedRoute} interactive={interactive} showRouteLabels={showRouteLabels} view={view} operators={operators} snapTargets={snapTargets} branchPicking={branchPicking} onBranchPoint={onBranchPoint} onPatch={onPatch} onRestoreRouteFocus={restoreRouteFocus} onMoveAnchor={onMoveAnchor} />}
 
       {draftContext && draftPoints.length > 0 && (
         <>

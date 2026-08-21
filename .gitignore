@@ -6,6 +6,7 @@
 /dist-ssr/
 /release/
 /release-optimized/
+/release-v010-*/
 /out/
 *.exe
 *.msi
@@ -15,6 +16,9 @@
 
 # Recording/demo-only material
 /demo/
+/tmp/
+/tmp-*.js
+/tmp-*.png
 
 # Local detailed development notes (README keeps the public summary)
 /docs/双端详细更新记录.md

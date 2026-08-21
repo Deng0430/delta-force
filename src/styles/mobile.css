@@ -30,6 +30,52 @@
   display: none;
 }
 
+/* 顶部栏收起后不应保留移动端滚动层，否则会覆盖左右侧栏顶部的折叠按钮。 */
+.mobile-layout .toolbar.collapsed {
+  height: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  pointer-events: none;
+  z-index: 1100;
+}
+.mobile-layout .toolbar.collapsed .toolbar-expand-btn {
+  pointer-events: auto;
+}
+.platform-android.mobile-layout .collapse-float {
+  z-index: 1300;
+}
+
+/* 干员信息面板在移动端固定在安全区域内，避免地图边缘坐标将其推出视口。 */
+.platform-android.mobile-layout .op-bubble {
+  position: fixed !important;
+  left: 50% !important;
+  right: auto !important;
+  top: auto !important;
+  bottom: max(8px, var(--safe-bottom)) !important;
+  width: min(360px, calc(100vw - var(--safe-left) - var(--safe-right) - 16px)) !important;
+  min-width: 0 !important;
+  max-width: calc(100vw - var(--safe-left) - var(--safe-right) - 16px) !important;
+  transform: translateX(-50%) !important;
+  z-index: 1500;
+  max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.platform-android.mobile-layout .op-bubble-panel {
+  max-width: none;
+}
+
+.platform-android.mobile-layout .op-cascade-submenu,
+.platform-android.mobile-layout .op-cascade.open-left .op-cascade-submenu {
+  position: static;
+  width: auto;
+  max-height: min(52vh, 360px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .mobile-layout .toolbar .logo-area {
   width: auto;
   min-width: 120px;
@@ -44,6 +90,16 @@
   min-width: 0;
   max-width: none;
   box-shadow: 8px 0 24px rgba(0, 0, 0, .45);
+}
+
+.mobile-layout .left-panel.collapsed {
+  width: 0 !important;
+  min-width: 0;
+  max-width: 0;
+  padding-left: 0;
+  border: 0;
+  box-shadow: none;
+  overflow: visible;
 }
 
 .mobile-layout .left-panel .panel-body {
@@ -175,12 +231,38 @@
   touch-action: none !important;
 }
 
+/* 小图形周围的多个编辑点不能让命中区彼此覆盖。视觉圆点保持原尺寸，
+   只有 Leaflet marker 外层缩小；触摸事件统一由外层接收。 */
+.platform-android .edit-handle-wrap .edit-handle-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--edit-handle-visual-size);
+  height: var(--edit-handle-visual-size);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.platform-android .edit-handle-wrap:hover .edit-handle-dot {
+  transform: translate(-50%, -50%);
+}
+
 .mobile-layout .edit-style-trigger,
 .mobile-layout .edit-delete-trigger {
-  width: 36px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
   font-size: 14px;
   touch-action: manipulation;
+}
+
+.platform-android.mobile-layout .edit-lock-trigger,
+.platform-android.mobile-layout .edit-unlock-trigger {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
 }
 
 .mobile-layout .text-editor {
@@ -212,6 +294,28 @@
   touch-action: none;
 }
 
+/* 样式面板由 Portal 挂到 body，不能依赖 .mobile-layout 的后代选择器。 */
+body:has(.platform-android.mobile-layout) .text-style-panel {
+  box-sizing: border-box;
+  max-width: calc(100vw - 12px);
+  max-height: calc(100dvh - 12px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+body:has(.platform-android.mobile-layout) .text-style-panel .tsp-head {
+  position: sticky;
+  top: -10px;
+  z-index: 2;
+  margin: -10px -10px 8px;
+  padding: 9px 10px 7px;
+  background: rgba(14, 17, 18, 0.99);
+  border-bottom: 1px solid rgba(1, 255, 132, 0.22);
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+}
+
 .mobile-layout .map-wrap .leaflet-top.leaflet-left {
   left: calc(var(--left-panel-w, 0px) + var(--safe-left));
 }
@@ -239,6 +343,410 @@
 .mobile-layout .mode-config-editor {
   width: min(92vw, 360px);
   max-height: calc(100dvh - 80px);
+}
+
+/* 模式配置器：地图始终保持全尺寸，左右侧栏只覆盖地图且可独立展开。 */
+.mobile-layout.mode-workbench {
+  --mode-mobile-left-width: clamp(168px, 26vw, 210px);
+  --mode-mobile-right-width: clamp(220px, 32vw, 280px);
+  height: 100dvh;
+  min-height: 100dvh;
+}
+
+.mobile-layout.mode-workbench .mode-workbench-toolbar {
+  min-height: calc(44px + var(--safe-top));
+  height: calc(44px + var(--safe-top));
+  max-height: calc(44px + var(--safe-top));
+  gap: 5px;
+  padding: var(--safe-top) max(4px, var(--safe-right)) 0 max(4px, var(--safe-left));
+  overflow: visible;
+  background: linear-gradient(180deg, rgba(19, 26, 32, .99), rgba(8, 13, 17, .99));
+}
+.mobile-layout.mode-workbench .mode-workbench-brand { width: 104px; min-width: 104px; flex: 0 0 104px; padding: 0 6px; }
+.mobile-layout.mode-workbench .mode-workbench-brand img { width: 96px; max-height: 38px; object-fit: contain; }
+.mobile-layout.mode-workbench .mode-workbench-title { display: none; }
+.mobile-layout.mode-workbench .mode-workbench-context {
+  min-width: 232px;
+  max-width: 390px;
+  flex: 1 1 390px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+.mobile-layout.mode-workbench .mode-workbench-context .map-select,
+.mobile-layout.mode-workbench .mode-workbench-context .map-select-btn { width: 100% !important; min-width: 0; }
+.mobile-layout.mode-workbench .mode-workbench-context .map-select-btn {
+  height: 36px;
+  min-height: 36px;
+  gap: 4px;
+  justify-content: flex-start;
+  padding: 0 6px;
+  text-align: left;
+}
+.mobile-layout.mode-workbench .mode-workbench-context .map-select-label { display: none; }
+.mobile-layout.mode-workbench .mode-workbench-context .map-select-value { min-width: 0; max-width: none; flex: 1 1 auto; overflow: hidden; font-size: 12px; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.mobile-layout.mode-workbench .mode-workbench-context .map-select-btn i { width: 10px; flex: 0 0 10px; margin-left: auto; font-size: 8px; }
+.mobile-layout.mode-workbench .mode-mobile-context-trigger {
+  min-width: 116px;
+  height: 36px;
+  flex: 1 1 210px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 13px;
+  grid-template-rows: 16px 15px;
+  align-items: center;
+  padding: 2px 7px;
+  border: 1px solid var(--line-0);
+  border-radius: 2px;
+  background: rgba(7, 12, 14, .72);
+  color: var(--tx-1);
+  text-align: left;
+}
+.mobile-layout.mode-workbench .mode-mobile-context-trigger span,
+.mobile-layout.mode-workbench .mode-mobile-context-trigger strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mobile-layout.mode-workbench .mode-mobile-context-trigger span { font-size: 10px; }
+.mobile-layout.mode-workbench .mode-mobile-context-trigger strong { color: var(--tx-4); font-size: 8px; font-weight: 500; }
+.mobile-layout.mode-workbench .mode-mobile-context-trigger i { grid-column: 2; grid-row: 1 / 3; color: var(--gold); font-size: 9px; }
+.mobile-layout.mode-workbench .mode-mobile-context-trigger.active { border-color: var(--gold); }
+.mobile-layout.mode-workbench .mode-side-switch { width: 76px; flex: 0 0 76px; height: 36px; }
+.mobile-layout.mode-workbench .mode-side-switch span { font-size: 8px; }
+.mobile-layout.mode-workbench .mode-side-switch i { width: 32px; }
+.mobile-layout.mode-workbench .mode-side-switch.defense i { transform: translateX(40px); }
+.mobile-layout.mode-workbench .mode-workbench-history { height: 36px; flex: 0 0 auto; overflow: hidden; box-sizing: border-box; border-radius: 3px; }
+.mobile-layout.mode-workbench .mode-workbench-history button { width: 36px; height: 34px; flex: 0 0 36px; padding: 0; font-size: 0; }
+.mobile-layout.mode-workbench .mode-mobile-more-trigger,
+.mobile-layout.mode-workbench .mode-workbench-toolbar-collapse,
+.mobile-layout.mode-workbench .mode-workbench-close { width: 36px; height: 36px; flex: 0 0 36px; padding: 0; font-size: 0; }
+.mobile-layout.mode-workbench .mode-workbench-history button i,
+.mobile-layout.mode-workbench .mode-mobile-more-trigger i,
+.mobile-layout.mode-workbench .mode-workbench-toolbar-collapse i,
+.mobile-layout.mode-workbench .mode-workbench-close i { font-size: 13px; }
+.mobile-layout.mode-workbench .mode-mobile-more-trigger,
+.mobile-layout.mode-workbench .mode-workbench-toolbar-collapse,
+.mobile-layout.mode-workbench .mode-workbench-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-0);
+  border-radius: 2px;
+  background: var(--bg-btn);
+  color: var(--tx-2);
+}
+.mobile-layout.mode-workbench .mode-workbench-close {
+  width: 58px;
+  flex-basis: 58px;
+  gap: 5px;
+  padding: 0 8px;
+}
+.mobile-layout.mode-workbench .mode-workbench-close .mode-workbench-close-label { display: inline; font-size: 11px; }
+.mobile-layout.mode-workbench .mode-mobile-more-trigger.active { border-color: var(--gold); color: var(--gold); }
+.mobile-layout.mode-workbench .mode-workbench-layers,
+.mobile-layout.mode-workbench .mode-workbench-data,
+.mobile-layout.mode-workbench .mode-workbench-fullscreen,
+.mobile-layout.mode-workbench .shortcut-help { display: none; }
+
+.mobile-layout.mode-workbench .mode-workbench-map-wrap { min-height: 0; }
+.mobile-layout.mode-workbench .leaflet-top.leaflet-left { left: 4px; top: 6px; }
+/* mode-config-v2.css 在移动端样式之后加载，必须以 Android 工作台专属权重
+   覆盖其收起态 left: 48px，避免桌面侧栏占位规则重新推走缩放控件。 */
+.platform-android.mobile-layout.mode-workbench.left-palette-collapsed .leaflet-top.leaflet-left {
+  left: 4px;
+}
+.mobile-layout.mode-workbench .mode-workbench-resizer { display: none; }
+
+.mobile-layout.mode-workbench .mode-asset-palette,
+.mobile-layout.mode-workbench .mode-config-editor {
+  position: absolute;
+  z-index: 2100;
+  top: 0;
+  bottom: 0;
+  max-height: none;
+  overflow: hidden auto;
+  border: 1px solid var(--line-0);
+  border-radius: 3px;
+  background: rgba(13, 20, 23, .985);
+  box-shadow: 0 9px 28px rgba(0, 0, 0, .7);
+  overscroll-behavior: contain;
+}
+.mobile-layout.mode-workbench .mode-asset-palette {
+  left: 0;
+  right: auto;
+  width: calc(var(--safe-left) + var(--mode-mobile-left-width));
+  padding-left: var(--safe-left);
+}
+.mobile-layout.mode-workbench .mode-config-editor {
+  left: auto;
+  right: 0;
+  width: calc(var(--safe-right) + var(--mode-mobile-right-width));
+  padding-right: var(--safe-right);
+}
+.mobile-layout.mode-workbench .mode-asset-palette.collapsed,
+.mobile-layout.mode-workbench .mode-config-editor.collapsed {
+  display: block;
+  top: 6px;
+  bottom: auto;
+  width: 46px;
+  height: 46px;
+  max-height: 46px;
+  padding: 4px;
+  overflow: hidden;
+  border-color: var(--gold);
+}
+.mobile-layout.mode-workbench .mode-asset-palette.collapsed { left: max(4px, var(--safe-left)); right: auto; }
+.mobile-layout.mode-workbench .mode-config-editor.collapsed { left: auto; right: max(4px, var(--safe-right)); }
+.mobile-layout.mode-workbench .mode-asset-palette.collapsed header,
+.mobile-layout.mode-workbench .mode-config-editor.collapsed .mode-config-editor-head {
+  min-height: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+}
+.mobile-layout.mode-workbench .mode-asset-palette.collapsed header > i,
+.mobile-layout.mode-workbench .mode-config-editor.collapsed .mode-config-editor-head-actions { display: inline-flex; }
+.mobile-layout.mode-workbench .mode-asset-palette.collapsed header > strong,
+.mobile-layout.mode-workbench .mode-asset-palette.collapsed header > span,
+.mobile-layout.mode-workbench .mode-config-editor.collapsed .mode-config-editor-head > div:first-child,
+.mobile-layout.mode-workbench .mode-config-editor.collapsed .mode-config-editor-close { display: none; }
+.mobile-layout.mode-workbench .mode-config-editor.collapsed .mode-config-editor-head-actions button { display: none; }
+.mobile-layout.mode-workbench .mode-config-editor.collapsed .mode-config-editor-head-actions button:first-child { display: inline-flex; }
+.mode-config-panel-float { display: none; }
+.platform-android.mobile-layout.mode-workbench .mode-config-panel-float {
+  position: absolute;
+  z-index: 2200;
+  top: 6px;
+  display: inline-flex;
+}
+.platform-android.mobile-layout.mode-workbench .mode-config-panel-float.left {
+  /* 普通模式同款排布：38px 缩放键及其边框结束后保留约 6px 间距。 */
+  left: 62px !important;
+}
+.platform-android.mobile-layout.mode-workbench .mode-config-panel-float.right { right: 12px; }
+.platform-android.mobile-layout.mode-workbench.toolbar-collapsed .mode-config-panel-float { top: 6px; }
+.platform-android.mobile-layout.mode-workbench .mode-asset-palette.collapsed,
+.platform-android.mobile-layout.mode-workbench .mode-config-editor.collapsed { display: none !important; }
+.mobile-layout.mode-workbench .mode-asset-palette header {
+  min-height: 58px;
+  grid-template-columns: 30px minmax(0, 1fr) 34px;
+  grid-template-rows: minmax(18px, auto) minmax(14px, auto);
+  align-content: center;
+  gap: 2px 7px;
+  padding: 7px 8px;
+}
+.mobile-layout.mode-workbench .mode-asset-palette header > i {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  align-self: center;
+  justify-self: center;
+  width: 26px;
+  color: var(--mc-accent);
+  font-size: 22px;
+  line-height: 1;
+  text-align: center;
+}
+.mobile-layout.mode-workbench .mode-asset-palette header strong {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: end;
+  font-size: 13px;
+  line-height: 1.2;
+}
+.mobile-layout.mode-workbench .mode-asset-palette header span {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: start;
+  overflow: visible;
+  font-size: 9px;
+  line-height: 1.25;
+  white-space: normal;
+}
+.mobile-layout.mode-workbench .mode-asset-palette .mode-panel-collapse {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  width: 34px;
+  height: 34px;
+  align-self: center;
+}
+.mobile-layout.mode-workbench .mode-asset-grid { grid-template-columns: minmax(0, 1fr); }
+.mobile-layout.mode-workbench .mode-asset-grid button { min-height: 50px; }
+.mobile-layout.mode-workbench .mode-config-editor button,
+.mobile-layout.mode-workbench .mode-config-editor input,
+.mobile-layout.mode-workbench .mode-config-editor select { min-height: 38px; }
+.mobile-layout.mode-workbench .mode-config-editor textarea { min-height: 56px; }
+.mobile-layout.mode-workbench .mode-config-editor-head-actions button,
+.mobile-layout.mode-workbench .mode-config-editor-head > button { min-height: 38px; }
+
+.mobile-layout.mode-workbench .mode-workbench-statusbar {
+  display: none;
+}
+.mobile-layout.mode-workbench .mode-workbench-statusbar > span:first-child { min-width: 0; }
+.mobile-layout.mode-workbench .mode-workbench-statusbar > span:nth-child(n + 2) { font-size: 8px; }
+
+.mode-mobile-sheet-backdrop {
+  position: fixed;
+  z-index: 4800;
+  inset: 0;
+  background: rgba(0, 0, 0, .28);
+}
+.mode-mobile-context-panel,
+.mode-mobile-more-panel {
+  position: fixed;
+  z-index: 4810;
+  top: calc(48px + var(--safe-top));
+  max-height: calc(100dvh - 56px - var(--safe-top) - var(--safe-bottom));
+  overflow: hidden auto;
+  border: 1px solid var(--gold);
+  border-radius: 3px;
+  background: rgba(10, 15, 17, .99);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .78);
+  color: var(--tx-1);
+  overscroll-behavior: contain;
+}
+.mode-mobile-context-panel { left: max(6px, var(--safe-left)); width: min(440px, calc(100vw - var(--safe-left) - var(--safe-right) - 12px)); padding: 8px; }
+.mode-mobile-more-panel { right: max(6px, var(--safe-right)); width: min(390px, calc(100vw - var(--safe-left) - var(--safe-right) - 12px)); padding: 8px; }
+.mode-mobile-context-panel > header,
+.mode-mobile-more-panel > header { min-height: 34px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; padding-bottom: 6px; border-bottom: 1px solid var(--line-1); }
+.mode-mobile-context-panel > header button,
+.mode-mobile-more-panel > header button { width: 34px; height: 34px; border: 1px solid var(--line-0); background: var(--bg-btn); color: var(--tx-1); }
+.mode-mobile-context-panel > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.mode-mobile-context-panel .map-select,
+.mode-mobile-context-panel .map-select-btn { width: 100%; min-width: 0; }
+.mode-mobile-context-panel .map-select-btn { height: 40px; justify-content: flex-start; }
+.mode-mobile-context-panel .map-select-value { margin-left: auto; }
+.mobile-layout.mode-workbench .map-select-menu {
+  position: fixed;
+  z-index: 5000;
+  min-width: 0;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: 3px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .5);
+  max-height: calc(100dvh - 60px - var(--safe-top) - var(--safe-bottom));
+  overflow-y: auto;
+}
+.mobile-layout.mode-workbench .map-select-item { min-width: 0; min-height: 40px; padding: 8px 10px; overflow: hidden; color: var(--tx-1); background: transparent; border: 1px solid transparent; font-size: 12px; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.mode-mobile-more-title { display: block; margin: 9px 0 5px; color: var(--tx-4); font-size: 9px; letter-spacing: .08em; }
+.mode-mobile-more-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+.mode-mobile-more-grid button { min-width: 0; min-height: 46px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 4px; padding: 4px; border: 1px solid var(--line-0); background: var(--bg-btn); color: var(--tx-2); font-size: 9px; }
+.mode-mobile-more-grid button i { font-size: 13px; }
+.mode-mobile-more-grid button.active { border-color: var(--green); color: var(--green); background: rgba(1, 255, 132, .08); }
+.mode-mobile-more-grid button.primary { border-color: var(--green); color: var(--green); }
+.mode-mobile-more-grid button.danger { border-color: rgba(224, 69, 58, .55); color: #ff9e98; }
+.mode-mobile-more-grid button:disabled { opacity: .35; }
+
+.mode-mobile-map-actions,
+.mode-config-mobile-zone-actions {
+  position: fixed;
+  z-index: 2450;
+  left: 50%;
+  bottom: calc(36px + env(safe-area-inset-bottom, 0px));
+  max-width: calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 18px);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px;
+  border: 1px solid var(--gold);
+  border-radius: 3px;
+  background: rgba(10, 15, 17, .97);
+  color: var(--tx-1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .65);
+  transform: translateX(-50%);
+}
+.mode-mobile-map-actions > span { padding: 0 6px; color: var(--gold); font-size: 9px; white-space: nowrap; }
+.mode-mobile-map-actions button,
+.mode-config-mobile-zone-actions button { min-height: 38px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 0 9px; border: 1px solid var(--line-0); background: var(--bg-btn); color: var(--tx-1); font-size: 10px; white-space: nowrap; }
+.mode-mobile-map-actions button.primary,
+.mode-config-mobile-zone-actions button.active { border-color: var(--green); color: var(--green); background: rgba(1, 255, 132, .1); }
+.mode-mobile-map-actions button.danger,
+.mode-config-mobile-zone-actions button.danger { border-color: rgba(224, 69, 58, .55); color: #ff9e98; }
+.mode-mobile-map-actions button:disabled,
+.mode-config-mobile-zone-actions button:disabled { opacity: .35; }
+.platform-android.mode-workbench .mode-config-vertex-wrap { width: 44px !important; height: 44px !important; margin-left: -22px !important; margin-top: -22px !important; display: grid !important; place-items: center; }
+.platform-android.mode-workbench .mode-config-vertex-wrap .mode-config-vertex { width: 20px; height: 20px; display: grid; place-items: center; }
+.platform-android.mode-workbench .mode-config-vertex-wrap.active .mode-config-vertex { border-color: #fff; box-shadow: 0 0 0 3px rgba(244, 207, 103, .55); }
+.platform-android.mode-workbench .mode-config-spawn-wrap::before,
+.platform-android.mode-workbench .mode-config-objective-wrap::before,
+.platform-android.mode-workbench .mode-config-prop-wrap::before,
+.platform-android.mode-workbench .mode-vehicle-refresh-point-wrap::before {
+  position: absolute;
+  inset: -8px;
+  content: "";
+}
+.platform-android.mode-workbench .tactical-map.mode-config-touch-dragging { cursor: grabbing; user-select: none; }
+.mode-config-mobile-dialog input {
+  width: 100%;
+  min-height: 42px;
+  margin: 8px 0 4px;
+  padding: 0 10px;
+  border: 1px solid var(--gold);
+  border-radius: 3px;
+  outline: 0;
+  background: rgba(7, 12, 14, .95);
+  color: #fff;
+  font-size: 14px;
+}
+
+/* 部署模式下由地图统一接收落点。模式配置器把对象放在多个自定义 Pane 中，
+   因此不能只匹配 Leaflet 默认 marker/overlay pane。 */
+.platform-android.mode-workbench .tactical-map.mode-config-tool-spawn .leaflet-pane .leaflet-interactive,
+.platform-android.mode-workbench .tactical-map.mode-config-tool-objective .leaflet-pane .leaflet-interactive,
+.platform-android.mode-workbench .tactical-map.mode-config-tool-prop .leaflet-pane .leaflet-interactive,
+.platform-android.mode-workbench .tactical-map.mode-config-tool-vehicle-refresh .leaflet-pane .leaflet-interactive,
+.platform-android.mode-workbench .tactical-map.mode-config-tool-zone .leaflet-pane .leaflet-interactive {
+  pointer-events: none !important;
+}
+.platform-android.mode-workbench .tactical-map.mode-config-tool-vehicle-refresh .mode-vehicle-refresh-point-wrap {
+  pointer-events: auto !important;
+}
+.platform-android.mode-workbench .tactical-map.mode-config-tool-spawn,
+.platform-android.mode-workbench .tactical-map.mode-config-tool-objective,
+.platform-android.mode-workbench .tactical-map.mode-config-tool-prop,
+.platform-android.mode-workbench .tactical-map.mode-config-tool-vehicle-refresh,
+.platform-android.mode-workbench .tactical-map.mode-config-tool-zone { cursor: crosshair; }
+
+@media (max-height: 520px) {
+  .mobile-layout.mode-workbench { --mode-mobile-right-width: clamp(210px, 31vw, 264px); }
+  .mode-mobile-map-actions,
+  .mode-config-mobile-zone-actions { bottom: calc(32px + env(safe-area-inset-bottom, 0px)); }
+}
+
+@media (max-width: 760px) {
+  .mobile-layout.mode-workbench .mode-workbench-brand { width: 76px; min-width: 76px; flex-basis: 76px; padding-inline: 3px; }
+  .mobile-layout.mode-workbench .mode-workbench-brand img { width: 72px; }
+  .mobile-layout.mode-workbench .mode-workbench-context { min-width: 200px; }
+  .mobile-layout.mode-workbench .mode-side-switch { width: 70px; flex-basis: 70px; }
+  .mobile-layout.mode-workbench .mode-side-switch.defense i { transform: translateX(34px); }
+}
+
+/* 模式编辑器顶栏收起后不保留黑色占位条，展开按钮固定在地图顶部。 */
+.mobile-layout.mode-workbench .mode-workbench-toolbar.collapsed {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2300;
+  height: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  pointer-events: none;
+}
+.mobile-layout.mode-workbench .mode-workbench-toolbar.collapsed .mode-workbench-toolbar-expand {
+  position: absolute;
+  top: 0;
+  right: 50%;
+  transform: translateX(50%);
+  min-height: 30px;
+  padding: 3px 12px;
+  pointer-events: auto;
 }
 
 /* 顶栏本身需要横向滚动，因此移动端下拉菜单改为固定浮层，避免被滚动容器裁切。 */
@@ -273,6 +781,22 @@
   height: 30px;
   min-height: 30px;
   font-size: 11px;
+}
+
+.mobile-layout .op-marker.expanded:not(.connect):not(.dead) .op-rotate-control {
+  display: inline-flex;
+  right: -29px;
+  bottom: -42px;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--op-team);
+  border-radius: 50%;
+  background: rgba(8, 13, 15, .96);
+  color: var(--op-team);
+  font-size: 11px;
+  touch-action: none;
 }
 
 .mobile-layout .veh-marker.expanded .veh-route {
@@ -317,6 +841,76 @@
 .mobile-layout .building-unit button {
   min-width: 0;
   min-height: 0;
+}
+
+.mobile-layout .field-support-delete-control {
+  position: absolute;
+  left: 30px;
+  top: -10px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid rgba(255, 118, 108, .8);
+  border-radius: 50%;
+  background: rgba(35, 12, 16, .95);
+  color: #ff766c;
+  z-index: 3;
+  touch-action: manipulation;
+}
+
+.mobile-layout .operator-skill-mobile-actions-wrap {
+  background: transparent;
+  border: 0;
+  pointer-events: none;
+}
+
+.mobile-layout .operator-skill-control-dragging .operator-skill-mobile-actions-wrap {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.mobile-layout .operator-skill-mobile-actions {
+  display: flex;
+  gap: 3px;
+  width: max-content;
+  padding: 3px;
+  border: 1px solid rgba(1, 255, 132, .55);
+  background: rgba(8, 13, 15, .96);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .5);
+  pointer-events: none;
+}
+
+.mobile-layout .operator-skill-mobile-actions button {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid var(--line-1);
+  background: var(--bg-2);
+  color: var(--tx-0);
+  touch-action: manipulation;
+  pointer-events: auto;
+  border-radius: 4px;
+}
+
+.mobile-layout .operator-skill-mobile-actions button.danger {
+  border-color: rgba(255, 118, 108, .7);
+  color: #ff766c;
+}
+
+.mobile-layout .operator-skill-curve-handle {
+  width: 44px !important;
+  height: 44px !important;
+  margin-left: -22px !important;
+  margin-top: -22px !important;
+}
+
+.mobile-layout .operator-skill-curve-handle > span {
+  position: absolute;
+  left: 10px;
+  top: 10px;
 }
 
 .mobile-layout .op-marker .op-team-letter,
@@ -464,9 +1058,11 @@
 .mobile-layout .route-hit-area:focus,
 .mobile-layout .route-selected-line:focus { outline: none; }
 
-/* 选中兵棋采用统一的 38px 环形操作布局；建筑在移动端不提供路线入口。 */
+/* 选中兵棋采用统一的 44px 触控环；移动端所有入口只由 expanded 点击态显示。 */
 .mobile-layout .tm-marker.expanded .tm-route,
 .mobile-layout .op-marker.expanded:not(.connect):not(.dead) .op-route,
+.mobile-layout .op-marker.expanded:not(.connect):not(.dead) .op-fireline,
+.mobile-layout .op-marker.expanded:not(.connect):not(.dead) .op-info,
 .mobile-layout .veh-marker.expanded .veh-route,
 .mobile-layout .tm-marker.expanded .tm-delete,
 .mobile-layout .op-marker.expanded .op-delete,
@@ -478,25 +1074,46 @@
 .mobile-layout .veh-marker.expanded .veh-delete-control,
 .mobile-layout .building-unit.expanded .building-rotate-control,
 .mobile-layout .building-unit.expanded .building-delete-control {
-  width: 38px;
-  height: 38px;
-  min-width: 38px;
-  min-height: 38px;
-  font-size: 15px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 16px;
 }
 
 .mobile-layout .tm-marker .tm-route,
 .mobile-layout .op-marker .op-route,
 .mobile-layout .veh-marker .veh-route { right: -44px; top: -4px; }
 
+.mobile-layout .op-marker .op-fireline { right: -32px; top: -48px; left: auto; }
+.mobile-layout .op-marker .op-info { right: 8px; top: 46px; left: auto; }
+
 .mobile-layout .tm-marker.expanded .tm-delete,
 .mobile-layout .op-marker.expanded .op-delete { left: -44px; top: -4px; }
+
+.mobile-layout .op-marker.expanded .op-delete { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
 
 .mobile-layout .veh-marker.expanded .veh-side,
 .mobile-layout .building-unit.expanded .building-side { left: -44px; top: -35px; }
 
 .mobile-layout .veh-marker.expanded .veh-team-letter,
 .mobile-layout .building-unit.expanded .building-team-letter { left: -44px; bottom: -36px; font-size: 12px; }
+
+.mobile-layout .op-marker.expanded:not(.connect):not(.dead) .op-rotate-control {
+  right: -32px;
+  bottom: -48px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.mobile-layout .op-marker:hover .op-fireline,
+.mobile-layout .op-marker:hover .op-info,
+.mobile-layout .op-marker:hover .op-route,
+.mobile-layout .op-marker:hover .op-action-fan {
+  display: none;
+}
 
 .mobile-layout .veh-rotate-control,
 .mobile-layout .building-rotate-control { right: -44px; bottom: -48px; }
@@ -530,6 +1147,361 @@
 .mobile-layout .mobile-unit-dragging .veh-marker button,
 .mobile-layout .mobile-unit-dragging .building-unit button {
   display: none !important;
+}
+
+/* Android WebView 会在点按后保留 :hover。移动端兵棋菜单必须只服从 expanded，
+   否则一次点按会同时触发粘滞悬浮和点击状态，造成菜单开关表现不稳定。 */
+.platform-android.mobile-layout .op-marker:not(.expanded) .op-action-fan,
+.platform-android.mobile-layout .op-marker:not(.expanded) .op-route,
+.platform-android.mobile-layout .op-marker:not(.expanded) .op-fireline,
+.platform-android.mobile-layout .op-marker:not(.expanded) .op-info,
+.platform-android.mobile-layout .op-marker:not(.expanded) .op-delete,
+.platform-android.mobile-layout .op-marker:not(.expanded) .op-rotate-control,
+.platform-android.mobile-layout .veh-marker:not(.expanded) .veh-action-fan,
+.platform-android.mobile-layout .veh-marker:not(.expanded) .veh-side,
+.platform-android.mobile-layout .veh-marker:not(.expanded) .veh-route,
+.platform-android.mobile-layout .veh-marker:not(.expanded) .veh-fireline,
+.platform-android.mobile-layout .veh-marker:not(.expanded) .veh-rotate-control,
+.platform-android.mobile-layout .veh-marker:not(.expanded) .veh-delete-control,
+.platform-android.mobile-layout .building-unit:not(.expanded) .building-action-fan,
+.platform-android.mobile-layout .building-unit:not(.expanded) .building-side,
+.platform-android.mobile-layout .building-unit:not(.expanded) .building-route,
+.platform-android.mobile-layout .building-unit:not(.expanded) .building-fireline,
+.platform-android.mobile-layout .building-unit:not(.expanded) .building-rotate-control,
+.platform-android.mobile-layout .building-unit:not(.expanded) .building-delete-control,
+.platform-android.mobile-layout .tm-marker:not(.expanded) .tm-action-fan,
+.platform-android.mobile-layout .tm-marker:not(.expanded) .tm-route,
+.platform-android.mobile-layout .tm-marker:not(.expanded) .tm-fireline,
+.platform-android.mobile-layout .tm-marker:not(.expanded) .tm-delete {
+  display: none !important;
+}
+
+.platform-android.mobile-layout .op-action-fan,
+.platform-android.mobile-layout .veh-action-fan,
+.platform-android.mobile-layout .building-action-fan,
+.platform-android.mobile-layout .tm-action-fan {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+.platform-android.mobile-layout .tm-marker:hover {
+  transform: none;
+}
+
+.mobile-layout .tm-marker:not(.expanded) .tm-route,
+.mobile-layout .tm-marker:not(.expanded) .tm-fireline,
+.mobile-layout .tm-marker:not(.expanded) .tm-rotate-control,
+.mobile-layout .tm-marker:not(.expanded) .tm-delete {
+  display: none !important;
+}
+
+.platform-android.mobile-layout .op-marker.expanded:not(.connect):not(.dead) .op-route,
+.platform-android.mobile-layout .op-marker.expanded:not(.connect):not(.dead) .op-fireline,
+.platform-android.mobile-layout .op-marker.expanded:not(.connect):not(.dead) .op-info,
+.platform-android.mobile-layout .op-marker.expanded:not(.connect):not(.dead) .op-delete,
+.platform-android.mobile-layout .op-marker.expanded:not(.connect):not(.dead) .op-rotate-control,
+.platform-android.mobile-layout .veh-marker.expanded .veh-side,
+.platform-android.mobile-layout .veh-marker.expanded .veh-team-letter,
+.platform-android.mobile-layout .veh-marker.expanded .veh-route,
+.platform-android.mobile-layout .veh-marker.expanded .veh-fireline,
+.platform-android.mobile-layout .veh-marker.expanded .veh-rotate-control,
+.platform-android.mobile-layout .veh-marker.expanded .veh-delete-control,
+.platform-android.mobile-layout .veh-marker.expanded .veh-refresh-origin,
+.platform-android.mobile-layout .building-unit.expanded .building-side,
+.platform-android.mobile-layout .building-unit.expanded .building-team-letter,
+.platform-android.mobile-layout .building-unit.expanded .building-route,
+.platform-android.mobile-layout .building-unit.expanded .building-fireline,
+.platform-android.mobile-layout .building-unit.expanded .building-rotate-control,
+.platform-android.mobile-layout .building-unit.expanded .building-delete-control,
+.platform-android.mobile-layout .tm-marker.expanded .tm-route,
+.platform-android.mobile-layout .tm-marker.expanded .tm-fireline,
+.platform-android.mobile-layout .tm-marker.expanded .tm-delete {
+  display: inline-flex !important;
+}
+
+.platform-android.mobile-layout .op-marker.expanded button,
+.platform-android.mobile-layout .veh-marker.expanded button,
+.platform-android.mobile-layout .building-unit.expanded button,
+.platform-android.mobile-layout .tm-marker.expanded button {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
+}
+
+.platform-android.mobile-layout .op-fireline,
+.platform-android.mobile-layout .veh-fireline,
+.platform-android.mobile-layout .building-fireline,
+.platform-android.mobile-layout .tm-fireline {
+  touch-action: none !important;
+}
+
+.mobile-fireline-slider {
+  position: fixed;
+  z-index: 10020;
+  width: 180px;
+  height: 36px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid rgba(1, 255, 132, .72);
+  border-radius: 4px;
+  background: rgba(8, 13, 15, .96);
+  accent-color: var(--green);
+  box-shadow: 0 5px 18px rgba(0, 0, 0, .62);
+  touch-action: none;
+}
+
+.platform-android.mobile-layout .veh-fireline i,
+.platform-android.mobile-layout .building-fireline i,
+.platform-android.mobile-layout .tm-fireline i {
+  font-size: 20px !important;
+  line-height: 1;
+}
+
+.platform-android.mobile-layout .veh-marker:not(.expanded) .veh-team-letter,
+.platform-android.mobile-layout .building-unit:not(.expanded) .building-team-letter {
+  display: inline-flex !important;
+  left: -7px !important;
+  top: 21px !important;
+  width: 20px !important;
+  height: 20px !important;
+  min-width: 20px !important;
+  min-height: 20px !important;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  pointer-events: none;
+  font-size: 11px;
+  z-index: 8;
+}
+
+.platform-android.mobile-layout .veh-marker .veh-refresh-badge {
+  position: absolute;
+  z-index: 9;
+  top: -9px;
+  right: -9px;
+  display: inline-flex;
+  width: 19px;
+  height: 19px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(244, 207, 103, .86);
+  border-radius: 50%;
+  background: rgba(9, 14, 16, .96);
+  color: #f4cf67;
+  font-size: 8px;
+  line-height: 1;
+  pointer-events: none;
+  box-shadow: 0 0 5px rgba(244, 207, 103, .42);
+}
+
+.platform-android.mobile-layout .building-unit.expanded .building-route {
+  display: inline-flex !important;
+}
+
+/* Android 圆周操作栏：按钮中心围绕棋子中心等角度分布，不使用 PC 扇形底图。 */
+.platform-android.mobile-layout .op-marker.expanded .op-delete {
+  left: -66px !important;
+  top: -43px !important;
+  right: auto !important;
+  bottom: auto !important;
+}
+.platform-android.mobile-layout .op-marker.expanded .op-fireline {
+  left: 44px !important;
+  top: -43px !important;
+  right: auto !important;
+  bottom: auto !important;
+}
+.platform-android.mobile-layout .op-marker.expanded .op-route {
+  left: 44px !important;
+  top: 21px !important;
+  right: auto !important;
+  bottom: auto !important;
+}
+.platform-android.mobile-layout .op-marker.expanded .op-info {
+  left: -11px !important;
+  top: 53px !important;
+  right: auto !important;
+  bottom: auto !important;
+}
+.platform-android.mobile-layout .op-marker.expanded .op-rotate-control {
+  left: -66px !important;
+  top: 21px !important;
+  right: auto !important;
+  bottom: auto !important;
+}
+
+.platform-android.mobile-layout .op-marker.expanded .op-code {
+  top: -66px !important;
+  width: 62px;
+  min-width: 62px;
+  max-width: 62px;
+  min-height: 28px;
+  padding: 0 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 14;
+}
+
+.platform-android.mobile-layout .veh-marker.expanded .veh-side,
+.platform-android.mobile-layout .building-unit.expanded .building-side {
+  left: -7px !important;
+  top: -67px !important;
+  right: auto !important;
+  bottom: auto !important;
+}
+.platform-android.mobile-layout .veh-marker.expanded .veh-fireline,
+.platform-android.mobile-layout .building-unit.expanded .building-fireline {
+  left: 45px !important;
+  top: -37px !important;
+  right: auto !important;
+  bottom: auto !important;
+}
+.platform-android.mobile-layout .veh-marker.expanded .veh-route,
+.platform-android.mobile-layout .building-unit.expanded .building-route {
+  left: 45px !important;
+  top: 23px !important;
+  right: auto !important;
+  bottom: auto !important;
+}
+.platform-android.mobile-layout .veh-marker.expanded .veh-delete-control,
+.platform-android.mobile-layout .building-unit.expanded .building-delete-control {
+  left: -7px !important;
+  top: 53px !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+}
+.platform-android.mobile-layout .veh-marker.expanded .veh-rotate-control,
+.platform-android.mobile-layout .building-unit.expanded .building-rotate-control {
+  left: -59px !important;
+  top: 23px !important;
+  right: auto !important;
+  bottom: auto !important;
+}
+.platform-android.mobile-layout .veh-marker.expanded .veh-team-letter,
+.platform-android.mobile-layout .building-unit.expanded .building-team-letter {
+  left: -59px !important;
+  top: -37px !important;
+  right: auto !important;
+  bottom: auto !important;
+}
+
+/* 刷新载具共有七个入口，按 360/7 等角度排列；普通载具继续使用六按钮圆环。 */
+.platform-android.mobile-layout .veh-marker.refresh-origin.expanded .veh-side {
+  left: -7px !important;
+  top: -67px !important;
+}
+.platform-android.mobile-layout .veh-marker.refresh-origin.expanded .veh-fireline {
+  left: 40px !important;
+  top: -44px !important;
+}
+.platform-android.mobile-layout .veh-marker.refresh-origin.expanded .veh-route {
+  left: 52px !important;
+  top: 6px !important;
+}
+.platform-android.mobile-layout .veh-marker.refresh-origin.expanded .veh-delete-control {
+  left: 19px !important;
+  top: 47px !important;
+  transform: none !important;
+}
+.platform-android.mobile-layout .veh-marker.refresh-origin.expanded .veh-rotate-control {
+  left: -33px !important;
+  top: 47px !important;
+}
+.platform-android.mobile-layout .veh-marker.refresh-origin.expanded .veh-team-letter {
+  left: -66px !important;
+  top: 6px !important;
+}
+.platform-android.mobile-layout .veh-marker.refresh-origin.expanded .veh-refresh-origin {
+  display: inline-flex !important;
+  left: -54px !important;
+  top: -44px !important;
+  right: auto !important;
+  bottom: auto !important;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 15px;
+  z-index: 12;
+}
+
+/* 建筑图标为 38px，圆心比 30px 载具多 4px；单独校正，避免操作环偏向左上。 */
+.platform-android.mobile-layout .building-unit.expanded .building-side {
+  left: -3px !important;
+  top: -63px !important;
+}
+.platform-android.mobile-layout .building-unit.expanded .building-fireline {
+  left: 49px !important;
+  top: -33px !important;
+}
+.platform-android.mobile-layout .building-unit.expanded .building-route {
+  left: 49px !important;
+  top: 27px !important;
+}
+.platform-android.mobile-layout .building-unit.expanded .building-delete-control {
+  left: -3px !important;
+  top: 57px !important;
+}
+.platform-android.mobile-layout .building-unit.expanded .building-rotate-control {
+  left: -55px !important;
+  top: 27px !important;
+}
+.platform-android.mobile-layout .building-unit.expanded .building-team-letter {
+  left: -55px !important;
+  top: -33px !important;
+}
+
+.platform-android.mobile-layout .tm-marker.expanded .tm-fireline {
+  left: -7px !important;
+  top: -63px !important;
+  right: auto !important;
+  bottom: auto !important;
+}
+.platform-android.mobile-layout .tm-marker.expanded .tm-route {
+  left: 45px !important;
+  top: -7px !important;
+  right: auto !important;
+  bottom: auto !important;
+}
+.platform-android.mobile-layout .tm-marker.expanded .tm-rotate-control {
+  display: inline-flex !important;
+  position: absolute;
+  left: -59px !important;
+  top: -7px !important;
+  width: 44px; height: 44px; min-width: 44px; min-height: 44px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--tm-team);
+  border-radius: 50%;
+  background: rgba(8, 13, 15, .96);
+  color: var(--tm-team);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .52);
+  font-size: 16px;
+  line-height: 1;
+  z-index: 12;
+  touch-action: none;
+  pointer-events: auto !important;
+}
+
+.platform-android.mobile-layout .tm-marker.expanded .tm-route,
+.platform-android.mobile-layout .tm-marker.expanded .tm-fireline,
+.platform-android.mobile-layout .tm-marker.expanded .tm-delete {
+  pointer-events: auto !important;
+}
+
+/* 队标本体必须保持 Leaflet 命中，控制环只在展开后接管各自按钮区域。 */
+.platform-android.mobile-layout .tm-marker {
+  pointer-events: auto !important;
+}
+.platform-android.mobile-layout .tm-marker.expanded .tm-delete {
+  left: -7px !important;
+  top: 45px !important;
+  right: auto !important;
+  bottom: auto !important;
 }
 
 .route-mobile-actions {
@@ -639,8 +1611,8 @@
 /* 移动端顶部栏：固定两端操作区，仅让中间绘制工具横向滚动。
    这样战术板始终留在圆角屏安全区内，绘制工具也能获得剩余的全部宽度。 */
 .mobile-layout .toolbar {
-  --toolbar-height: 42px;
-  --tb-height: 42px;
+  --toolbar-height: 48px;
+  --tb-height: 48px;
   width: 100%;
   box-sizing: border-box;
   gap: 4px;
@@ -648,6 +1620,7 @@
   overflow-x: clip;
   overflow-y: visible;
 }
+
 
 .mobile-layout .toolbar .logo-area {
   width: clamp(84px, 22vw, 190px);
@@ -659,7 +1632,7 @@
 
 .mobile-layout .toolbar .logo-mark-img {
   width: calc(100% - 6px);
-  height: 39px;
+  height: 44px;
   max-width: 184px;
   object-fit: contain;
 }
@@ -669,8 +1642,8 @@
 }
 
 .mobile-layout .toolbar .map-select-btn {
-  min-height: 30px;
-  height: 30px;
+  min-height: 38px;
+  height: 38px;
   max-width: 94px;
   gap: 4px;
   padding: 3px 6px;
@@ -692,7 +1665,7 @@
   width: 42vw;
   min-width: 80px;
   max-width: 420px;
-  height: 34px;
+  height: 42px;
   padding: 2px 3px;
 }
 
@@ -706,10 +1679,11 @@
 }
 
 .mobile-layout .toolbar-draw .draw-btn {
-  width: 27px;
-  height: 27px;
-  min-height: 27px;
-  font-size: 12px;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  font-size: 14px;
 }
 
 .mobile-layout .toolbar-draw-divider {
@@ -746,8 +1720,8 @@
 
 .mobile-layout .toolbar .mode-btn,
 .mobile-layout .toolbar .tactical-btn {
-  min-height: 30px;
-  height: 30px;
+  min-height: 38px;
+  height: 38px;
   padding: 3px 6px;
   font-size: 11px;
 }
@@ -769,6 +1743,59 @@
 .mobile-layout .toolbar .tactical-btn {
   min-width: 52px;
   padding-inline: 8px;
+}
+
+.platform-android.mobile-layout .wg-controls select,
+.platform-android.mobile-layout .wg-round-btn {
+  min-height: 36px;
+  height: 36px;
+}
+
+.platform-android.mobile-layout .wg-round-btn {
+  width: 36px;
+  min-width: 36px;
+}
+
+.platform-android.mobile-layout .wg-notes-dock:not(.expanded):not(.collapsed) {
+  right: max(8px, var(--safe-right));
+  bottom: max(8px, var(--safe-bottom));
+  width: 360px !important;
+  max-width: calc(100vw - 16px) !important;
+  max-height: 36dvh !important;
+}
+
+body:has(.platform-android.mobile-layout) .wg-notes-dock:not(.expanded):not(.collapsed) {
+  right: 8px;
+  bottom: 8px;
+  width: 360px !important;
+  max-width: calc(100vw - 16px) !important;
+  max-height: 36dvh !important;
+}
+
+.platform-android.mobile-layout .wg-notes-dock > header {
+  min-height: 40px;
+  height: 40px;
+}
+
+.platform-android.mobile-layout .wg-notes-dock > header button,
+.platform-android.mobile-layout .wg-notes-tabs button {
+  min-height: 36px;
+}
+
+.platform-android.mobile-layout .wg-notes-dock > header button {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+}
+
+.platform-android.mobile-layout .wg-notes-tabs {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.platform-android.mobile-layout .wg-notes-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 @media (max-width: 760px) and (pointer: coarse) {

@@ -2,6 +2,8 @@ import type { MapProp, StageConfig, StageVehicle } from '../types'
 import { STAGES_BY_MAP } from './points'
 import { MAP_PROPS } from './pointsStages'
 import { MOBILE_OFFICIAL_DATA } from './mobileOfficialData'
+import mobileAttackDefenseOfficial from './mobileAttackDefenseOfficial.json'
+import { DEPLOY_BY_MAP, type StageDeploy } from './deployVehicles'
 
 export type GameDataPlatform = 'pc' | 'mobile'
 
@@ -49,6 +51,9 @@ function buildMobileStages(): Record<string, StageConfig[]> {
       }
     })
   }
+  for (const [mapId, map] of Object.entries(mobileAttackDefenseOfficial.maps)) {
+    result[mapId] = map.stages as unknown as StageConfig[]
+  }
   return result
 }
 
@@ -56,7 +61,12 @@ export const MOBILE_STAGES_BY_MAP = buildMobileStages()
 export const MOBILE_MAP_PROPS: Record<string, MapProp[]> = {
   ...MAP_PROPS,
   ...(MOBILE_OFFICIAL_DATA.props as unknown as Record<string, MapProp[]>),
+  ...Object.fromEntries(Object.entries(mobileAttackDefenseOfficial.maps).map(([mapId, map]) => [mapId, map.props])) as Record<string, MapProp[]>,
 }
+
+const MOBILE_DEPLOY_BY_MAP = Object.fromEntries(
+  Object.entries(mobileAttackDefenseOfficial.maps).map(([mapId, map]) => [mapId, map.deploy]),
+) as unknown as Record<string, Record<string, StageDeploy>>
 
 export function stagesForPlatform(platform: GameDataPlatform): Record<string, StageConfig[]> {
   return platform === 'mobile' ? MOBILE_STAGES_BY_MAP : STAGES_BY_MAP
@@ -64,4 +74,8 @@ export function stagesForPlatform(platform: GameDataPlatform): Record<string, St
 
 export function propsForPlatform(platform: GameDataPlatform): Record<string, MapProp[]> {
   return platform === 'mobile' ? MOBILE_MAP_PROPS : MAP_PROPS
+}
+
+export function deployForPlatform(platform: GameDataPlatform): Record<string, Record<string, StageDeploy>> {
+  return platform === 'mobile' ? MOBILE_DEPLOY_BY_MAP : DEPLOY_BY_MAP
 }

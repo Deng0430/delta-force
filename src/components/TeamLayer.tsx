@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Marker, useMap } from 'react-leaflet'
+import { Marker, Tooltip, useMap } from 'react-leaflet'
 import * as L from 'leaflet'
 import type { Side, TeamMarker } from '../types'
 import { teamOf } from '../config/operators'
@@ -17,6 +17,8 @@ interface TeamLayerProps {
   canDrag: boolean
   interactive: boolean
   onMove: (uid: string, lat: number, lng: number) => void
+  onRotate: (uid: string, rotation: number) => void
+  onToggleFireLine: (uid: string) => void
   onDelete: (uid: string) => void
   onStartRoute: (uid: string) => void
 }
@@ -45,6 +47,7 @@ function darken(hex: string, f = 0.6): string {
  */
 function buildTeamIcon(tm: TeamMarker, view: Side, teamName?: string, expanded = false): L.DivIcon {
   const team = teamOf(tm.team)
+  const fireLineClick = platform.kind === 'android' ? '' : `onclick="event.stopPropagation();event.preventDefault();window.__tmFireLine('${tm.uid}')"`
   const own = tm.side === view
   const sc = own ? SIDE_COLOR.own : SIDE_COLOR.enemy
   const name = teamName?.trim() || tm.name || `${tm.team}队`
@@ -56,8 +59,11 @@ function buildTeamIcon(tm: TeamMarker, view: Side, teamName?: string, expanded =
         <span class="tm-team-bg"></span>
         <span class="tm-letter">${team.id}</span>
         <span class="tm-name">${name}</span>
+        <span class="tm-action-fan" aria-hidden="true"></span>
         <button class="tm-route" title="绘制${team.name}进攻路线" aria-label="绘制进攻路线" onclick="event.stopPropagation();event.preventDefault();window.__tmRoute('${tm.uid}')"><i class="fa-solid fa-route" aria-hidden="true"></i></button>
-        <button class="tm-delete" title="删除队标" aria-label="删除队标" onclick="event.stopPropagation();event.preventDefault();window.__tmDelete('${tm.uid}')"><i class="fa-regular fa-trash-can" aria-hidden="true"></i></button>
+        <button class="tm-fireline${tm.fireLineEnabled ? ' active' : ''}" data-fireline-length="${tm.fireLineLength ?? 56}" title="${tm.fireLineEnabled ? '关闭' : '开启'}枪线；长按调整长度" aria-label="切换枪线，长按调整长度" onwheel="event.stopPropagation();event.preventDefault();window.dispatchEvent(new CustomEvent('unit-fireline-length',{detail:{kind:'team',uid:'${tm.uid}',delta:event.deltaY>0?-4:4}}))" onpointerdown="window.__unitFireLineDragStart?.(event,'team','${tm.uid}')" ${fireLineClick}><i class="fa-solid fa-crosshairs"></i></button>
+        ${platform.kind === 'android' ? `<button type="button" class="tm-rotate-control unit-rotate-drag" aria-label="按住并拖动旋转队标枪线" onmousedown="event.stopPropagation();event.preventDefault()" ontouchstart="event.stopPropagation();event.preventDefault()" onpointerdown="window.__tmRotateStart(event,'${tm.uid}')"><i class="fa-solid fa-rotate" aria-hidden="true"></i></button>` : ''}
+        ${platform.kind === 'android' ? `<button class="tm-delete" title="删除队标" aria-label="删除队标" onclick="event.stopPropagation();event.preventDefault();window.__tmDelete('${tm.uid}')"><i class="fa-regular fa-trash-can" aria-hidden="true"></i></button>` : ''}
       </div>`,
     iconSize: [30, 30],
     iconAnchor: [15, 15],
@@ -73,6 +79,8 @@ function TeamMarkerItem({
   interactive,
   posRef,
   onMove,
+  onRotate,
+  onToggleFireLine,
   onDelete,
   onStartRoute,
 }: {
@@ -83,12 +91,65 @@ function TeamMarkerItem({
   interactive: boolean
   posRef: React.MutableRefObject<Record<string, [number, number]>>
   onMove: (uid: string, lat: number, lng: number) => void
+  onRotate: (uid: string, rotation: number) => void
+  onToggleFireLine: (uid: string) => void
   onDelete: (uid: string) => void
   onStartRoute: (uid: string) => void
 }) {
   const ref = useRef<L.Marker | null>(null)
   const [expanded, setExpanded] = useState(false)
   const map = useMap()
+  const rotationRef = useRef(tm.rotation ?? 0)
+  rotationRef.current = tm.rotation ?? 0
+
+  useEffect(() => {
+    if (platform.kind !== 'android') return
+    const w = window as unknown as { __tmRotateStart?: (event: PointerEvent, uid: string) => void; __tmRotateStartHandlers?: Record<string, (event: PointerEvent) => void> }
+    if (!w.__tmRotateStart) w.__tmRotateStart = (event, uid) => w.__tmRotateStartHandlers?.[uid]?.(event)
+    if (!w.__tmRotateStartHandlers) w.__tmRotateStartHandlers = {}
+    w.__tmRotateStartHandlers[tm.uid] = (event) => {
+      event.preventDefault(); event.stopPropagation()
+      const marker = ref.current?.getElement(); if (!marker) return
+      const rect = marker.getBoundingClientRect(); const cx = rect.left + rect.width / 2; const cy = rect.top + rect.height / 2
+      const startAngle = Math.atan2(event.clientY - cy, event.clientX - cx) * 180 / Math.PI
+      const startRotation = rotationRef.current
+      const move = (e: PointerEvent) => {
+        if (e.pointerId !== event.pointerId) return
+        e.preventDefault(); const angle = Math.atan2(e.clientY - cy, e.clientX - cx) * 180 / Math.PI
+        const next = (startRotation + angle - startAngle + 360) % 360
+        rotationRef.current = next
+        window.dispatchEvent(new CustomEvent('unit-rotation-preview', { detail: { uid: tm.uid, rotation: next } }))
+        onRotate(tm.uid, Math.round(next))
+      }
+      const finish = (e: PointerEvent) => { if (e.pointerId !== event.pointerId) return; document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', finish); document.removeEventListener('pointercancel', finish); window.dispatchEvent(new CustomEvent('unit-rotation-preview', { detail: { uid: tm.uid, rotation: null } })) }
+      document.addEventListener('pointermove', move, { passive: false }); document.addEventListener('pointerup', finish); document.addEventListener('pointercancel', finish)
+    }
+    return () => { if (w.__tmRotateStartHandlers) delete w.__tmRotateStartHandlers[tm.uid] }
+  }, [tm.uid, onRotate])
+
+  useEffect(() => {
+    let element: HTMLElement | null = null
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const next = (rotationRef.current + (event.deltaY > 0 ? 15 : -15) + 360) % 360
+      rotationRef.current = next
+      onRotate(tm.uid, next)
+    }
+    const timer = window.setTimeout(() => {
+      element = ref.current?.getElement() ?? null
+      element?.addEventListener('wheel', onWheel, { passive: false })
+    }, 0)
+    return () => { window.clearTimeout(timer); element?.removeEventListener('wheel', onWheel) }
+  }, [tm.uid, onRotate, expanded])
+
+  useEffect(() => {
+    const w = window as unknown as { __tmFireLine?: (uid: string) => void; __tmFireLineHandlers?: Record<string, () => void> }
+    if (!w.__tmFireLine) w.__tmFireLine = (uid) => w.__tmFireLineHandlers?.[uid]?.()
+    if (!w.__tmFireLineHandlers) w.__tmFireLineHandlers = {}
+    w.__tmFireLineHandlers[tm.uid] = () => onToggleFireLine(tm.uid)
+    return () => { if (w.__tmFireLineHandlers) delete w.__tmFireLineHandlers[tm.uid] }
+  }, [tm.uid, onToggleFireLine])
 
   useEffect(() => {
     if (platform.kind !== 'android') return
@@ -119,11 +180,24 @@ function TeamMarkerItem({
   const icon = useMemo(
     () => buildTeamIcon(tm, view, teamName, expanded),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tm.uid, tm.team, tm.name, tm.side, view, teamName, expanded],
+    [tm.uid, tm.team, tm.name, tm.side, tm.fireLineEnabled, view, teamName, expanded],
   )
+
+  useEffect(() => {
+    const element = ref.current?.getElement()
+    if (!element) return
+    const stopButtonPointer = (event: Event) => {
+      if ((event.target as HTMLElement | null)?.closest?.('button')) event.stopPropagation()
+    }
+    for (const name of ['pointerdown', 'mousedown', 'touchstart']) element.addEventListener(name, stopButtonPointer)
+    return () => {
+      for (const name of ['pointerdown', 'mousedown', 'touchstart']) element.removeEventListener(name, stopButtonPointer)
+    }
+  }, [tm.uid, expanded, icon])
 
   // 右键删除队标（原生 contextmenu 绑定）
   useEffect(() => {
+    if (platform.kind === 'android') return
     const el = ref.current?.getElement()
     if (!el) return
     const onCtx = (e: MouseEvent) => {
@@ -198,7 +272,11 @@ function TeamMarkerItem({
             })))
         },
       }}
-    />
+    >
+      {platform.kind !== 'android' && <Tooltip direction="top" offset={[0, -28]}>
+        {teamName?.trim() || tm.name || `${tm.team}队`} · 滚轮旋转 · 右键删除 · 枪线按钮上滚轮调长度
+      </Tooltip>}
+    </Marker>
   )
 }
 
@@ -216,6 +294,8 @@ export default function TeamLayer({
   canDrag,
   interactive,
   onMove,
+  onRotate,
+  onToggleFireLine,
   onDelete,
   onStartRoute,
 }: TeamLayerProps) {
@@ -231,6 +311,8 @@ export default function TeamLayer({
           interactive={interactive}
           posRef={posRef}
           onMove={onMove}
+          onRotate={onRotate}
+          onToggleFireLine={onToggleFireLine}
           onDelete={onDelete}
           onStartRoute={onStartRoute}
         />

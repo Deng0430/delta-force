@@ -1,96 +1,13 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useState } from 'react'
 import type { DrawSettings, Side, ToolMode } from '../types'
 import DrawBar from './DrawBar'
 import { IconFullscreen } from './icons'
 import ShortcutHelp from './ShortcutHelp'
 import { platform } from '../platform'
 import type { GameDataPlatform } from '../config/gameDataPlatform'
+import ToolbarSelect, { type ToolbarSelectOption } from './ToolbarSelect'
 
 type ToolbarMenu = 'map' | 'mode' | 'device'
-
-interface ToolbarSelectOption {
-  value: string
-  label: string
-  disabled?: boolean
-}
-
-interface ToolbarSelectProps {
-  menu: ToolbarMenu
-  label: string
-  value: string
-  options: ToolbarSelectOption[]
-  openMenu: ToolbarMenu | null
-  onOpenMenu: (menu: ToolbarMenu | null) => void
-  onSelect?: (value: string) => void
-  align?: 'left' | 'right'
-}
-
-function ToolbarSelect({
-  menu,
-  label,
-  value,
-  options,
-  openMenu,
-  onOpenMenu,
-  onSelect,
-  align = 'left',
-}: ToolbarSelectProps) {
-  const open = openMenu === menu
-  const menuId = `toolbar-${menu}-menu`
-  const buttonRef = useRef<HTMLButtonElement | null>(null)
-  const [menuPosition, setMenuPosition] = useState<CSSProperties>({})
-
-  useLayoutEffect(() => {
-    if (!open || platform.kind !== 'android') return
-    const updatePosition = () => {
-      const rect = buttonRef.current?.getBoundingClientRect()
-      if (!rect) return
-      setMenuPosition(align === 'right'
-        ? { top: rect.bottom + 4, right: Math.max(6, window.innerWidth - rect.right) }
-        : { top: rect.bottom + 4, left: Math.max(6, rect.left) })
-    }
-    updatePosition()
-    window.addEventListener('resize', updatePosition)
-    return () => window.removeEventListener('resize', updatePosition)
-  }, [align, open])
-
-  return (
-    <div className={`map-select topbar-select menu-${menu} ${open ? 'open' : ''}`}>
-      <button
-        ref={buttonRef}
-        className="map-select-btn"
-        onClick={() => onOpenMenu(open ? null : menu)}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls={menuId}
-      >
-        <span className="map-select-label">{label}</span>
-        <span className="map-select-value">{value}</span>
-        <i className="fa-solid fa-chevron-down" aria-hidden="true" />
-      </button>
-      {open ? (
-        <div id={menuId} className={`map-select-menu align-${align}`} role="listbox" style={menuPosition}>
-          {options.map((option) => (
-            <button
-              key={option.value}
-              role="option"
-              aria-selected={value === option.label}
-              className={`map-select-item ${value === option.label ? 'active' : ''}`}
-              disabled={option.disabled}
-              onClick={() => {
-                if (option.disabled) return
-                onSelect?.(option.value)
-                onOpenMenu(null)
-              }}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  )
-}
 
 const MAPS: { id: string; name: string }[] = [
   { id: 'ascent', name: '攀升' },
@@ -185,7 +102,15 @@ export default function Toolbar({
   cinematicModeSwitch = false,
 }: ToolbarProps) {
   const [openMenu, setOpenMenu] = useState<ToolbarMenu | null>(null)
+  const [collapsed, setCollapsed] = useState(false)
   const currentMap = MAPS.find((m) => m.id === mapId) ?? MAPS[0]
+  const attackDefenseMode = gameModeOptions.find((mode) => mode.id === 'attack-defense')
+  const selectableModeOptions = [
+    { value: 'attack-defense', label: attackDefenseMode?.name ?? '攻防模式' },
+    ...gameModeOptions
+      .filter((mode) => mode.id !== 'attack-defense')
+      .map((mode) => ({ value: mode.id, label: mode.name })),
+  ]
 
   useEffect(() => {
     if (!cinematicModeSwitch) return
@@ -227,6 +152,17 @@ export default function Toolbar({
       document.removeEventListener('keydown', onKeyDown)
     }
   }, [openMenu])
+
+  if (collapsed) {
+    return (
+      <header className="toolbar collapsed">
+        <button className="toolbar-expand-btn" type="button" onClick={() => setCollapsed(false)} title="展开顶部栏" aria-label="展开顶部栏">
+          <i className="fa-solid fa-chevron-down" aria-hidden="true" />
+          <span>展开工具栏</span>
+        </button>
+      </header>
+    )
+  }
 
   return (
     <header className="toolbar">
@@ -279,8 +215,7 @@ export default function Toolbar({
           label="模式"
           value={gameModeName}
           options={[
-            { value: 'attack-defense', label: '攻防模式' },
-            ...gameModeOptions.map((mode) => ({ value: mode.id, label: mode.name })),
+            ...selectableModeOptions,
             { value: 'occupation', label: '占领模式', disabled: true },
             { value: '__configure__', label: '配置模式…' },
           ]}
@@ -325,9 +260,12 @@ export default function Toolbar({
           <IconFullscreen size={16} />
         </button>
         <ShortcutHelp compact />
-        <button className="tactical-btn" onClick={onOpenTactical} title="战术板：导出 / 保存阶段战术">
-          <span className="tactical-label-long">战术板</span>
-          <span className="tactical-label-short" aria-hidden="true">板</span>
+        <button className="tactical-btn" onClick={onOpenTactical} title="导出战术板 / 保存阶段战术">
+          <span className="tactical-label-long">导出</span>
+          <span className="tactical-label-short" aria-hidden="true">导</span>
+        </button>
+        <button className="toolbar-collapse-btn" type="button" onClick={() => { setOpenMenu(null); setCollapsed(true) }} title="收起顶部栏" aria-label="收起顶部栏">
+          <i className="fa-solid fa-chevron-up" aria-hidden="true" />
         </button>
       </div>
     </header>

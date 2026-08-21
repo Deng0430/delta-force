@@ -11,7 +11,7 @@
  * - num：可部署数量
  */
 import type { VehicleCategory } from '../types'
-import { legendIconUrl } from './legendIcons'
+import { vehicleLegendAssetUrl } from './vehicleLegendAssets'
 
 export interface DeployVehicleEntry {
   /** 载具名（官网 deploy 数据 name） */
@@ -42,8 +42,8 @@ export interface StageDeploy {
   defense: DeployVehicleEntry[]
 }
 
-/** 本地展示图标目录（大部分为 PNG，攻击艇使用 SVG）。 */
-const LOCAL_DEPLOY_BASE = '/icons/vehicles'
+/** 本地展示图标目录（无补充图例资源时使用）。 */
+const LOCAL_DEPLOY_BASE = '/icons/vehicles/deploy'
 
 export function localDeployIconUrl(deployKey: string): string {
   const extension = deployKey === 'ucb9597' ? 'svg' : 'png'
@@ -55,8 +55,10 @@ export function localDeployIconUrl(deployKey: string): string {
  * 无图例时回退本地 deploy 展示图标。
  */
 function resolveIcon(deployKey: string, legendKey?: string): string {
+  const suppliedLegend = vehicleLegendAssetUrl(deployKey)
+  if (suppliedLegend) return suppliedLegend
   if (legendKey) {
-    const l = legendIconUrl(legendKey)
+    const l = vehicleLegendAssetUrl(legendKey.replace(/^nav_/, ''))
     if (l) return l
   }
   return localDeployIconUrl(deployKey)
@@ -260,7 +262,7 @@ const RAW_DEPLOY_COLOSSEUM: RawStage = {
   S2: {
     attack: [
       { name: '鱼鹰直升机', icon: 'ymfg', cd: 90, num: 1, note: 'GTI4号阵地', allowTeammate: false, badge: '运', category: 'helo' },
-      { name: '轻型坦克', icon: 'm1a4zztk', cd: 90, num: 1, note: 'GTI4号阵地', allowTeammate: false, badge: '轻', category: 'tank' },
+      { name: '轻型坦克', icon: 'qxtk', cd: 90, num: 1, note: 'GTI4号阵地', allowTeammate: false, badge: '轻', category: 'tank' },
     ],
     defense: [
       { name: 'LAV AA防空车', icon: 'aakfc', legendKey: 'nav_fkc', cd: 90, num: 1, note: '哈夫克3号阵地', allowTeammate: false, badge: '防', category: 'ifv' },
@@ -527,7 +529,7 @@ const EXTRA_DEPLOY_VEHICLES: DeployVehicleEntry[] = [
   {
     name: 'UCB-95/97攻击艇',
     icon: 'ucb9597',
-    iconUrl: localDeployIconUrl('ucb9597'),
+    iconUrl: resolveIcon('ucb9597'),
     cd: 90,
     num: 1,
     note: '',
@@ -544,6 +546,8 @@ export const DEPLOY_VEHICLE_CATALOG: DeployVehicleEntry[] = Array.from(
       .flatMap((stages) => Object.values(stages))
       .flatMap((stage) => [...stage.attack, ...stage.defense])
       .concat(EXTRA_DEPLOY_VEHICLES)
-      .map((entry) => [entry.name, entry]),
+      // 官方旧数据曾将 qxtk 写作“轻型坦克”，新数据写作正式名称
+      // “GTQ-35轻型坦克”；两者是同一载具，编辑器目录只保留正式名称。
+      .map((entry) => [entry.icon === 'qxtk' ? 'GTQ-35轻型坦克' : entry.name, entry.icon === 'qxtk' ? { ...entry, name: 'GTQ-35轻型坦克' } : entry]),
   ).values(),
 )
