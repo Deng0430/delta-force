@@ -342,7 +342,11 @@ interface MapViewProps {
   /** 气泡切换状态（存活/重伤/阵亡） */
   onOperatorStatusChange: (uid: string, status: OperatorUnit['status']) => void
   onOperatorSkillUse: (uid: string, slot?: 1 | 2 | 3 | 4) => void
-  skillActionDraft: { operator: OperatorUnit; skill: import('../config/operatorSkills').OperatorSkillDefinition } | null
+  onOperatorTacticalItemUse: (uid: string, item: import('../config/operatorTacticalItems').OperatorTacticalItemDefinition, mode: import('../config/operatorTacticalItems').TacticalItemUseMode) => void
+  skillActionDraft:
+    | { operator: OperatorUnit; skill: import('../config/operatorSkills').OperatorSkillDefinition; tacticalItem?: never; tacticalMode?: never }
+    | { operator: OperatorUnit; tacticalItem: import('../config/operatorTacticalItems').OperatorTacticalItemDefinition; tacticalMode: import('../config/operatorTacticalItems').TacticalItemUseMode; skill?: never }
+    | null
   onPlaceSkillAction: (lat: number, lng: number) => void
   onCancelSkillAction: () => void
   onSelectSkillTarget: (uid: string) => void
@@ -620,6 +624,7 @@ export default function MapView({
   onOperatorChange,
   onOperatorStatusChange,
   onOperatorSkillUse,
+  onOperatorTacticalItemUse,
   skillActionDraft,
   onPlaceSkillAction,
   onCancelSkillAction,
@@ -959,7 +964,7 @@ export default function MapView({
       >
         <InteractiveLayerPanGuard />
         <MapRotationControl />
-        <SkillActionPlacement active={skillActionDraft != null && skillActionDraft.skill.placementMode !== 'target-unit' && skillActionDraft.skill.placementMode !== 'ally-unit'} onPlace={onPlaceSkillAction} onCancel={onCancelSkillAction} />
+        <SkillActionPlacement active={skillActionDraft != null && (skillActionDraft.skill?.placementMode ?? skillActionDraft.tacticalMode?.placementMode) !== 'target-unit' && (skillActionDraft.skill?.placementMode ?? skillActionDraft.tacticalMode?.placementMode) !== 'ally-unit'} onPlace={onPlaceSkillAction} onCancel={onCancelSkillAction} />
         <TileLayer
           url={config.tileUrl}
           bounds={bounds}
@@ -1095,7 +1100,7 @@ export default function MapView({
             onConnectClick={onConnectClick}
             onEditClick={handleOpBubbleEdit}
             onRenameClick={handleOpRenameClick}
-            skillTargeting={skillActionDraft?.skill.placementMode === 'target-unit' || skillActionDraft?.skill.placementMode === 'ally-unit'}
+            skillTargeting={(skillActionDraft?.skill?.placementMode ?? skillActionDraft?.tacticalMode?.placementMode) === 'target-unit' || (skillActionDraft?.skill?.placementMode ?? skillActionDraft?.tacticalMode?.placementMode) === 'ally-unit'}
             onSkillTarget={onSelectSkillTarget}
           />
         )}
@@ -1203,7 +1208,11 @@ export default function MapView({
           onDeleteTeams={onDeleteTeamMarkers}
         />
       </MapContainer>
-      {skillActionDraft && <div className="skill-action-hint"><img src={skillActionDraft.skill.iconUrl} alt="" /><span>部署：{skillActionDraft.skill.name}</span><small>{skillActionDraft.skill.placementMode === 'ally-unit' ? '选择己方干员' : skillActionDraft.skill.placementMode === 'target-unit' ? '选择敌方干员' : '点击地图确定位置'}</small><button type="button" onClick={onCancelSkillAction} title="取消部署" aria-label="取消部署"><i className="fa-solid fa-xmark" /></button></div>}
+      {skillActionDraft && (() => {
+        const definition = skillActionDraft.skill ?? skillActionDraft.tacticalItem
+        const placementMode = skillActionDraft.skill?.placementMode ?? skillActionDraft.tacticalMode?.placementMode
+        return <div className="skill-action-hint"><img src={definition.iconUrl} alt="" /><span>部署：{definition.name}</span><small>{placementMode === 'ally-unit' ? '选择己方干员' : placementMode === 'target-unit' ? '选择敌方干员' : '点击地图确定位置'}</small><button type="button" onClick={onCancelSkillAction} title="取消部署" aria-label="取消部署"><i className="fa-solid fa-xmark" /></button></div>
+      })()}
 
       {selectedRoute && !routeDrawing && routeEditorOpen && (
         <RouteEditorPanel
@@ -1266,6 +1275,7 @@ export default function MapView({
           onOperatorChange={onOperatorChange}
           onStatusChange={onOperatorStatusChange}
           onSkillUse={onOperatorSkillUse}
+          onTacticalItemUse={onOperatorTacticalItemUse}
           onClose={handleCloseOpBubble}
         />
       )}

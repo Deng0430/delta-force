@@ -12,23 +12,33 @@ interface Props {
   onUpdateGeometry: (uid: string, geometry: OperatorSkillActionGeometry) => void
 }
 
-const iconFor = (action: OperatorSkillAction, color: string, attached = false, selected = false) => {
-  const iconUrl = `/icons/operators/skills/${action.operatorId}/skill_${action.skillSlot}.png`
+const ANDROID_ATTACHED_STEP = 40
+const ANDROID_ATTACHED_Y = 56
+const ATTACHED_ICON_CENTER = 12
+
+const iconFor = (action: OperatorSkillAction, color: string, attached = false, selected = false, attachedIndex = 0) => {
+  const iconUrl = action.iconUrl ?? `/icons/operators/skills/${action.operatorId}/skill_${action.skillSlot}.png`
+  const android = platform.kind === 'android'
+  const attachedStep = android ? ANDROID_ATTACHED_STEP : 18
+  const attachedY = android ? ANDROID_ATTACHED_Y : 46
+  const attachedAnchor: [number, number] = action.sourceKind === 'tactical-item'
+    ? [32, attachedY]
+    : [(android ? -8 : -2) - attachedIndex * attachedStep, attachedY]
   return L.divIcon({
   className: `operator-skill-action-icon${selected ? ' selected' : ''}`,
-  html: `<span style="--skill-side-color:${color};background-image:url('${iconUrl}')"><img src="${iconUrl}" alt="${action.skillName}" draggable="false" /><b>${action.skillSlot}</b></span>`,
-  iconSize: [24, 24], iconAnchor: attached ? [-8, 28] : [12, 12],
+    html: `<span class="${action.sourceKind === 'tactical-item' ? 'tactical-item' : ''}" style="--skill-side-color:${color};background-image:url('${iconUrl}')"><img src="${iconUrl}" alt="${action.skillName}" draggable="false" />${action.sourceKind === 'tactical-item' ? '' : `<b>${action.skillSlot}</b>`}</span>`,
+  iconSize: [24, 24], iconAnchor: attached ? attachedAnchor : [12, 12],
   })
 }
 
 const curveHandleIcon = (color: string) => L.divIcon({ className: 'operator-skill-curve-handle', html: `<span style="--skill-side-color:${color}"></span>`, iconSize: [24, 24], iconAnchor: [12, 12] })
 
-const mobileActionsIcon = (action: OperatorSkillAction, map: L.Map, position: [number, number], expanded: boolean) => {
+const mobileActionsIcon = (action: OperatorSkillAction, map: L.Map, position: [number, number], expanded: boolean, visualOffset: [number, number] = [0, 0]) => {
   const curveGeometry = action.geometry?.type === 'curve' ? action.geometry : null
   const curve = Boolean(curveGeometry)
   const width = expanded && curve ? 142 : 46
   const height = 50
-  const point = map.latLngToContainerPoint(position)
+  const point = map.latLngToContainerPoint(position).add(visualOffset)
   const size = map.getSize()
   const controls: [number, number][] = curveGeometry
     ? (curveGeometry.controls ?? (curveGeometry.control ? [curveGeometry.control] : []))
@@ -59,10 +69,10 @@ const mobileActionsIcon = (action: OperatorSkillAction, map: L.Map, position: [n
   return L.divIcon({
     className: `operator-skill-mobile-actions-wrap ${chosen.direction}${expanded ? ' expanded' : ' compact'}`,
     iconSize: [width, height],
-    iconAnchor: [-chosen.x, -chosen.y],
+    iconAnchor: [-chosen.x - visualOffset[0], -chosen.y - visualOffset[1]],
     html: `<div class="operator-skill-mobile-actions">
       ${expanded && curve ? `<button type="button" aria-label="添加弯曲点" onclick="event.stopPropagation();window.dispatchEvent(new CustomEvent('mobile-skill-action',{detail:{uid:'${action.uid}',action:'add-control'}}))"><i class="fa-solid fa-plus"></i></button><button type="button" aria-label="删除弯曲点" onclick="event.stopPropagation();window.dispatchEvent(new CustomEvent('mobile-skill-action',{detail:{uid:'${action.uid}',action:'remove-control'}}))"><i class="fa-solid fa-minus"></i></button>` : ''}
-      ${expanded ? `<button type="button" class="danger" aria-label="删除技能" onclick="event.stopPropagation();window.dispatchEvent(new CustomEvent('mobile-skill-action',{detail:{uid:'${action.uid}',action:'delete'}}))"><i class="fa-regular fa-trash-can"></i></button>` : `<button type="button" aria-label="展开技能操作" onclick="event.stopPropagation();window.dispatchEvent(new CustomEvent('mobile-skill-action',{detail:{uid:'${action.uid}',action:'toggle-actions'}}))"><i class="fa-solid fa-ellipsis"></i></button>`}
+      ${!curve || expanded ? `<button type="button" class="danger" aria-label="删除技能" onclick="event.stopPropagation();window.dispatchEvent(new CustomEvent('mobile-skill-action',{detail:{uid:'${action.uid}',action:'delete'}}))"><i class="fa-regular fa-trash-can"></i></button>` : `<button type="button" aria-label="展开技能操作" onclick="event.stopPropagation();window.dispatchEvent(new CustomEvent('mobile-skill-action',{detail:{uid:'${action.uid}',action:'toggle-actions'}}))"><i class="fa-solid fa-ellipsis"></i></button>`}
     </div>`,
   })
 }
@@ -177,10 +187,8 @@ export default function OperatorSkillLayer({ actions, operators, view, onDelete,
         })
       }
     }
-    window.addEventListener('desktop-unit-anchor-drag', onDrag)
     window.addEventListener('mobile-route-anchor-drag', onDrag)
     return () => {
-      window.removeEventListener('desktop-unit-anchor-drag', onDrag)
       window.removeEventListener('mobile-route-anchor-drag', onDrag)
     }
   }, [])
@@ -220,9 +228,18 @@ export default function OperatorSkillLayer({ actions, operators, view, onDelete,
       const color = action.side === view ? '#55d68b' : '#ef6b68'
       const selected = selectedUid === action.uid
       const highlighted = selected || hoveredUid === action.uid
-      const marker = (position: [number, number], attached = false, onMove?: (point: [number, number]) => void, onPreview?: (point: [number, number]) => void) => <Fragment key={action.uid}><Marker position={position} icon={iconFor(action, color, attached, highlighted)} zIndexOffset={highlighted ? 1550 : 1450} draggable={Boolean(onMove)} bubblingMouseEvents={false} eventHandlers={{ mouseover: () => setHoveredUid(action.uid), mouseout: () => setHoveredUid((uid) => uid === action.uid ? null : uid), click: (event) => { L.DomEvent.stop(event.originalEvent); setSelectedUid(action.uid) }, contextmenu: (event) => { L.DomEvent.stop(event.originalEvent); if (platform.kind !== 'android') { setSelectedUid(null); onDelete(action.uid) } }, dragstart: beginCurveDrag, drag: (event) => { if (!onPreview) return; const point = (event.target as L.Marker).getLatLng(); onPreview([point.lat, point.lng]) }, dragend: (event) => { endCurveDrag(); if (!onMove) return; const point = (event.target as L.Marker).getLatLng(); onMove([point.lat, point.lng]) } }}>
-        {platform.kind !== 'android' && <Tooltip direction="top" offset={[0, -12]}>{action.skillName}{onMove ? ' · 可直接拖动调整位置' : ' · 点击选中，右键删除'}</Tooltip>}
-      </Marker>{selected && platform.kind === 'android' && <Marker position={position} icon={mobileActionsIcon(action, map, position, expandedUid === action.uid)} zIndexOffset={1750} interactive bubblingMouseEvents={false} />}</Fragment>
+      const attachedIndex = actions.filter((candidate) => candidate.visible && !candidate.geometry && candidate.sourceOperatorUid === action.sourceOperatorUid && candidate.sourceKind === action.sourceKind).findIndex((candidate) => candidate.uid === action.uid)
+      const safeAttachedIndex = Math.max(0, attachedIndex)
+      const attachedCenterY = ATTACHED_ICON_CENTER - ANDROID_ATTACHED_Y
+      const attachedVisualOffset: [number, number] = action.sourceKind === 'tactical-item'
+        ? [-20, attachedCenterY]
+        : [20 + safeAttachedIndex * ANDROID_ATTACHED_STEP, attachedCenterY]
+      const attachedTooltipOffset: [number, number] = action.sourceKind === 'tactical-item'
+        ? [-20, -50]
+        : [14 + Math.max(0, attachedIndex) * 18, -50]
+      const marker = (position: [number, number], attached = false, onMove?: (point: [number, number]) => void, onPreview?: (point: [number, number]) => void) => <Fragment key={action.uid}><Marker position={position} icon={iconFor(action, color, attached, highlighted, safeAttachedIndex)} zIndexOffset={highlighted ? 1550 : 1450} draggable={Boolean(onMove)} bubblingMouseEvents={false} eventHandlers={{ mouseover: () => setHoveredUid(action.uid), mouseout: () => setHoveredUid((uid) => uid === action.uid ? null : uid), click: (event) => { L.DomEvent.stop(event.originalEvent); setSelectedUid(action.uid) }, contextmenu: (event) => { L.DomEvent.stop(event.originalEvent); if (platform.kind !== 'android') { setSelectedUid(null); onDelete(action.uid) } }, dragstart: beginCurveDrag, drag: (event) => { if (!onPreview) return; const point = (event.target as L.Marker).getLatLng(); onPreview([point.lat, point.lng]) }, dragend: (event) => { endCurveDrag(); if (!onMove) return; const point = (event.target as L.Marker).getLatLng(); onMove([point.lat, point.lng]) } }}>
+        {platform.kind !== 'android' && <Tooltip direction="top" offset={attached ? attachedTooltipOffset : [0, -12]}>{action.skillName}{onMove ? ' · 可直接拖动调整位置' : ' · 点击选中，右键删除'}</Tooltip>}
+      </Marker>{selected && platform.kind === 'android' && <Marker position={position} icon={mobileActionsIcon(action, map, position, expandedUid === action.uid, attached ? attachedVisualOffset : [0, 0])} zIndexOffset={1750} interactive bubblingMouseEvents={false} />}</Fragment>
       if (!geometry) return source ? marker(source, true) : null
       if (geometry.type === 'area') {
         const skillBounds = map.options.maxBounds ? L.latLngBounds(map.options.maxBounds as L.LatLngBoundsLiteral) : map.getBounds()
@@ -238,7 +255,8 @@ export default function OperatorSkillLayer({ actions, operators, view, onDelete,
       }
       if (geometry.type === 'trajectory') {
         const endpoint = geometry.points[geometry.points.length - 1]
-        return <Fragment key={action.uid}>{action.placementMode === 'guided-path' && <Polyline key={`${action.uid}-line`} positions={geometry.points} pathOptions={{ color, weight: 2, dashArray: '8 5' }} interactive={false} />}{marker(endpoint, false, (point) => onUpdateGeometry(action.uid, { ...geometry, points: [...geometry.points.slice(0, -1), point] }))}</Fragment>
+        const livePoints = source && geometry.points.length > 1 ? [source, ...geometry.points.slice(1)] : geometry.points
+        return <Fragment key={action.uid}>{(action.placementMode === 'guided-path' || action.sourceKind === 'tactical-item') && <Polyline key={`${action.uid}-line`} positions={livePoints} pathOptions={{ color, weight: 2, dashArray: '8 5' }} interactive={false} />}{marker(endpoint, false, (point) => onUpdateGeometry(action.uid, { ...geometry, points: [...geometry.points.slice(0, -1), point] }))}</Fragment>
       }
       if (geometry.type === 'curve') {
         const start = source ?? geometry.start

@@ -109,7 +109,7 @@ async function collectImages(p: ExportParams): Promise<Record<string, string>> {
     urls.add(opIconUrl(op))
   }
   for (const building of allBuildings) urls.add(buildingUnitOf(building.kind).iconUrl)
-  for (const skill of allSkills) urls.add(`/icons/operators/skills/${skill.operatorId}/skill_${skill.skillSlot}.png`)
+  for (const skill of allSkills) urls.add(skill.iconUrl ?? `/icons/operators/skills/${skill.operatorId}/skill_${skill.skillSlot}.png`)
   for (const support of allSupports) if (support.iconUrl && !support.iconUrl.startsWith('data:')) urls.add(support.iconUrl)
   const stages = p.stageMode === 'current' ? p.stages.slice(0, p.capturedStageIndex + 1) : p.stages
   const curStage = p.stages[p.capturedStageIndex]
@@ -677,19 +677,18 @@ if ((D.operators && D.operators.length) || (D.teams && D.teams.length) || (D.ski
   (D.skillActions || []).forEach((skill) => {
     const source = skillByOperator[skill.sourceOperatorUid];
     const geometry = skill.geometry;
-    if (!geometry) return;
     const start = source && source.lat != null ? [source.lat, source.lng] : null;
-    const curveControls = geometry.controls || (geometry.control ? [geometry.control] : []);
-    const curveNodes = geometry.type === 'curve' ? [start || geometry.start, ...curveControls, geometry.end] : null;
-    const points = geometry.points || curveNodes;
-    const end = geometry.position || geometry.center || geometry.end || (points && points[points.length - 1]);
+    const curveControls = geometry ? (geometry.controls || (geometry.control ? [geometry.control] : [])) : [];
+    const curveNodes = geometry && geometry.type === 'curve' ? [start || geometry.start, ...curveControls, geometry.end] : null;
+    const points = geometry ? (geometry.points || curveNodes) : null;
+    const end = geometry ? (geometry.position || geometry.center || geometry.end || (points && points[points.length - 1])) : start;
     if (!end) return;
     const color = skill.side === D.view ? '#55d68b' : '#ef6b68';
     // 与应用内一致：只有明确绑定目标单位的点技能显示来源关联线。
-    if (geometry.type === 'point' && skill.targetUid && start) {
+    if (geometry && geometry.type === 'point' && skill.targetUid && start) {
       L.polyline([start, end], { color, weight: 1.5, dashArray: '4 5', opacity: .7, interactive: false }).addTo(opLayer);
     }
-    if (geometry.type === 'area') {
+    if (geometry && geometry.type === 'area') {
       const mapHeight = Math.abs(Number(D.config.northEast[0]) - Number(D.config.southWest[0])) || 230;
       // 与应用内 OperatorSkillLayer 保持一致：radiusRatio 是地图纬度跨度的比例，
       // 再按统一的 230 地图单位系数换算为 Leaflet 米制半径。
@@ -700,7 +699,7 @@ if ((D.operators && D.operators.length) || (D.teams && D.teams.length) || (D.ski
         : Number(geometry.radius || 60);
       L.circle(end, { radius: radiusUnits, color, weight: 1.5, opacity: .8, fillOpacity: .18, interactive: false }).addTo(opLayer);
     }
-    else if (geometry.type === 'line' && points) {
+    else if (geometry && geometry.type === 'line' && points) {
       const bounds = map.options.maxBounds ? L.latLngBounds(map.options.maxBounds) : map.getBounds();
       const latSpan = Math.max(1, bounds.getNorth() - bounds.getSouth());
       const width = geometry.widthRatio
@@ -708,13 +707,14 @@ if ((D.operators && D.operators.length) || (D.teams && D.teams.length) || (D.ski
         : Number(geometry.width || 12);
       L.polyline(points, { color, weight: width, opacity: .25, interactive: false }).addTo(opLayer);
     }
-    else if (geometry.type === 'curve' && curveNodes) {
+    else if (geometry && geometry.type === 'curve' && curveNodes) {
       L.polyline(smoothExportPath(curveNodes), { color, weight: 2.5, opacity: .82, interactive: false }).addTo(opLayer);
     }
-    else if (geometry.type === 'trajectory' && points && skill.placementMode === 'guided-path') {
-      L.polyline(points, { color, weight: 2, dashArray: '8 5', opacity: .85, interactive: false }).addTo(opLayer);
+    else if (geometry && geometry.type === 'trajectory' && points && (skill.placementMode === 'guided-path' || skill.sourceKind === 'tactical-item')) {
+      const livePoints = start && points.length > 1 ? [start, ...points.slice(1)] : points;
+      L.polyline(livePoints, { color, weight: 2, dashArray: '8 5', opacity: .85, interactive: false }).addTo(opLayer);
     }
-    const iconUrl = '/icons/operators/skills/' + skill.operatorId + '/skill_' + skill.skillSlot + '.png';
+    const iconUrl = skill.iconUrl || ('/icons/operators/skills/' + skill.operatorId + '/skill_' + skill.skillSlot + '.png');
     const html = '<span style="display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:rgba(8,13,15,.92);border:2px solid ' + color + ';box-shadow:0 0 0 2px rgba(8,13,15,.8)"><img src="' + img(iconUrl) + '" style="width:20px;height:20px;object-fit:contain" draggable="false" /></span>';
     L.marker(end, { icon: L.divIcon({ className: 'skill-export-marker', html, iconSize: [30, 30], iconAnchor: [15, 15] }), interactive: false, zIndexOffset: 900 }).addTo(opLayer);
   });

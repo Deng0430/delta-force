@@ -59,8 +59,9 @@
   transform: translateX(-50%) !important;
   z-index: 1500;
   max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 16px);
-  overflow-y: auto;
+  overflow: hidden;
   overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 
 .platform-android.mobile-layout .op-bubble-panel {
@@ -71,9 +72,81 @@
 .platform-android.mobile-layout .op-cascade.open-left .op-cascade-submenu {
   position: static;
   width: auto;
-  max-height: min(52vh, 360px);
+  max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 58px);
   overflow-y: auto;
   overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.platform-android.mobile-layout .op-bubble button {
+  touch-action: manipulation;
+}
+
+.platform-android.mobile-layout .op-bubble-head {
+  min-height: 38px;
+}
+
+.platform-android.mobile-layout .op-bubble-back,
+.platform-android.mobile-layout .op-bubble-close {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  min-height: 38px;
+}
+
+.platform-android.mobile-layout .op-cascade-main .op-bubble-item,
+.platform-android.mobile-layout .op-cascade-status .op-bubble-item {
+  min-height: 42px;
+}
+
+.platform-android.mobile-layout .op-cascade-tactical-items {
+  padding: 4px;
+}
+
+.platform-android.mobile-layout .op-tactical-item-list {
+  gap: 5px;
+  padding: 0;
+}
+
+.platform-android.mobile-layout .op-tactical-item {
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 6px 8px;
+  min-height: 0;
+  padding: 6px;
+}
+
+.platform-android.mobile-layout .op-tactical-item > img {
+  width: 40px;
+  height: 40px;
+}
+
+.platform-android.mobile-layout .op-tactical-item.single-mode,
+.platform-android.mobile-layout .op-tactical-item.multi-mode > img,
+.platform-android.mobile-layout .op-tactical-item.multi-mode .op-tactical-item-info {
+  cursor: pointer;
+}
+
+.platform-android.mobile-layout .op-tactical-item-info b {
+  font-size: 12px;
+}
+
+.platform-android.mobile-layout .op-tactical-item-info small {
+  font-size: 10px;
+}
+
+.platform-android.mobile-layout .op-tactical-item-actions {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.platform-android.mobile-layout .op-tactical-item-actions button {
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  padding: 0 8px;
+  font-size: 12px;
 }
 
 .mobile-layout .toolbar .logo-area {
@@ -864,6 +937,14 @@ body:has(.platform-android.mobile-layout) .text-style-panel .tsp-head {
   border: 0;
   pointer-events: none;
 }
+
+.platform-android.mobile-layout .operator-skill-action-icon::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+}
+.platform-android.mobile-layout .op-active-skill { left: 34px; top: -60px; }
 
 .mobile-layout .operator-skill-control-dragging .operator-skill-mobile-actions-wrap {
   visibility: hidden;

@@ -698,7 +698,7 @@ export default function WargamePanel({
             <button type="button" className={`veh-own-opt enemy ${!customOwn ? 'active' : ''}`} onClick={() => onCustomOwnChange(false)}><span className="own-dot enemy" />敌方</button>
           </div>
           <div className="wg-support-list">
-            {FIELD_SUPPORTS.map((support) => <button type="button" key={support.id} disabled={!wargame.enabled} onClick={() => onAddFieldSupport(support, customOwn ? view : (view === 'attack' ? 'defense' : 'attack'))}>
+            {FIELD_SUPPORTS.map((support) => <button type="button" key={support.id} className={support.id === 'vehicle-airdrop' ? 'vehicle-airdrop' : undefined} disabled={!wargame.enabled} onClick={() => onAddFieldSupport(support, customOwn ? view : (view === 'attack' ? 'defense' : 'attack'))}>
               <img src={support.iconUrl} alt="" draggable={false} /><span><b>{support.name}</b><small>{support.description}</small></span><em>部署</em>
             </button>)}
           </div>

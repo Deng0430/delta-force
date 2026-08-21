@@ -36,6 +36,7 @@ import { defaultProfileForTeam, profileOf } from './config/operatorProfiles'
 const SHARED_SMOKE_WIDTH_RATIO = 0.04
 const SHARED_SMOKE_RADIUS_RATIO = 0.004
 import { operatorSkillsOf, type OperatorSkillDefinition } from './config/operatorSkills'
+import type { OperatorTacticalItemDefinition, TacticalItemUseMode } from './config/operatorTacticalItems'
 import type { OperatorConnection, OperatorTeam, OperatorUnit } from './types'
 import type { DeployTarget } from './components/DeployBar'
 import DeployBar from './components/DeployBar'
@@ -280,7 +281,11 @@ export default function App() {
   } | null>(null)
   // 底部载具部署栏：点击出生点后显示该出生点可部署载具
   const [deployTarget, setDeployTarget] = useState<DeployTarget | null>(null)
-  const [skillActionDraft, setSkillActionDraft] = useState<{ operator: OperatorUnit; skill: OperatorSkillDefinition } | null>(null)
+  const [skillActionDraft, setSkillActionDraft] = useState<
+    | { operator: OperatorUnit; skill: OperatorSkillDefinition; tacticalItem?: never; tacticalMode?: never }
+    | { operator: OperatorUnit; tacticalItem: OperatorTacticalItemDefinition; tacticalMode: TacticalItemUseMode; skill?: never }
+    | null
+  >(null)
   // 自定义载具部署阵营：本方（绿底）/ 敌方（红底）
   const [customOwn, setCustomOwn] = useState<boolean>(true)
   // 战术方案库（第二十一轮：各阶段默认战术部署，按 地图×阶段×视角 保存）
@@ -289,6 +294,8 @@ export default function App() {
   )
   // 战术板弹窗开关
   const [tacticalOpen, setTacticalOpen] = useState(false)
+  // 启动欢迎弹窗不做持久化，也不监听前后台切换：仅在 App 本次挂载后的首帧显示。
+  const [startupNoticeOpen, setStartupNoticeOpen] = useState(false)
   const [mobileConfirm, setMobileConfirm] = useState<{
     title: string
     message: string
@@ -296,6 +303,12 @@ export default function App() {
     onConfirm: () => void
   } | null>(null)
   const [refreshVehicleDelete, setRefreshVehicleDelete] = useState<{ vehicles: VehicleItem[]; uids: string[] } | null>(null)
+
+  useEffect(() => {
+    if (isCinematicDemoFrame) return
+    const frame = window.requestAnimationFrame(() => setStartupNoticeOpen(true))
+    return () => window.cancelAnimationFrame(frame)
+  }, [isCinematicDemoFrame])
   // 左右工具栏折叠 + 图层/道具显示开关（问题1/2/8）+ 画笔设置（问题4）
   const [ui, setUi] = useState(() => ({
     paletteOpen: device.mobileLayout || isCinematicMapOnly || isCinematicMobileFrame || cinematicLayoutPreset === 'platformCompare' || cinematicLayoutPreset === 'backdrop' ? false : persisted?.ui?.paletteOpen ?? true,
@@ -2627,35 +2640,64 @@ export default function App() {
     [mapId, updateMap, view],
   )
 
+  const handleOperatorTacticalItemUse = useCallback((uid: string, tacticalItem: OperatorTacticalItemDefinition, tacticalMode: TacticalItemUseMode) => {
+    const current = mapsRef.current[mapId] ?? createEmptyMapState()
+    const operator = operatorsBucketOf(current)[view].find((item) => item.uid === uid)
+    if (!operator) return
+    if (tacticalMode.placementMode === 'self') {
+      updateMap(mapId, (state) => ({
+        ...state,
+        skillActions: [...(state.skillActions ?? []).filter((action) => !(action.sourceKind === 'tactical-item' && action.sourceOperatorUid === operator.uid && action.tacticalItemUseType === 'carry')), {
+          uid: genUid('item'), sourceOperatorUid: operator.uid, operatorId: operator.operatorId,
+          skillName: tacticalItem.name, kind: 'gadget', placementMode: 'self', sourceKind: 'tactical-item',
+          tacticalItemId: tacticalItem.id, tacticalItemUseType: tacticalMode.type, iconUrl: tacticalItem.iconUrl,
+          side: operator.side, effectArea: tacticalItem.effectArea, visible: true, createdAt: Date.now(),
+        }],
+      }))
+      setSkillActionDraft(null)
+      return
+    }
+    setSkillActionDraft({ operator, tacticalItem, tacticalMode })
+    setTool('pan')
+  }, [mapId, updateMap, view])
+
   const handlePlaceSkillAction = useCallback((lat: number, lng: number) => {
     if (!skillActionDraft) return
-    const { operator, skill } = skillActionDraft
+    const { operator } = skillActionDraft
+    const isTacticalItem = 'tacticalItem' in skillActionDraft
+    const skill = isTacticalItem ? null : skillActionDraft.skill
+    const tacticalItem = isTacticalItem ? skillActionDraft.tacticalItem : null
+    const tacticalMode = isTacticalItem ? skillActionDraft.tacticalMode : null
+    const placementMode = tacticalMode?.placementMode ?? skill?.placementMode
     if (operator.lat == null || operator.lng == null) return
     const source: [number, number] = [operator.lat, operator.lng]
     const target: [number, number] = [lat, lng]
-    const isSwarmCorridor = operator.operatorId === '10018' && skill.slot === 4
-    const isSmokeWall = operator.operatorId === '10001' && skill.slot === 2
-    const isSmokeSkill = skill.name.includes('烟雾')
+    const isSwarmCorridor = !isTacticalItem && operator.operatorId === '10018' && skill?.slot === 4
+    const isSmokeWall = !isTacticalItem && operator.operatorId === '10001' && skill?.slot === 2
+    const isSmokeSkill = !isTacticalItem && Boolean(skill?.name.includes('烟雾'))
     const geometry: import('./types').OperatorSkillActionGeometry = isSwarmCorridor
       ? { type: 'line', points: [source, target], width: 34, widthRatio: 0.01425 }
       : isSmokeWall
         ? { type: 'line', points: [source, target], width: 24, widthRatio: SHARED_SMOKE_WIDTH_RATIO }
         : isSmokeSkill
           ? { type: 'area', center: target, radius: 60, radiusRatio: SHARED_SMOKE_RADIUS_RATIO }
-      : skill.placementMode === 'area'
+      : placementMode === 'area'
       ? { type: 'area', center: target, radius: 60 }
-      : skill.placementMode === 'target-point' || skill.placementMode === 'target-unit' || skill.placementMode === 'ally-unit'
+      : placementMode === 'target-point' || placementMode === 'target-unit' || placementMode === 'ally-unit'
         ? { type: 'point', position: target }
-        : skill.placementMode === 'guided-path'
+        : placementMode === 'guided-path'
           ? { type: 'curve', start: source, controls: [[(source[0] + target[0]) / 2 + 10, (source[1] + target[1]) / 2]], end: target }
           : { type: 'trajectory', points: [source, target] }
     updateMap(mapId, (state) => ({
       ...state,
       skillActions: [...(state.skillActions ?? []), {
         uid: genUid('skill'), sourceOperatorUid: operator.uid, operatorId: operator.operatorId,
-        skillSlot: skill.slot, skillName: skill.name, kind: skill.kind, placementMode: skill.placementMode,
-        side: operator.side, geometry, effectArea: skill.effectArea, canBindTarget: skill.canBindTarget,
-        tracking: skill.tracking, sector: skill.sector, visible: true, createdAt: Date.now(),
+        ...(!isTacticalItem ? { skillSlot: skill!.slot } : {}),
+        skillName: tacticalItem?.name ?? skill!.name, kind: tacticalItem ? 'gadget' : skill!.kind, placementMode,
+        sourceKind: isTacticalItem ? 'tactical-item' as const : 'skill' as const,
+        tacticalItemId: tacticalItem?.id, tacticalItemUseType: tacticalMode?.type, iconUrl: tacticalItem?.iconUrl,
+        side: operator.side, geometry, effectArea: tacticalItem?.effectArea ?? skill?.effectArea,
+        canBindTarget: skill?.canBindTarget, tracking: skill?.tracking, sector: skill?.sector, visible: true, createdAt: Date.now(),
       }],
     }))
     setSkillActionDraft(null)
@@ -2665,18 +2707,26 @@ export default function App() {
     if (!skillActionDraft) return
     const current = mapsRef.current[mapId] ?? createEmptyMapState()
     const target = operatorsBucketOf(current)[view].find((item) => item.uid === targetUid)
-    const { operator, skill } = skillActionDraft
+    const { operator } = skillActionDraft
+    const isTacticalItem = 'tacticalItem' in skillActionDraft
+    const skill = isTacticalItem ? null : skillActionDraft.skill
+    const tacticalItem = isTacticalItem ? skillActionDraft.tacticalItem : null
+    const tacticalMode = isTacticalItem ? skillActionDraft.tacticalMode : null
+    const placementMode = tacticalMode?.placementMode ?? skill?.placementMode
     if (!target || target.lat == null || target.lng == null || target.uid === operator.uid) return
-    if (skill.placementMode === 'ally-unit' && target.side !== operator.side) return
-    if (skill.placementMode === 'target-unit' && target.side === operator.side) return
+    if (placementMode === 'ally-unit' && target.side !== operator.side) return
+    if (placementMode === 'target-unit' && target.side === operator.side) return
     updateMap(mapId, (state) => ({
       ...state,
       skillActions: [...(state.skillActions ?? []), {
         uid: genUid('skill'), sourceOperatorUid: operator.uid, operatorId: operator.operatorId,
-        skillSlot: skill.slot, skillName: skill.name, kind: skill.kind, placementMode: skill.placementMode,
+        ...(!isTacticalItem ? { skillSlot: skill!.slot } : {}),
+        skillName: tacticalItem?.name ?? skill!.name, kind: tacticalItem ? 'gadget' : skill!.kind, placementMode,
+        sourceKind: isTacticalItem ? 'tactical-item' as const : 'skill' as const,
+        tacticalItemId: tacticalItem?.id, tacticalItemUseType: tacticalMode?.type, iconUrl: tacticalItem?.iconUrl,
         side: operator.side, targetUid: target.uid, geometry: { type: 'point', position: [target.lat as number, target.lng as number] },
-        effectArea: skill.effectArea, canBindTarget: skill.canBindTarget, tracking: skill.tracking,
-        sector: skill.sector, visible: true, createdAt: Date.now(),
+        effectArea: tacticalItem?.effectArea ?? skill?.effectArea, canBindTarget: skill?.canBindTarget, tracking: skill?.tracking,
+        sector: skill?.sector, visible: true, createdAt: Date.now(),
       }],
     }))
     setSkillActionDraft(null)
@@ -3458,6 +3508,7 @@ export default function App() {
           onOperatorChange={handleOperatorChange}
           onOperatorStatusChange={handleOperatorStatusChange}
           onOperatorSkillUse={handleOperatorSkillUse}
+          onOperatorTacticalItemUse={handleOperatorTacticalItemUse}
           skillActionDraft={skillActionDraft}
           onPlaceSkillAction={handlePlaceSkillAction}
           onCancelSkillAction={() => setSkillActionDraft(null)}
@@ -3512,6 +3563,37 @@ export default function App() {
           onDeploy={handleDeployVehicle}
         />
       </div>
+
+      {startupNoticeOpen && (
+        <div className="startup-notice-backdrop" role="presentation">
+          <section
+            className="startup-notice-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="startup-notice-title"
+            aria-describedby="startup-notice-description"
+          >
+            <div className="startup-notice-kicker">DELTA FORCE TACTICAL MAP</div>
+            <h2 id="startup-notice-title">欢迎使用三角洲战术地图</h2>
+            <p id="startup-notice-description">
+              欢迎加入项目交流群，分享战术方案、反馈问题并参与地图数据完善。
+            </p>
+            <div className="startup-notice-group">
+              <span>QQ 群</span>
+              <strong>1104802274</strong>
+            </div>
+            <div className="startup-notice-thanks">
+              <i className="fa-solid fa-heart" aria-hidden="true" />
+              <p>
+                感谢社区贡献者 <a href="https://github.com/aeuicey" target="_blank" rel="noreferrer">@aeuicey</a>，以及所有参与测试、数据整理和意见反馈的玩家。
+              </p>
+            </div>
+            <button type="button" className="startup-notice-enter" autoFocus onClick={() => setStartupNoticeOpen(false)}>
+              进入战术地图
+            </button>
+          </section>
+        </div>
+      )}
 
       {/* 战术板弹窗（第二十一轮：导出 HTML + 方案管理） */}
       {mobileConfirm && (

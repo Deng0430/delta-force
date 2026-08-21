@@ -21,7 +21,7 @@ function iconFor(item: FieldSupportInstance, view: Side) {
     className: 'field-support-marker-wrap',
     iconSize: [34, 34],
     iconAnchor: [17, 17],
-    html: `<div class="field-support-marker" style="--support-color:${color}"><span class="field-support-glow"></span><img src="${item.iconUrl}" alt="${item.name}" draggable="false" /></div>`,
+    html: `<div class="field-support-marker ${item.definitionId === 'vehicle-airdrop' ? 'vehicle-airdrop' : ''}" style="--support-color:${color}"><span class="field-support-glow"></span><img src="${item.iconUrl}" alt="${item.name}" draggable="false" /></div>`,
   })
 }
 
@@ -47,7 +47,7 @@ function FieldSupportMarker({ item, view, interactive, mobile, onMove, onDelete 
     window.addEventListener('mobile-unit-selected', closeFromSelection)
     return () => { map.off('click', closeFromMap); window.removeEventListener('mobile-unit-selected', closeFromSelection) }
   }, [item.uid, map, mobile])
-  const icon = mobile ? L.divIcon({ ...iconFor(item, view).options, html: `<div class="field-support-marker-wrap"><div class="field-support-marker ${expanded ? 'expanded' : ''}" style="--support-color:${item.side === view ? ownColor : enemyColor}"><span class="field-support-glow"></span><img src="${item.iconUrl}" alt="${item.name}" draggable="false" />${expanded ? `<button class="field-support-delete-control danger" aria-label="删除阵地支援" onclick="event.stopPropagation();event.preventDefault();window.__fieldSupportDelete('${item.uid}')"><i class="fa-regular fa-trash-can"></i></button>` : ''}</div></div>` }) : iconFor(item, view)
+  const icon = mobile ? L.divIcon({ ...iconFor(item, view).options, html: `<div class="field-support-marker-wrap"><div class="field-support-marker ${item.definitionId === 'vehicle-airdrop' ? 'vehicle-airdrop' : ''} ${expanded ? 'expanded' : ''}" style="--support-color:${item.side === view ? ownColor : enemyColor}"><span class="field-support-glow"></span><img src="${item.iconUrl}" alt="${item.name}" draggable="false" />${expanded ? `<button class="field-support-delete-control danger" aria-label="删除阵地支援" onclick="event.stopPropagation();event.preventDefault();window.__fieldSupportDelete('${item.uid}')"><i class="fa-regular fa-trash-can"></i></button>` : ''}</div></div>` }) : iconFor(item, view)
   useEffect(() => {
     if (!mobile) return
     const target = window as typeof window & { __fieldSupportDelete?: (uid: string) => void; __fieldSupportDeleteHandlers?: Record<string, () => void> }

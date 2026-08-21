@@ -3633,6 +3633,7 @@ body {
 .field-support-marker-wrap { background: transparent; border: 0; overflow: visible !important; }
 .field-support-marker { position: relative; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border: 2px solid var(--support-color); border-radius: 50%; background: rgba(8,13,15,.92); box-shadow: 0 0 7px color-mix(in srgb, var(--support-color) 65%, transparent); cursor: move; }
 .field-support-marker img { position: relative; z-index: 1; width: 27px; height: 27px; object-fit: contain; filter: drop-shadow(0 1px 2px #000); pointer-events: none; }
+.field-support-marker.vehicle-airdrop img { width: 32px; height: 32px; }
 .field-support-glow { position: absolute; inset: 3px; border-radius: 50%; background: color-mix(in srgb, var(--support-color) 26%, transparent); }
 .tactical-map.placing-field-support { cursor: crosshair; }
 
@@ -3659,13 +3660,25 @@ body {
 .op-cascade-operator span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .op-cascade-status { width: 150px; }
 .op-cascade-skills { width: 230px; }
+.op-cascade-tactical-items { width: 320px; max-height: min(520px, calc(100vh - 20px)); overflow: auto; }
+.op-tactical-item-list { display: grid; gap: 4px; padding: 5px 0; }
+.op-tactical-item { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: 7px; min-height: 48px; padding: 5px; border: 1px solid var(--line-1); border-radius: 2px; background: var(--bg-2); }
+.op-tactical-item { cursor: pointer; }
+.op-tactical-item:hover { border-color: var(--gold); background: rgba(244,207,103,.06); }
+.op-tactical-item > img { width: 36px; height: 36px; object-fit: contain; }
+.op-tactical-item-info { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.op-tactical-item-info b { color: var(--tx-1); font-size: 11px; }
+.op-tactical-item-info small { color: var(--tx-3); font-size: 9px; }
+.op-tactical-item-actions { display: flex; flex-direction: column; gap: 3px; }
+.op-tactical-item-actions button { min-width: 58px; height: 22px; padding: 0 6px; border: 1px solid var(--line-1); border-radius: 2px; background: var(--bg-btn); color: var(--tx-2); font-size: 9px; cursor: pointer; }
+.op-tactical-item-actions button:hover { border-color: var(--gold); color: var(--gold); background: rgba(244,207,103,.08); }
 .op-cascade-skill-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 5px 0; }
 .op-cascade-skill { min-width: 0; height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 1px solid var(--line-1); border-radius: 2px; background: var(--bg-2); color: var(--tx-2); font-size: 9px; cursor: pointer; }
 .op-cascade-skill:hover, .op-cascade-skill.active { border-color: var(--gold); color: var(--gold); background: rgba(244, 207, 103, .08); }
 .op-cascade-skill img { width: 34px; height: 34px; object-fit: contain; pointer-events: none; }
 .op-cascade-skill-clear { width: 100%; height: 25px; border: 1px solid var(--line-1); border-radius: 2px; background: transparent; color: var(--tx-3); font-size: 10px; cursor: pointer; }
 .op-cascade-skill-clear:hover { border-color: var(--danger); color: var(--danger); }
-.op-active-skill { position: absolute; right: -13px; top: -13px; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--gold); border-radius: 50%; background: rgba(8, 13, 15, .96); box-shadow: 0 0 5px rgba(244, 207, 103, .55); pointer-events: none; z-index: 4; }
+.op-active-skill { position: absolute; left: 29px; top: -46px; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--gold); border-radius: 50%; background: rgba(8, 13, 15, .96); box-shadow: 0 0 5px rgba(244, 207, 103, .55); pointer-events: none; z-index: 4; }
 .op-active-skill img { width: 13px; height: 13px; object-fit: contain; }
 
 /* 桌面端单兵及其路线统一使用拖动语义，避免鼠标在 Leaflet 默认 pointer、
@@ -6963,6 +6976,7 @@ body {
 .wg-support-list button:hover { border-color: var(--green); background: rgba(1,255,132,.08); }
 .wg-support-list button:disabled { opacity: .45; cursor: not-allowed; }
 .wg-support-list img { width: 34px; height: 34px; object-fit: contain; }
+.wg-support-list button.vehicle-airdrop img { width: 38px; height: 38px; margin-left: -2px; }
 .wg-support-list span { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .wg-support-list b { font-size: 11px; }
 .wg-support-list small { color: var(--tx-3); font-size: 9px; }
@@ -7190,6 +7204,143 @@ body {
 .refresh-vehicle-dialog-options button:hover { border-color: var(--green); }
 .refresh-vehicle-dialog-options button.danger { border-color: #a9443f; }
 .refresh-vehicle-dialog-options button.danger:hover { background: #7f2926; }
+
+/* ---------- 应用启动欢迎弹窗 ---------- */
+.startup-notice-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(1, 255, 132, .09), transparent 38%),
+    rgba(2, 5, 7, .82);
+  backdrop-filter: blur(5px);
+}
+
+.startup-notice-dialog {
+  position: relative;
+  width: min(460px, calc(100vw - 32px));
+  overflow: hidden;
+  padding: 26px;
+  border: 1px solid rgba(1, 255, 132, .48);
+  border-radius: 4px;
+  background: linear-gradient(145deg, #12191c 0%, #080d0f 100%);
+  color: #f3f6f5;
+  box-shadow: 0 22px 70px rgba(0, 0, 0, .72), inset 3px 0 0 var(--green);
+}
+
+.startup-notice-dialog::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 82px;
+  height: 3px;
+  background: var(--green);
+}
+
+.startup-notice-kicker {
+  margin-bottom: 8px;
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .18em;
+}
+
+.startup-notice-dialog h2 {
+  margin: 0;
+  color: #fff;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.startup-notice-dialog > p {
+  margin: 10px 0 18px;
+  color: #aab5b8;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.startup-notice-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 56px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 213, 74, .42);
+  background: rgba(255, 213, 74, .055);
+}
+
+.startup-notice-group span {
+  color: #d2d8d9;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+
+.startup-notice-group strong {
+  color: var(--gold);
+  font-family: "Roboto Mono", "Consolas", monospace;
+  font-size: 22px;
+  letter-spacing: .06em;
+  user-select: all;
+}
+
+.startup-notice-thanks {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 8px;
+  margin: 16px 0 20px;
+  color: #8f9a9d;
+}
+
+.startup-notice-thanks i {
+  margin-top: 3px;
+  color: #e0645b;
+  font-size: 15px;
+}
+
+.startup-notice-thanks p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.startup-notice-thanks a {
+  color: var(--green);
+  text-decoration: none;
+}
+
+.startup-notice-thanks a:hover { text-decoration: underline; }
+
+.startup-notice-enter {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--green);
+  border-radius: 2px;
+  background: var(--green);
+  color: #07110c;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  cursor: pointer;
+}
+
+.startup-notice-enter:hover,
+.startup-notice-enter:focus-visible {
+  background: #57ffaa;
+  box-shadow: 0 0 0 2px rgba(1, 255, 132, .2);
+  outline: none;
+}
+
+@media (max-height: 540px) {
+  .startup-notice-dialog { padding: 18px 22px; }
+  .startup-notice-dialog > p { margin-bottom: 12px; }
+  .startup-notice-thanks { margin: 12px 0; }
+}
 
 /* ---------- 复活点标记 ---------- */
 

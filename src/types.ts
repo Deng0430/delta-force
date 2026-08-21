@@ -466,9 +466,14 @@ export interface OperatorSkillAction {
   uid: string
   sourceOperatorUid: string
   operatorId: string
-  skillSlot: 1 | 2 | 3 | 4
+  /** 技能槽位；战术道具行动没有槽位。 */
+  skillSlot?: 1 | 2 | 3 | 4
   skillName: string
   kind: 'ultimate' | 'gadget' | 'passive'
+  sourceKind?: 'skill' | 'tactical-item'
+  tacticalItemId?: string
+  tacticalItemUseType?: 'carry' | 'self' | 'placement' | 'launcher' | 'target'
+  iconUrl?: string
   placementMode?: 'self' | 'target-point' | 'area' | 'trajectory' | 'guided-path' | 'target-unit' | 'ally-unit'
   side: Side
   geometry?: OperatorSkillActionGeometry
@@ -481,7 +486,7 @@ export interface OperatorSkillAction {
   createdAt: number
 }
 
-/** 阵地支援图标定义（四种官方地图工具资源）。 */
+/** 阵地支援图标定义。 */
 export interface FieldSupportDefinition {
   id: string
   name: string
