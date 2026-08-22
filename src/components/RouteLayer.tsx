@@ -256,12 +256,14 @@ function nearestSegmentIndex(map: L.Map, points: [number, number][], click: L.La
   return bestIndex
 }
 
-function RouteInput({ active, onPoint, onFinish, onCancel, onClearSelection }: {
+function RouteInput({ active, onPoint, onFinish, onCancel, onClearSelection, onHover }: {
   active: boolean
   onPoint: (point: [number, number]) => void
   onFinish: () => void
   onCancel: () => void
   onClearSelection: () => void
+  /** 鼠标移动：路线绘制中的跟随预览（最后一个节点 → 当前光标） */
+  onHover: (point: [number, number] | null) => void
 }) {
   useMapEvents({
     click(e) {
@@ -271,6 +273,10 @@ function RouteInput({ active, onPoint, onFinish, onCancel, onClearSelection }: {
       }
       if ((e.originalEvent as MouseEvent).detail > 1) return
       onPoint([e.latlng.lat, e.latlng.lng])
+    },
+    mousemove(e) {
+      if (!active) return
+      onHover([e.latlng.lat, e.latlng.lng])
     },
     dblclick(e) {
       if (!active) return
@@ -575,6 +581,8 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, b
     return () => { map.off('rotate', updateBearing) }
   }, [map])
   const [draftPoints, setDraftPoints] = useState<[number, number][]>([])
+  // 鼠标跟随预览：路线绘制中光标位置（最后一个节点到此点画虚线预览）
+  const [draftHover, setDraftHover] = useState<[number, number] | null>(null)
   const [passiveDragPreview, setPassiveDragPreview] = useState<{ uid: string; waypoints: [number, number][] } | null>(null)
   const [hoveredRouteUid, setHoveredRouteUid] = useState<string | null>(null)
   const [anchorDragPreview, setAnchorDragPreview] = useState<{ kind: 'operator' | 'team' | 'vehicle' | 'building'; uid: string; point: [number, number] } | null>(null)
@@ -667,11 +675,13 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, b
     if (!draftContext) {
       draftPointsRef.current = []
       setDraftPoints([])
+      setDraftHover(null)
       return
     }
     const initial = [[...draftContext.point] as [number, number]]
     draftPointsRef.current = initial
     setDraftPoints(initial)
+    setDraftHover(null)
     onSelect(null)
   }, [draftSource, draftContext?.point[0], draftContext?.point[1], onSelect])
 
@@ -703,6 +713,7 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, b
   const cancelDraft = useCallback(() => {
     draftPointsRef.current = []
     setDraftPoints([])
+    setDraftHover(null)
     onDraftEnd()
   }, [onDraftEnd])
 
@@ -776,7 +787,7 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, b
 
   return (
     <>
-      <RouteInput active={Boolean(draftContext)} onPoint={addPoint} onFinish={finishDraft} onCancel={cancelDraft} onClearSelection={() => onSelect(null)} />
+      <RouteInput active={Boolean(draftContext)} onPoint={addPoint} onFinish={finishDraft} onCancel={cancelDraft} onClearSelection={() => onSelect(null)} onHover={setDraftHover} />
       {routes.map((route) => {
         const selected = route.uid === selectedUid
         const visual = routeVisual(route, selected)
@@ -938,6 +949,14 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, b
       {draftContext && draftPoints.length > 0 && (
         <>
           <Polyline positions={draftPoints} pathOptions={{ color: teamOf(draftContext.team).color, weight: 4, dashArray: '8 6', opacity: 0.95 }} />
+          {/* 鼠标跟随预览：最后一个节点 → 当前光标（浅色虚线，与已确立路径区分） */}
+          {draftHover && (
+            <Polyline
+              positions={[draftPoints[draftPoints.length - 1], draftHover]}
+              pathOptions={{ color: teamOf(draftContext.team).color, weight: 3, dashArray: '3 7', opacity: 0.5 }}
+              interactive={false}
+            />
+          )}
           {draftPoints.map((point, index) => (
             <CircleMarker key={`draft-${index}`} center={point} radius={index === 0 ? 6 : 4} pathOptions={{ color: teamOf(draftContext.team).color, fillColor: '#111719', fillOpacity: 1, weight: 2 }} />
           ))}
