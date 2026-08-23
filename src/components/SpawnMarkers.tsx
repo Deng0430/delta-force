@@ -28,11 +28,12 @@ interface SpawnMarkersProps {
   /** 绘制工具激活时禁用点击聚焦 */
   interactive: boolean
   /** 点击出生点（stageId + 阵营 + 坐标 + 基地名，用于底部载具部署栏） */
-  onSelect: (spawn: { stageId: string; side: Side; pos: [number, number]; baseName: string | null }) => void
+  onSelect: (spawn: { uid: string; stageId: string; side: Side; pos: [number, number]; baseName: string | null }) => void
   deployByStage?: Record<string, StageDeploy>
 }
 
 interface SpawnEntry {
+  uid: string
   pos: [number, number]
   side: Side
   /** 基地名（null=附属复活点，无载具部署） */
@@ -79,18 +80,19 @@ export default function SpawnMarkers({
   const entries: SpawnEntry[] = useMemo(() => {
     if (!stage) return []
     const list: SpawnEntry[] = []
-    // 基地名数组与 spawns 坐标一一对应（官网 init 数据），null=附属复活点（无载具）
-    const atkNames = stage.attackSpawnNames ?? []
-    const defNames = stage.defenseSpawnNames ?? []
     const fallbackLabel = (side: Side) => (side === view ? '己方复活点' : '敌方复活点')
-    const hasVehicleDeploy = (side: Side, baseName: string | null) => Boolean(baseName && (deployByStage?.[stage.id]?.[side] ?? []).some((vehicle) => vehicle.note === baseName))
-    stage.attackSpawns.forEach((p, i) => {
-      const baseName = atkNames[i] ?? null
-      list.push({ pos: p, side: 'attack', baseName, label: baseName ?? fallbackLabel('attack'), theme: themes.attack, vehicleDeploy: hasVehicleDeploy('attack', baseName) })
-    })
-    stage.defenseSpawns.forEach((p, i) => {
-      const baseName = defNames[i] ?? null
-      list.push({ pos: p, side: 'defense', baseName, label: baseName ?? fallbackLabel('defense'), theme: themes.defense, vehicleDeploy: hasVehicleDeploy('defense', baseName) })
+    const hasVehicleDeploy = (uid: string, side: Side) => (deployByStage?.[stage.id]?.[side] ?? []).some((vehicle) => vehicle.spawnUid === uid)
+    stage.spawns.forEach((spawn) => {
+      const baseName = spawn.name || null
+      list.push({
+        uid: spawn.uid,
+        pos: [spawn.lat, spawn.lng],
+        side: spawn.side,
+        baseName,
+        label: baseName ?? fallbackLabel(spawn.side),
+        theme: themes[spawn.side],
+        vehicleDeploy: hasVehicleDeploy(spawn.uid, spawn.side),
+      })
     })
     return list
   }, [deployByStage, stage, themes, view])
@@ -124,7 +126,7 @@ export default function SpawnMarkers({
   return (
     <>
       {entries.map((e, i) => (
-        <Fragment key={`spawn-${stage.id}-${i}`}>
+        <Fragment key={e.uid || `spawn-${stage.id}-${i}`}>
           <Marker
             position={[e.pos[0], e.pos[1]]}
             icon={makeIcon(e.theme, e.label, e.vehicleDeploy)}
@@ -138,7 +140,7 @@ export default function SpawnMarkers({
                 focus(e.pos)
                 const target = event.originalEvent.target as Element | null
                 if (e.vehicleDeploy && target?.closest('.spawn-vehicle-link')) {
-                  onSelect({ stageId: stage.id, side: e.side, pos: e.pos, baseName: e.baseName })
+                  onSelect({ uid: e.uid, stageId: stage.id, side: e.side, pos: e.pos, baseName: e.baseName })
                 }
               },
             }}

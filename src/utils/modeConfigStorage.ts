@@ -25,12 +25,13 @@ import { MAP_PROPS } from '../config/pointsStages'
 import { DEPLOY_BY_MAP, DEPLOY_VEHICLE_CATALOG, localDeployIconUrl, type DeployVehicleEntry, type StageDeploy } from '../config/deployVehicles'
 import winnerTakesAllOfficial from '../config/winnerTakesAllOfficial.json'
 import { deployForPlatform, propsForPlatform, stagesForPlatform, type GameDataPlatform } from '../config/gameDataPlatform'
+import { makeWinnerSpawnUid } from '../config/attackDefenseSpawns'
 
 /** 正式应用模式配置的本地存储键。 */
 export const MODE_CONFIG_STORAGE_KEY = 'deltaforce-mode-configs-v1'
 export const MODE_CONFIG_SYNC_CHANNEL = 'deltaforce-mode-config-sync-v1'
 export const MODE_CONFIG_SYNC_MESSAGE = 'deltaforce-mode-config-sync'
-const MODE_STORAGE_VERSION = 19 as const
+const MODE_STORAGE_VERSION = 22 as const
 
 const SIDES: Side[] = ['attack', 'defense']
 const VERIFICATIONS: ModeConfigVerification[] = ['draft', 'confirmed']
@@ -69,7 +70,7 @@ export function createModeProfile(name = '新模式', id?: string): GameModeProf
 function defaultStore(): ModeConfigStore {
   const attackDefense = createModeProfile('攻防模式', 'attack-defense')
   attackDefense.description = '内置攻防模式数据，可分别编辑 PC 端与移动端。'
-  const pcMaps = Object.fromEntries(MAPS.map((map) => [map.id, syncModeMapFromAttackDefense(map.id, stagesForPlatform('pc')[map.id] ?? [], propsForPlatform('pc'))]))
+  const pcMaps = Object.fromEntries(MAPS.map((map) => [map.id, syncModeMapFromAttackDefense(map.id, stagesForPlatform('pc')[map.id] ?? [], propsForPlatform('pc'), deployForPlatform('pc'))]))
   const mobileMaps = Object.fromEntries(MAPS.map((map) => [map.id, syncModeMapFromAttackDefense(map.id, stagesForPlatform('mobile')[map.id] ?? [], propsForPlatform('mobile'), deployForPlatform('mobile'))]))
   attackDefense.platformMaps = { pc: pcMaps, mobile: mobileMaps }
   attackDefense.maps = pcMaps
@@ -82,7 +83,7 @@ function defaultStore(): ModeConfigStore {
         map.id,
         official
           ? modeMapFromOfficial(map.id, official)
-          : syncModeMapFromAttackDefense(map.id, STAGES_BY_MAP[map.id] ?? []),
+          : syncModeMapFromAttackDefense(map.id, stagesForPlatform('pc')[map.id] ?? [], propsForPlatform('pc'), deployForPlatform('pc')),
       ]
     }),
   )
@@ -163,25 +164,33 @@ function modeMapFromOfficial(mapId: string, official: OfficialModeMapData): Mode
     })
 
     for (const side of SIDES) {
-      const points = side === 'attack' ? stage.attackSpawns : stage.defenseSpawns
-      const names = side === 'attack' ? stage.attackSpawnNames : stage.defenseSpawnNames
+      // schemaVersion 2 直接使用固化复活点 UID；旧导入包仅在这里执行一次兼容转换。
+      const legacyPoints = side === 'attack' ? stage.attackSpawns : stage.defenseSpawns
+      const legacyNames = side === 'attack' ? stage.attackSpawnNames : stage.defenseSpawnNames
+      const sourceSpawns = stage.spawns?.filter((spawn) => spawn.side === side) ?? legacyPoints.map((point, index) => ({
+        uid: makeWinnerSpawnUid('pc', mapId, stage.id, side, point[0], point[1]),
+        stageId: stage.id,
+        name: legacyNames?.[index] || `${stage.id} · ${side === 'attack' ? '进攻方' : '防守方'}复活点 ${index + 1}`,
+        side,
+        lat: point[0],
+        lng: point[1],
+      }))
       const deployments = official.deploy[stage.id]?.[side] ?? []
-      points.forEach((point, index) => {
-        const name = names?.[index] || `${stage.id} · ${side === 'attack' ? '进攻方' : '防守方'}复活点 ${index + 1}`
+      sourceSpawns.forEach((spawn) => {
         const deployVehicles = deployments
-          .filter((vehicle) => vehicle.note === name)
+          .filter((vehicle) => vehicle.spawnUid ? vehicle.spawnUid === spawn.uid : vehicle.note === spawn.name)
           .map(({ note: _note, ...vehicle }) => {
             // 官方固化 JSON 可能保留抓取时的旧 iconUrl；统一通过当前载具目录重解析，
             // 确保图例资源迁移后（例如 AA 防空车）不会继续引用已删除的旧路径。
             return normalizeDeployVehicle(vehicle) ?? vehicle
           })
         spawns.push({
-          uid: `builtin_wta_${mapId}_${stage.id}_${side}-spawn-${index}`,
+          uid: spawn.uid,
           stageId: stage.id,
-          name,
+          name: spawn.name,
           side,
-          lat: point[0],
-          lng: point[1],
+          lat: spawn.lat,
+          lng: spawn.lng,
           vehicleDeploy: deployVehicles.length > 0,
           vehicleCategories: [...new Set(deployVehicles.map((vehicle) => vehicle.category))],
           deployVehicles,
@@ -293,36 +302,17 @@ export function syncModeMapFromAttackDefense(
       })
     })
 
-    stage.attackSpawns.forEach((point, index) => {
-      const baseName = stage.attackSpawnNames?.[index] ?? null
-      const deployVehicles = baseName
-        ? (deployByMap[mapId]?.[stage.id]?.attack ?? []).filter((vehicle) => vehicle.note === baseName).map(asModeVehicle)
-        : []
+    stage.spawns.forEach((spawn) => {
+      const deployVehicles = (deployByMap[mapId]?.[stage.id]?.[spawn.side] ?? [])
+        .filter((vehicle) => vehicle.spawnUid === spawn.uid)
+        .map(asModeVehicle)
       spawns.push({
-        uid: `sync_${mapId}_${stage.id}_attack-spawn-${index}`,
+        uid: spawn.uid,
         stageId: stage.id,
-        name: baseName || `${stage.id} · 进攻方复活点 ${index + 1}`,
-        side: 'attack',
-        lat: point[0],
-        lng: point[1],
-        vehicleDeploy: deployVehicles.length > 0,
-        vehicleCategories: [...new Set(deployVehicles.map((vehicle) => vehicle.category))],
-        deployVehicles,
-        verification: 'confirmed',
-      })
-    })
-    stage.defenseSpawns.forEach((point, index) => {
-      const baseName = stage.defenseSpawnNames?.[index] ?? null
-      const deployVehicles = baseName
-        ? (deployByMap[mapId]?.[stage.id]?.defense ?? []).filter((vehicle) => vehicle.note === baseName).map(asModeVehicle)
-        : []
-      spawns.push({
-        uid: `sync_${mapId}_${stage.id}_defense-spawn-${index}`,
-        stageId: stage.id,
-        name: baseName || `${stage.id} · 防守方复活点 ${index + 1}`,
-        side: 'defense',
-        lat: point[0],
-        lng: point[1],
+        name: spawn.name,
+        side: spawn.side,
+        lat: spawn.lat,
+        lng: spawn.lng,
         vehicleDeploy: deployVehicles.length > 0,
         vehicleCategories: [...new Set(deployVehicles.map((vehicle) => vehicle.category))],
         deployVehicles,
@@ -638,7 +628,7 @@ export function normalizeModeConfigStore(value: unknown): ModeConfigStore | null
     profiles.unshift(attackDefense)
   }
   if (!attackDefense.platformMaps?.pc || !attackDefense.platformMaps?.mobile) {
-    const pcMaps = attackDefense.platformMaps?.pc ?? (Object.keys(attackDefense.maps).length > 0 ? attackDefense.maps : Object.fromEntries(MAPS.map((map) => [map.id, syncModeMapFromAttackDefense(map.id, stagesForPlatform('pc')[map.id] ?? [], propsForPlatform('pc'))])))
+    const pcMaps = attackDefense.platformMaps?.pc ?? (Object.keys(attackDefense.maps).length > 0 ? attackDefense.maps : Object.fromEntries(MAPS.map((map) => [map.id, syncModeMapFromAttackDefense(map.id, stagesForPlatform('pc')[map.id] ?? [], propsForPlatform('pc'), deployForPlatform('pc'))])))
     const mobileMaps = attackDefense.platformMaps?.mobile ?? Object.fromEntries(MAPS.map((map) => [map.id, syncModeMapFromAttackDefense(map.id, stagesForPlatform('mobile')[map.id] ?? [], propsForPlatform('mobile'), deployForPlatform('mobile'))]))
     attackDefense.platformMaps = { pc: pcMaps, mobile: mobileMaps }
     attackDefense.maps = pcMaps
@@ -669,13 +659,101 @@ export function normalizeModeConfigStore(value: unknown): ModeConfigStore | null
     }
     attackDefense.maps = attackDefense.platformMaps!.pc!
   }
+  // v20 修复移动端攻防载具部署表被局部官方数据整体覆盖的问题。只为原本
+  // 没有部署数据的内置复活点补回载具，保留用户在编辑器中的其他修改。
+  if (sourceVersion < 20) {
+    const mobileMaps = attackDefense.platformMaps?.mobile ?? {}
+    for (const map of MAPS) {
+      const builtin = syncModeMapFromAttackDefense(
+        map.id,
+        stagesForPlatform('mobile')[map.id] ?? [],
+        propsForPlatform('mobile'),
+        deployForPlatform('mobile'),
+      )
+      const current = mobileMaps[map.id]
+      if (!current) {
+        mobileMaps[map.id] = builtin
+        continue
+      }
+      const builtinSpawns = new Map(builtin.spawns.map((spawn) => [spawn.uid, spawn]))
+      let changed = false
+      const spawns = current.spawns.map((spawn) => {
+        const source = builtinSpawns.get(spawn.uid)
+        if (!source) return spawn
+        const generatedName = /^S\d+ · (?:进攻方|防守方)复活点 \d+$/.test(spawn.name)
+        const restoreName = (!spawn.name.trim() || generatedName) && source.name !== spawn.name
+        const restoreVehicles = spawn.deployVehicles.length === 0 && source.deployVehicles.length > 0
+        if (!restoreName && !restoreVehicles) return spawn
+        changed = true
+        return {
+          ...spawn,
+          name: restoreName ? source.name : spawn.name,
+          vehicleDeploy: restoreVehicles ? source.vehicleDeploy : spawn.vehicleDeploy,
+          vehicleCategories: restoreVehicles ? [...source.vehicleCategories] : spawn.vehicleCategories,
+          deployVehicles: restoreVehicles ? source.deployVehicles.map((vehicle) => ({ ...vehicle })) : spawn.deployVehicles,
+        }
+      })
+      if (changed) mobileMaps[map.id] = { ...current, spawns, updatedAt: Date.now() }
+    }
+    attackDefense.platformMaps = { ...attackDefense.platformMaps, mobile: mobileMaps }
+    attackDefense.maps = attackDefense.platformMaps.pc!
+  }
+  // v21 统一正式攻防与模式编辑器的复活点身份，并把部署载具外键由名称迁移为 UID。
+  // 用户修改过的显示名称、坐标、区域等继续保留；仅替换可识别的内置复活点 UID，
+  // 并补齐此前因名称不一致或跨阶段继承而缺失的官方载具。
+  if (sourceVersion < 21) {
+    for (const gameDataPlatform of ['pc', 'mobile'] as const) {
+      const platformMaps = attackDefense.platformMaps?.[gameDataPlatform]
+      if (!platformMaps) continue
+      for (const map of MAPS) {
+        const builtin = syncModeMapFromAttackDefense(
+          map.id,
+          stagesForPlatform(gameDataPlatform)[map.id] ?? [],
+          propsForPlatform(gameDataPlatform),
+          deployForPlatform(gameDataPlatform),
+        )
+        const current = platformMaps[map.id]
+        if (!current) {
+          platformMaps[map.id] = builtin
+          continue
+        }
+        const usedBuiltin = new Set<string>()
+        const migrated = current.spawns.map((spawn) => {
+          const sameSideStage = builtin.spawns.filter((candidate) => candidate.stageId === spawn.stageId && candidate.side === spawn.side)
+          const coordinateMatch = sameSideStage.find((candidate) => Math.abs(candidate.lat - spawn.lat) < 0.001 && Math.abs(candidate.lng - spawn.lng) < 0.001)
+          const legacyIndex = spawn.uid.match(/(?:attack|defense)-spawn-(\d+)$/)?.[1]
+          const indexMatch = legacyIndex == null ? undefined : sameSideStage[Number(legacyIndex)]
+          const source = builtin.spawns.find((candidate) => candidate.uid === spawn.uid) ?? coordinateMatch ?? indexMatch
+          if (!source) return spawn
+          usedBuiltin.add(source.uid)
+          const vehicleKeys = new Set(spawn.deployVehicles.map((vehicle) => `${vehicle.name}:${vehicle.icon}`))
+          const missingVehicles = source.deployVehicles.filter((vehicle) => !vehicleKeys.has(`${vehicle.name}:${vehicle.icon}`))
+          const deployVehicles = [...spawn.deployVehicles, ...missingVehicles.map((vehicle) => ({ ...vehicle }))]
+          return {
+            ...spawn,
+            uid: source.uid,
+            vehicleDeploy: spawn.vehicleDeploy || deployVehicles.length > 0,
+            vehicleCategories: [...new Set(deployVehicles.map((vehicle) => vehicle.category))],
+            deployVehicles,
+          }
+        })
+        const added = builtin.spawns.filter((spawn) => !usedBuiltin.has(spawn.uid))
+        platformMaps[map.id] = {
+          ...current,
+          spawns: [...migrated, ...added.map((spawn) => ({ ...spawn, deployVehicles: spawn.deployVehicles.map((vehicle) => ({ ...vehicle })) }))],
+          updatedAt: Date.now(),
+        }
+      }
+    }
+    attackDefense.maps = attackDefense.platformMaps!.pc!
+  }
   // v13 同步官方断层复活点与克劳狄斗兽场密集阵，PC/移动端官方数据一致。
   if (sourceVersion < 13) {
     const platformMaps = attackDefense.platformMaps!
     const pcMaps = platformMaps.pc!
     const mobileMaps = platformMaps.mobile!
     for (const mapId of ['fault', 'colosseum']) {
-      pcMaps[mapId] = syncModeMapFromAttackDefense(mapId, stagesForPlatform('pc')[mapId] ?? [], propsForPlatform('pc'))
+      pcMaps[mapId] = syncModeMapFromAttackDefense(mapId, stagesForPlatform('pc')[mapId] ?? [], propsForPlatform('pc'), deployForPlatform('pc'))
       mobileMaps[mapId] = syncModeMapFromAttackDefense(
         mapId,
         stagesForPlatform('mobile')[mapId] ?? [],
@@ -731,7 +809,7 @@ export function normalizeModeConfigStore(value: unknown): ModeConfigStore | null
       }
       // 更早的旧格式仍需补齐其他地图；已有数据在本轮只迁移对应新增地图。
       if (sourceVersion < 4 || !winner.maps[map.id]) {
-        winner.maps[map.id] = syncModeMapFromAttackDefense(map.id, STAGES_BY_MAP[map.id] ?? [])
+        winner.maps[map.id] = syncModeMapFromAttackDefense(map.id, stagesForPlatform('pc')[map.id] ?? [], propsForPlatform('pc'), deployForPlatform('pc'))
       }
     }
     // v12 固化全部地图的胜者为王载具刷新数据。仅同步刷新位置和规则，
@@ -799,6 +877,46 @@ export function normalizeModeConfigStore(value: unknown): ModeConfigStore | null
         const official = (winnerTakesAllOfficial.maps as unknown as Partial<Record<string, OfficialModeMapData>>)[map.id]
         if (!official) continue
         winner.maps[map.id] = modeMapFromOfficial(map.id, official)
+      }
+    }
+    // v22 将胜者为王旧的数组序号型复活点 UID 迁移为固化稳定 UID。
+    // 只替换内置复活点身份并补齐官方部署载具；用户改名、移动及自建元素均保留。
+    if (sourceVersion < 22) {
+      for (const map of MAPS) {
+        const official = (winnerTakesAllOfficial.maps as unknown as Partial<Record<string, OfficialModeMapData>>)[map.id]
+        if (!official) continue
+        const builtin = modeMapFromOfficial(map.id, official)
+        const current = winner.maps[map.id]
+        if (!current) {
+          winner.maps[map.id] = builtin
+          continue
+        }
+        const usedBuiltin = new Set<string>()
+        const migrated = current.spawns.map((spawn) => {
+          const sameSideStage = builtin.spawns.filter((candidate) => candidate.stageId === spawn.stageId && candidate.side === spawn.side)
+          const coordinateMatch = sameSideStage.find((candidate) => Math.abs(candidate.lat - spawn.lat) < 0.001 && Math.abs(candidate.lng - spawn.lng) < 0.001)
+          const legacyIndex = spawn.uid.match(/(?:attack|defense)-spawn-(\d+)$/)?.[1]
+          const indexMatch = legacyIndex == null ? undefined : sameSideStage[Number(legacyIndex)]
+          const source = builtin.spawns.find((candidate) => candidate.uid === spawn.uid) ?? coordinateMatch ?? indexMatch
+          if (!source) return spawn
+          usedBuiltin.add(source.uid)
+          const vehicleKeys = new Set(spawn.deployVehicles.map((vehicle) => `${vehicle.name}:${vehicle.icon}`))
+          const missingVehicles = source.deployVehicles.filter((vehicle) => !vehicleKeys.has(`${vehicle.name}:${vehicle.icon}`))
+          const deployVehicles = [...spawn.deployVehicles, ...missingVehicles.map((vehicle) => ({ ...vehicle }))]
+          return {
+            ...spawn,
+            uid: source.uid,
+            vehicleDeploy: spawn.vehicleDeploy || deployVehicles.length > 0,
+            vehicleCategories: [...new Set(deployVehicles.map((vehicle) => vehicle.category))],
+            deployVehicles,
+          }
+        })
+        const added = builtin.spawns.filter((spawn) => !usedBuiltin.has(spawn.uid))
+        winner.maps[map.id] = {
+          ...current,
+          spawns: [...migrated, ...added.map((spawn) => ({ ...spawn, deployVehicles: spawn.deployVehicles.map((vehicle) => ({ ...vehicle })) }))],
+          updatedAt: Date.now(),
+        }
       }
     }
   }
@@ -874,6 +992,14 @@ export function buildOfficialModeData(profile: GameModeProfile, gameDataPlatform
         id: definition.id,
         label: definition.label,
         zone: frontline ? { name: frontline.name, latlngs: frontline.points } : null,
+        spawns: [...attackSpawns, ...defenseSpawns].map((spawn) => ({
+          uid: spawn.uid,
+          stageId: definition.id,
+          name: spawn.name,
+          side: spawn.side,
+          lat: spawn.lat,
+          lng: spawn.lng,
+        })),
         attackBaseZone: attackBase?.points ?? [],
         defenseBaseZone: defenseBase?.points ?? [],
         points: objectives.map((point) => ({
@@ -898,7 +1024,7 @@ export function buildOfficialModeData(profile: GameModeProfile, gameDataPlatform
       const stageSpawns = config.spawns.filter((spawn) => spawn.stageId === stage.id)
       const entries = (side: Side): DeployVehicleEntry[] => stageSpawns
         .filter((spawn) => spawn.side === side && spawn.vehicleDeploy)
-        .flatMap((spawn) => spawn.deployVehicles.map((vehicle) => ({ ...vehicle, note: spawn.name })))
+        .flatMap((spawn) => spawn.deployVehicles.map((vehicle) => ({ ...vehicle, spawnUid: spawn.uid, note: spawn.name })))
       deploy[stage.id] = { attack: entries('attack'), defense: entries('defense') }
     }
 

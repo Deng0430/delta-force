@@ -25,7 +25,7 @@ const iconFor = (action: OperatorSkillAction, color: string, attached = false, s
     ? [32, attachedY]
     : [(android ? -8 : -2) - attachedIndex * attachedStep, attachedY]
   return L.divIcon({
-  className: `operator-skill-action-icon${selected ? ' selected' : ''}`,
+  className: `operator-skill-action-icon${action.skillName === '数据飞刀' ? ' cinematic-data-knife' : ''}${action.skillName === '侦察信标' ? ' cinematic-recon-beacon' : ''}${selected ? ' selected' : ''}`,
     html: `<span class="${action.sourceKind === 'tactical-item' ? 'tactical-item' : ''}" style="--skill-side-color:${color};background-image:url('${iconUrl}')"><img src="${iconUrl}" alt="${action.skillName}" draggable="false" />${action.sourceKind === 'tactical-item' ? '' : `<b>${action.skillSlot}</b>`}</span>`,
   iconSize: [24, 24], iconAnchor: attached ? attachedAnchor : [12, 12],
   })

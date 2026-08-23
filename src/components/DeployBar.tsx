@@ -10,6 +10,8 @@ import {
 
 /** 选中的出生点（由 SpawnMarkers 点击触发） */
 export interface DeployTarget {
+  /** 复活点唯一 ID。 */
+  uid: string
   stageId: string
   side: Side
   /** 出生点坐标 [lat, lng] */
@@ -39,12 +41,12 @@ interface DeployBarProps {
  */
 export default function DeployBar({ mapId, view, target, deployByStage, onClose, onDeploy }: DeployBarProps) {
   const list = useMemo<DeployVehicleEntry[]>(() => {
-    if (!target || !target.baseName) return []
+    if (!target) return []
     const stage = (deployByStage ?? DEPLOY_BY_MAP[mapId])?.[target.stageId]
     if (!stage) return []
-    // 官网机制：载具的"备注"(note) === 出生点基地名(baseName) 才展示该载具
+    // 名称只负责显示；载具始终通过稳定复活点 UID 关联。
     return (stage[target.side] ?? [])
-      .filter((v) => v.note === target.baseName)
+      .filter((v) => v.spawnUid === target.uid)
       .map((vehicle) => {
         const current = DEPLOY_VEHICLE_CATALOG.find((item) => item.name === vehicle.name)
           ?? DEPLOY_VEHICLE_CATALOG.find((item) => item.icon === vehicle.icon)

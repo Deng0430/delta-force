@@ -25,7 +25,7 @@ import type {
   WargameState,
 } from './types'
 import { MAP_BY_ID } from './config/maps'
-import { applyTacticalBucket, buildingsBucketOf, createEmptyMapState, createTacticalRound, fieldSupportsBucketOf, loadState, normalizeDrawingGeoJson, normalizeTacticalBucket, saveState, snapshotTacticalBucket, syncActiveTacticalBucket, tacticalBucketKey, vehiclesBucketOf, operatorsBucketOf, connectionsBucketOf, teamsBucketOf, routesBucketOf, wargameOf } from './utils/storage'
+import { APP_STORAGE_VERSION, applyTacticalBucket, buildingsBucketOf, createEmptyMapState, createTacticalRound, fieldSupportsBucketOf, loadState, normalizeDrawingGeoJson, normalizeTacticalBucket, saveState, snapshotTacticalBucket, syncActiveTacticalBucket, tacticalBucketKey, tacticalContextKey, vehiclesBucketOf, operatorsBucketOf, connectionsBucketOf, teamsBucketOf, routesBucketOf, wargameOf } from './utils/storage'
 import { emptyGeoJson, genUid } from './utils/geo'
 import { buildTacticalHtml, downloadText } from './utils/exportTactical'
 import type { CustomVehicleTemplate } from './config/customVehicles'
@@ -70,6 +70,15 @@ const DEFAULT_PROP_VIS: PropVisibility = {
   滑索: true,
   电梯: true,
   固定弹药箱: true,
+}
+
+function createEmptyTacticalContextState(): MapState {
+  const state = createEmptyMapState()
+  state.operators = {
+    attack: buildDefaultOperators('attack'),
+    defense: buildDefaultOperators('defense'),
+  }
+  return state
 }
 
 /**
@@ -173,6 +182,19 @@ export default function App() {
   const isCinematicRouteGrow = isCinematicDemoFrame && cinematicDemoParams.get('routeGrow') === '1'
   const cinematicDefenseDemo = cinematicDemoParams.get('defenseDemo') as 'straight' | 'smooth' | 'freehand' | null
   const isCinematicStylePanelDemo = isCinematicDemoFrame && cinematicDemoParams.get('stylePanelDemo') === '1'
+  const isCinematicRefreshSidebar = isCinematicDemoFrame && cinematicDemoParams.get('refreshSidebarDemo') === '1'
+  const isCinematicObjectiveStates = isCinematicDemoFrame && cinematicDemoParams.get('objectiveStatesDemo') === '1'
+  const isCinematicActionSequence = isCinematicDemoFrame && cinematicDemoParams.get('actionSequenceDemo') === '1'
+  const isCinematicCompletePlan = isCinematicDemoFrame && cinematicDemoParams.get('completePlanDemo') === '1'
+  const isCinematicRoundCopy = isCinematicDemoFrame && cinematicDemoParams.get('roundCopyDemo') === '1'
+  const isCinematicCompassDemo = isCinematicDemoFrame && cinematicDemoParams.get('compassDemo') === '1'
+  const [cinematicActionState, setCinematicActionState] = useState<'idle' | 'support' | 'route' | 'skill' | 'linked'>('idle')
+  const [cinematicActionFocus, setCinematicActionFocus] = useState<'none' | 'support-entry' | 'smoke' | 'deployed' | 'tools-deployed' | 'fireline-button' | 'fireline-active'>('none')
+  const [cinematicActionCursor, setCinematicActionCursor] = useState<{ x: number; y: number } | null>(null)
+  const [cinematicCompletePlanFocus, setCinematicCompletePlanFocus] = useState<'none' | 'support' | 'route' | 'operator' | 'fire'>('none')
+  const [cinematicRoundCopyFocus, setCinematicRoundCopyFocus] = useState<'none' | 'copy' | 'result'>('none')
+  const [cinematicRefreshState, setCinematicRefreshState] = useState<'idle' | 'locked' | 'ready' | 'deploy' | 'route'>('idle')
+  const [cinematicRefreshRunId, setCinematicRefreshRunId] = useState(0)
   const cinematicLayoutPreset = cinematicDemoParams.get('layoutPreset') as 'winnerA' | 'platformCompare' | 'backdrop' | null
   const cinematicDemoMap = cinematicDemoParams.get('map')
   const cinematicDemoStage = cinematicDemoParams.get('stage')
@@ -191,7 +213,7 @@ export default function App() {
   const [modeStore, setModeStore] = useState<ModeConfigStore>(initialModeStore)
   const [modeStageSelection, setModeStageSelection] = useState<Record<string, string>>(() => (
     isCinematicDemoFrame && cinematicDemoMap && cinematicDemoStage
-      ? { [`winner-takes-all:${cinematicDemoMap}`]: cinematicDemoStage }
+      ? { [tacticalContextKey('pc', 'winner-takes-all', cinematicDemoMap)]: cinematicDemoStage }
       : {}
   ))
   const [gameDataPlatform, setGameDataPlatform] = useState<GameDataPlatform>(() =>
@@ -203,17 +225,15 @@ export default function App() {
       ? cinematicDemoMap
       : persisted?.lastMapId && MAP_BY_ID[persisted.lastMapId] ? persisted.lastMapId : 'ascent',
   )
-  const [view, setView] = useState<Side>(persisted?.lastView ?? 'attack')
+  const [view, setView] = useState<Side>(isCinematicObjectiveStates ? 'attack' : persisted?.lastView ?? 'attack')
   const [tool, setTool] = useState<ToolMode>('pan')
   const [maps, setMaps] = useState<MapsData>(() => {
     const base: MapsData = {}
-    for (const id of DEFAULT_MAP_IDS) base[id] = createEmptyMapState()
     if (persisted?.maps) {
-      for (const id of DEFAULT_MAP_IDS) {
-        const saved = persisted.maps[id]
+      for (const [storageKey, saved] of Object.entries(persisted.maps)) {
         if (saved) {
           // 二次兜底：即便持久化数据形状异常（旧数组/HMR 污染），也规范化为分桶形状
-          base[id] = {
+          base[storageKey] = {
             ...createEmptyMapState(),
             ...saved,
             vehicles: vehiclesBucketOf(saved),
@@ -226,9 +246,9 @@ export default function App() {
           }
           // 干员列表为空（v8 迁移或新图）时，初始化默认 5 队×4 人；v10 起桶内含双方（我方+敌方）各 20 人
           for (const side of ['attack', 'defense'] as const) {
-            const bucket = base[id].operators[side]
+            const bucket = base[storageKey].operators[side]
             if (!bucket || bucket.length === 0) {
-              base[id].operators[side] = buildDefaultOperators(side)
+              base[storageKey].operators[side] = buildDefaultOperators(side)
             } else {
               // 兼容 v9 早期数据：干员缺少 operatorId 时按队伍补默认档案
               const fixed = bucket.map((o) => {
@@ -244,34 +264,48 @@ export default function App() {
                 const defaults = buildDefaultOperators(side)
                 const ownDefaults = defaults.filter((o) => o.side === side)
                 const enemyDefaults = defaults.filter((o) => o.side !== side)
-                base[id].operators[side] = [...(own.length ? own : ownDefaults), ...(enemy.length ? enemy : enemyDefaults)]
+                base[storageKey].operators[side] = [...(own.length ? own : ownDefaults), ...(enemy.length ? enemy : enemyDefaults)]
               } else {
-                base[id].operators[side] = fixed
+                base[storageKey].operators[side] = fixed
               }
             }
           }
         }
       }
     }
-    // 无存档、存档不可用或某张新地图尚无兵棋数据时，也必须创建完整的单兵编制。
-    // 每个视角桶都包含当前视角的本方与敌方，各 5 队 × 4 人，共 40 名干员。
     for (const id of DEFAULT_MAP_IDS) {
+      const storageKey = tacticalContextKey(gameDataPlatform, initialModeStore.activeModeId, id)
+      if (!base[storageKey]) base[storageKey] = createEmptyTacticalContextState()
+    }
+    // 无存档、存档不可用或某个新上下文尚无兵棋数据时，也必须创建完整的单兵编制。
+    for (const mapState of Object.values(base)) {
       for (const side of ['attack', 'defense'] as const) {
-        if (base[id].operators[side].length === 0) {
-          base[id].operators[side] = buildDefaultOperators(side)
-        }
+        if (mapState.operators[side].length === 0) mapState.operators[side] = buildDefaultOperators(side)
+      }
+    }
+    const cinematicContextKey = cinematicDemoMap ? tacticalContextKey(gameDataPlatform, initialModeStore.activeModeId, cinematicDemoMap) : ''
+    if (isCinematicRefreshSidebar && cinematicContextKey && base[cinematicContextKey]) {
+      const demoWargame = wargameOf(base[cinematicContextKey])
+      base[cinematicContextKey] = {
+        ...base[cinematicContextKey],
+        wargame: {
+          ...demoWargame,
+          enabled: true,
+          battleContext: {
+            ...demoWargame.battleContext,
+            tickets: { attack: 180, defense: null },
+          },
+        },
       }
     }
     return base
   })
   // 各地图当前激活阶段下标（问题3：点击据点直接切换）
   const [progress, setProgress] = useState<Record<string, number>>(() => {
-    const base: Record<string, number> = Object.fromEntries(DEFAULT_MAP_IDS.map((id) => [id, 0]))
-    if (persisted?.progress) {
-      for (const id of DEFAULT_MAP_IDS) {
-        const v = persisted.progress[id]
-        if (typeof v === 'number' && v >= 0) base[id] = v
-      }
+    const base: Record<string, number> = { ...(persisted?.progress ?? {}) }
+    for (const id of DEFAULT_MAP_IDS) {
+      const storageKey = tacticalContextKey(gameDataPlatform, initialModeStore.activeModeId, id)
+      if (typeof base[storageKey] !== 'number' || base[storageKey] < 0) base[storageKey] = 0
     }
     return base
   })
@@ -311,16 +345,16 @@ export default function App() {
   }, [isCinematicDemoFrame])
   // 左右工具栏折叠 + 图层/道具显示开关（问题1/2/8）+ 画笔设置（问题4）
   const [ui, setUi] = useState(() => ({
-    paletteOpen: device.mobileLayout || isCinematicMapOnly || isCinematicMobileFrame || cinematicLayoutPreset === 'platformCompare' || cinematicLayoutPreset === 'backdrop' ? false : persisted?.ui?.paletteOpen ?? true,
-    panelOpen: device.mobileLayout || isCinematicMapOnly || isCinematicMobileFrame || cinematicLayoutPreset === 'winnerA' || cinematicLayoutPreset === 'platformCompare' || cinematicLayoutPreset === 'backdrop' ? false : persisted?.ui?.panelOpen ?? true,
-    legendOpen: device.mobileLayout || isCinematicMapOnly || Boolean(cinematicDefenseDemo) || cinematicLayoutPreset === 'backdrop' ? false : persisted?.ui?.legendOpen ?? true,
+    paletteOpen: isCinematicRefreshSidebar ? true : isCinematicObjectiveStates || isCinematicActionSequence || device.mobileLayout || isCinematicMapOnly || isCinematicMobileFrame || cinematicLayoutPreset === 'platformCompare' || cinematicLayoutPreset === 'backdrop' ? false : persisted?.ui?.paletteOpen ?? true,
+    panelOpen: isCinematicRefreshSidebar ? false : isCinematicObjectiveStates || isCinematicActionSequence || device.mobileLayout || isCinematicMapOnly || isCinematicMobileFrame || cinematicLayoutPreset === 'winnerA' || cinematicLayoutPreset === 'platformCompare' || cinematicLayoutPreset === 'backdrop' ? false : persisted?.ui?.panelOpen ?? true,
+    legendOpen: isCinematicObjectiveStates || device.mobileLayout || isCinematicMapOnly || Boolean(cinematicDefenseDemo) || cinematicLayoutPreset === 'backdrop' ? false : persisted?.ui?.legendOpen ?? true,
     leftPanelWidth: Math.max(300, Math.min(440, persisted?.ui?.leftPanelWidth ?? 300)),
     layers: {
       props: cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.props ?? true,
-      points: cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.points ?? true,
-      pointsLabels: cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.pointsLabels ?? true,
-      pointsCapture: cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.pointsCapture ?? true,
-      pointsFrontline: cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.pointsFrontline ?? true,
+      points: isCinematicObjectiveStates || cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.points ?? true,
+      pointsLabels: isCinematicObjectiveStates || cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.pointsLabels ?? true,
+      pointsCapture: isCinematicObjectiveStates || cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.pointsCapture ?? true,
+      pointsFrontline: isCinematicObjectiveStates || cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.pointsFrontline ?? true,
       spawns: cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.spawns ?? true,
       zones: cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.zones ?? true,
       vehicleRefresh: persisted?.ui?.layers?.vehicleRefresh ?? true,
@@ -344,9 +378,9 @@ export default function App() {
     },
     // 左侧面板折叠区块展开状态（持久化，收缩/展开侧栏不重置；兼容旧数据默认全部展开）
     sections: {
-      layers: persisted?.ui?.sections?.layers ?? true,
-      props: persisted?.ui?.sections?.props ?? true,
-      points: persisted?.ui?.sections?.points ?? true,
+      layers: isCinematicRefreshSidebar ? false : persisted?.ui?.sections?.layers ?? true,
+      props: isCinematicRefreshSidebar ? false : persisted?.ui?.sections?.props ?? true,
+      points: isCinematicRefreshSidebar ? false : persisted?.ui?.sections?.points ?? true,
       vehicles: persisted?.ui?.sections?.vehicles ?? true,
       wargame: persisted?.ui?.sections?.wargame ?? true,
       vehGroups: persisted?.ui?.sections?.vehGroups ?? {},
@@ -359,17 +393,24 @@ export default function App() {
   const pawnMotionStartedRef = useRef(false)
   const unitCardsStartedRef = useRef(false)
   const routeGrowStartedRef = useRef(false)
+  const refreshDeployStartedRef = useRef(false)
+  const refreshRouteStartedRef = useRef(false)
   const defenseDemoStartedRef = useRef(false)
   const stylePanelDemoStartedRef = useRef(false)
+  const completePlanStartedRef = useRef(false)
   const config = MAP_BY_ID[mapId] ?? MAP_BY_ID.ascent
   const platformStages = useMemo(() => stagesForPlatform(gameDataPlatform), [gameDataPlatform])
   const platformProps = useMemo(() => propsForPlatform(gameDataPlatform), [gameDataPlatform])
   const stages = platformStages[mapId] ?? []
-  const capturedStageIndex = Math.min(progress[mapId] ?? 0, Math.max(0, stages.length - 1))
   const activeModeProfile = useMemo(
     () => modeStore.profiles.find((profile) => profile.id === modeStore.activeModeId) ?? null,
     [modeStore.activeModeId, modeStore.profiles],
   )
+  const activeModeId = activeModeProfile?.id ?? 'attack-defense'
+  const activeTacticalContextKey = tacticalContextKey(gameDataPlatform, activeModeId, mapId)
+  const activeTacticalContextKeyRef = useRef(activeTacticalContextKey)
+  activeTacticalContextKeyRef.current = activeTacticalContextKey
+  const capturedStageIndex = Math.min(progress[activeTacticalContextKey] ?? 0, Math.max(0, stages.length - 1))
   const activeModeMap = useMemo(
     () => activeModeProfile
       ? (activeModeProfile.id === 'attack-defense' ? activeModeProfile.platformMaps?.[gameDataPlatform] : activeModeProfile.maps)?.[mapId]
@@ -379,7 +420,7 @@ export default function App() {
     [activeModeProfile, gameDataPlatform, mapId],
   )
   const gameModeName = activeModeProfile?.name ?? '攻防模式'
-  const modeStageKey = activeModeProfile ? `${activeModeProfile.id}:${mapId}` : ''
+  const modeStageKey = activeModeProfile ? activeTacticalContextKey : ''
   const activeModeStageId = activeModeMap
     ? activeModeMap.stages.some((stage) => stage.id === modeStageSelection[modeStageKey])
       ? modeStageSelection[modeStageKey]
@@ -400,28 +441,53 @@ export default function App() {
   // 第一阶段据点为中立，后续据点为守方。使用 entry key 防止同一张地图
   // 停留期间因普通状态更新而反复覆盖用户手动设置的据点归属。
   useEffect(() => {
-    const entryKey = `${gameDataPlatform}:${activeModeProfile?.id ?? 'attack-defense'}:${mapId}`
+    const entryKey = activeTacticalContextKey
     if (initializedMapEntryRef.current === entryKey) return
     initializedMapEntryRef.current = entryKey
     const entryStages = activeOfficialModeMap?.stages.length ? activeOfficialModeMap.stages : stages
     const firstStageId = entryStages[0]?.id
     if (!firstStageId) return
 
-    setProgress((current) => current[mapId] === 0 ? current : { ...current, [mapId]: 0 })
+    setProgress((current) => current[entryKey] === 0 ? current : { ...current, [entryKey]: 0 })
     if (activeModeProfile) {
-      const entryModeStageKey = `${activeModeProfile.id}:${mapId}`
+      const entryModeStageKey = entryKey
       setModeStageSelection((current) => current[entryModeStageKey] === firstStageId
         ? current
         : { ...current, [entryModeStageKey]: firstStageId })
     }
     setMaps((current) => {
-      const state = current[mapId] ?? createEmptyMapState()
-      const normalized = normalizeObjectivesForStageChange(state, entryStages, 0, 0)
-      return { ...current, [mapId]: normalized }
+      const state = current[entryKey] ?? createEmptyTacticalContextState()
+      const store = state.tacticalBuckets ?? { activeKey: '', buckets: {} }
+      const previousActive = store.activeKey ? store.buckets[store.activeKey] : undefined
+      const buckets = { ...store.buckets }
+      // 先保存持久化投影实际对应的旧桶，再加载第一阶段，避免把上一阶段
+      // 的实时投影误当作 S1 内容。
+      if (previousActive) {
+        const previousSnapshot = snapshotTacticalBucket(state, previousActive.stageId, previousActive.round)
+        buckets[previousSnapshot.key] = previousSnapshot
+      }
+      const existingTarget = buckets[tacticalBucketKey(firstStageId, 1)]
+        ?? Object.values(buckets).filter((bucket) => bucket.stageId === firstStageId).sort((a, b) => a.round - b.round)[0]
+      const emptyTarget = createEmptyMapState()
+      emptyTarget.operators = {
+        attack: operatorsBucketOf(state).attack.map((operator) => ({ ...structuredClone(operator), lat: null, lng: null })),
+        defense: operatorsBucketOf(state).defense.map((operator) => ({ ...structuredClone(operator), lat: null, lng: null })),
+      }
+      const targetBase = existingTarget ?? snapshotTacticalBucket(emptyTarget, firstStageId, 1)
+      const target = {
+        ...targetBase,
+        operators: {
+          attack: targetBase.operators.attack.length ? targetBase.operators.attack : emptyTarget.operators.attack,
+          defense: targetBase.operators.defense.length ? targetBase.operators.defense : emptyTarget.operators.defense,
+        },
+      }
+      buckets[target.key] = target
+      const normalized = normalizeObjectivesForStageChange({ ...state, tacticalBuckets: { activeKey: target.key, buckets } }, entryStages, 0, 0)
+      return { ...current, [entryKey]: applyTacticalBucket({ ...normalized, tacticalBuckets: { activeKey: target.key, buckets } }, target) }
     })
     setSelectedPoint(null)
     setDeployTarget(null)
-  }, [activeModeProfile, activeOfficialModeMap, gameDataPlatform, mapId, stages])
+  }, [activeModeProfile, activeOfficialModeMap, activeTacticalContextKey, stages])
 
   const handleSelectModeStage = useCallback((id: string) => {
     if (!modeStageKey || !activeModeMap?.stages.some((stage) => stage.id === id)) return
@@ -429,7 +495,7 @@ export default function App() {
     const toIndex = activeModeMap.stages.findIndex((stage) => stage.id === id)
     if (toIndex !== fromIndex) {
       setMaps((current) => {
-        const state = current[mapId] ?? createEmptyMapState()
+        const state = current[activeTacticalContextKey] ?? createEmptyTacticalContextState()
         const sourceStage = activeModeStageId || activeOfficialModeMap?.stages?.[fromIndex]?.id || 'S1'
         const sourceBucket = snapshotTacticalBucket(state, sourceStage, wargameOf(state).round)
         const previousStore = state.tacticalBuckets ?? { activeKey: sourceBucket.key, buckets: {} }
@@ -453,34 +519,334 @@ export default function App() {
         }
         stored[target.key] = target
         const staged = { ...normalizeObjectivesForStageChange({ ...state, tacticalBuckets: { activeKey: sourceBucket.key, buckets: stored } }, activeOfficialModeMap?.stages ?? [], fromIndex, toIndex), tacticalBuckets: { activeKey: sourceBucket.key, buckets: stored } }
-        return { ...current, [mapId]: applyTacticalBucket({ ...staged, tacticalBuckets: { activeKey: target.key, buckets: stored } }, target) }
+        return { ...current, [activeTacticalContextKey]: applyTacticalBucket({ ...staged, tacticalBuckets: { activeKey: target.key, buckets: stored } }, target) }
       })
     }
     setModeStageSelection((current) => ({ ...current, [modeStageKey]: id }))
     setSelectedPoint(null)
     setDeployTarget(null)
-  }, [activeModeMap, activeModeStageId, activeOfficialModeMap, mapId, modeStageKey])
+  }, [activeModeMap, activeModeStageId, activeOfficialModeMap, activeTacticalContextKey, modeStageKey])
 
-  const updateMap = useCallback((id: string, fn: (s: MapState) => MapState) => {
+  const updateMap = useCallback((_id: string, fn: (s: MapState) => MapState) => {
     setMaps((prev) => {
-      const before = prev[id] ?? createEmptyMapState()
+      const storageKey = activeTacticalContextKeyRef.current
+      const before = prev[storageKey] ?? createEmptyTacticalContextState()
       const next = fn(before)
-      const tacticalContentChanged =
-        next.vehicles !== before.vehicles
-        || next.buildings !== before.buildings
-        || next.drawings !== before.drawings
-        || next.operators !== before.operators
-        || next.connections !== before.connections
-        || next.teams !== before.teams
-        || next.routes !== before.routes
-        || next.fieldSupports !== before.fieldSupports
-        || next.skillActions !== before.skillActions
-      const synced = tacticalContentChanged
-        ? syncActiveTacticalBucket(next, activeModeStageId ?? stages[capturedStageIndex]?.id ?? 'S1')
-        : next
-      return { ...prev, [id]: synced }
+      // 每次正式状态提交都同步当前阶段/回合桶。拖动预览仍由 Leaflet
+      // 直接处理，只有 dragend 等正式提交会进入这里。
+      const synced = syncActiveTacticalBucket(next, activeModeStageId ?? stages[capturedStageIndex]?.id ?? 'S1')
+      return { ...prev, [storageKey]: synced }
     })
   }, [activeModeStageId, capturedStageIndex, stages])
+
+  useEffect(() => {
+    if (!isCinematicCompletePlan) return
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; focus?: 'none' | 'support' | 'route' | 'operator' | 'fire' }
+      if (data.type === 'cinematic-v010-complete-plan-focus' && data.focus) setCinematicCompletePlanFocus(data.focus)
+    }
+    window.addEventListener('message', onMessage)
+    if (!completePlanStartedRef.current) {
+      completePlanStartedRef.current = true
+      updateMap(mapId, (current) => {
+        const operators = operatorsBucketOf(current)
+        const source = operators[view].find((operator) => operator.side === view && operator.team === 'A') ?? buildDefaultOperators(view)[0]
+        const operator: OperatorUnit = { ...source, uid: 'cinematic_complete_operator', name: '麦晓雯', side: view, team: 'A', operatorId: '10016', cls: 'recon', status: 'alive', lat: -118, lng: 96, rotation: 38, fireLineEnabled: true, fireLineLength: 82 }
+        const teamMarker: TeamMarker = { uid: 'cinematic_complete_team', side: view, team: 'A', role: 'infantry', name: 'A队突击组', lat: -127, lng: 77, rotation: 28 }
+        const vehicle = { uid: 'cinematic_complete_vehicle', name: '主战坦克', category: 'tank' as const, side: view, team: 'A' as const, badge: '坦', iconUrl: '/icons/vehicles/legend/主战坦克.png', lat: -109, lng: 84, stageId: activeModeStageId ?? 'S1', rotation: 58, fireLineEnabled: true, fireLineLength: 70, custom: true }
+        const building = { uid: 'cinematic_complete_building', kind: 'fixed-machine-gun' as const, name: '固定机枪', side: view, team: 'A' as const, lat: -102, lng: 111, stageId: activeModeStageId ?? 'S1', rotation: 15 }
+        const route: TacticalRoute = { uid: 'cinematic_complete_route', side: view, team: 'A', teamMarkerUid: teamMarker.uid, anchorMode: 'team', name: 'A队烟幕后侧翼推进', showLabel: true, orderType: 'flank', status: 'executing', color: '#e54843', lineStyle: 'dashed', geometryType: 'curve', opacity: 1, strokeWidth: 5, waypoints: [[-127,77],[-119,88],[-126,106],[-108,124]], operatorIds: [operator.uid], vehicleIds: [vehicle.uid], createdAt: Date.now() }
+        const currentWargame = wargameOf(current)
+        return {
+          ...current,
+          operators: { ...operators, [view]: [operator] },
+          teams: { ...teamsBucketOf(current), [view]: [teamMarker] },
+          vehicles: { ...vehiclesBucketOf(current), [view]: [vehicle] },
+          buildings: { ...buildingsBucketOf(current), [view]: [building] },
+          routes: { ...routesBucketOf(current), [view]: [route] },
+          fieldSupports: { ...fieldSupportsBucketOf(current), [view]: [{ uid: 'cinematic_complete_smoke', definitionId: 'smoke-cover', name: '烟幕覆盖', iconUrl: '/icons/field-supports/deploy_ymfg.png', side: view, lat: -116, lng: 108, radius: 82, stageId: activeModeStageId ?? 'S1' }] },
+          skillActions: [
+            { uid: 'cinematic_complete_skill', sourceOperatorUid: operator.uid, operatorId: '10016', skillSlot: 3, skillName: '数据飞刀', kind: 'gadget', sourceKind: 'skill', iconUrl: '/icons/operators/skills/10016/skill_3.png', placementMode: 'trajectory', side: view, geometry: { type: 'trajectory', points: [[-118,96],[-111,107]] }, visible: true, createdAt: Date.now() },
+            { uid: 'cinematic_complete_beacon', sourceOperatorUid: operator.uid, operatorId: '10016', skillName: '侦察信标', kind: 'gadget', sourceKind: 'tactical-item', tacticalItemId: 'recon-beacon', tacticalItemUseType: 'placement', iconUrl: '/icons/operators/tactical-items/recon-beacon.png', placementMode: 'target-point', side: view, geometry: { type: 'point', position: [-121,116] }, visible: true, createdAt: Date.now() },
+          ],
+          wargame: { ...currentWargame, enabled: true, showFireLines: true, showRouteLabels: true },
+        }
+      })
+    }
+    return () => window.removeEventListener('message', onMessage)
+  }, [activeModeStageId, isCinematicCompletePlan, mapId, updateMap, view])
+
+  useEffect(() => {
+    if (!isCinematicRefreshSidebar) return
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; state?: 'idle' | 'locked' | 'ready' | 'deploy' | 'route'; runId?: number }
+      if (data.type !== 'cinematic-v010-refresh-state' || !data.state) return
+      setCinematicRefreshState(data.state)
+      setCinematicRefreshRunId(data.runId ?? Date.now())
+      if (data.state === 'deploy') {
+        refreshDeployStartedRef.current = false
+        refreshRouteStartedRef.current = false
+      }
+      setUi((current) => ({
+        ...current,
+        paletteOpen: data.state === 'deploy' || data.state === 'route' ? false : true,
+        panelOpen: false,
+      }))
+      updateMap(mapId, (current) => {
+        const currentWargame = wargameOf(current)
+        const currentVehicles = vehiclesBucketOf(current)[view]
+        const demoVehicleIds = new Set(currentVehicles.filter((vehicle) => vehicle.sourceType === 'vehicle-refresh').map((vehicle) => vehicle.uid))
+        const nextVehicles = data.state === 'deploy'
+          ? currentVehicles.filter((vehicle) => !demoVehicleIds.has(vehicle.uid))
+          : currentVehicles
+        const currentRoutes = routesBucketOf(current)[view]
+        const nextRoutes = data.state === 'deploy'
+          ? currentRoutes.filter((route) => !(route.anchorMode === 'vehicle' && route.anchorVehicleUid && demoVehicleIds.has(route.anchorVehicleUid)))
+          : currentRoutes
+        return {
+          ...current,
+          vehicles: { ...vehiclesBucketOf(current), [view]: nextVehicles },
+          routes: { ...routesBucketOf(current), [view]: nextRoutes },
+          wargame: {
+            ...currentWargame,
+            usedVehicleRefreshRuleIds: data.state === 'deploy'
+              ? { ...currentWargame.usedVehicleRefreshRuleIds, [view]: [] }
+              : currentWargame.usedVehicleRefreshRuleIds,
+            enabled: true,
+            battleContext: {
+              ...currentWargame.battleContext,
+              tickets: { attack: data.state === 'ready' || data.state === 'deploy' || data.state === 'route' ? 145 : 180, defense: null },
+            },
+          },
+        }
+      })
+      window.requestAnimationFrame(() => {
+        const context = document.querySelector<HTMLDetailsElement>('.wg-battle-context')
+        if (!context) return
+        context.open = true
+        if (data.state === 'locked' || data.state === 'ready') context.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      })
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [isCinematicRefreshSidebar, mapId, updateMap, view])
+
+  useEffect(() => {
+    if (!isCinematicObjectiveStates) return
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as {
+        type?: string
+        owner?: 'attack' | 'neutral' | 'defense'
+        capturingSide?: 'attack' | 'defense' | null
+        progress?: number
+        selectPoint?: boolean
+      }
+      if (data.type !== 'cinematic-v010-objective-owner' || !data.owner) return
+      const owner = data.owner
+      const progressValue = Number.isFinite(data.progress) ? Math.max(0, Math.min(100, data.progress!)) : owner === 'neutral' ? 0 : 100
+      const capturingSide = data.capturingSide === 'attack' || data.capturingSide === 'defense' ? data.capturingSide : null
+      if (data.selectPoint) {
+        const stage = pointPanelStages.find((entry) => entry.id === (activeModeStageId ?? 'S1')) ?? pointPanelStages[0]
+        const point = stage?.points.find((entry) => entry.name === '据点A')
+        if (stage && point) setSelectedPoint({ stageId: stage.id, point })
+      } else {
+        setSelectedPoint(null)
+      }
+      updateMap(mapId, (current) => {
+        const currentWargame = wargameOf(current)
+        const nextState: TacticalObjectiveState = { owner, capturingSide, progress: progressValue }
+        return {
+          ...current,
+          wargame: {
+            ...currentWargame,
+            enabled: true,
+            battleContext: {
+              ...currentWargame.battleContext,
+              objectiveStates: {
+                ...currentWargame.battleContext.objectiveStates,
+                '据点A': nextState,
+              },
+            },
+          },
+        }
+      })
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [activeModeStageId, isCinematicObjectiveStates, mapId, pointPanelStages, updateMap])
+
+  useEffect(() => {
+    if (!isCinematicActionSequence) return
+    let pendingTimers: number[] = []
+    const later = (delay: number, task: () => void) => pendingTimers.push(window.setTimeout(task, delay))
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; state?: 'idle' | 'support' | 'route' | 'skill' | 'linked' }
+      if (data.type !== 'cinematic-v010-action-state' || !data.state) return
+      pendingTimers.forEach(window.clearTimeout)
+      pendingTimers = []
+      const stateName = data.state
+      setCinematicActionState(stateName)
+      setCinematicActionFocus('none')
+      setCinematicActionCursor(null)
+      document.querySelectorAll('.cinematic-demo-target').forEach((element) => element.classList.remove('cinematic-demo-target'))
+      setUi((current) => ({ ...current, paletteOpen: stateName === 'support' || stateName === 'skill', panelOpen: false, sections: { ...current.sections, wargame: true } }))
+      const renderPhase = (phase: 'empty' | 'team' | 'route2' | 'route3' | 'route4' | 'operator' | 'skill' | 'item' | 'linked') => updateMap(mapId, (current) => {
+        const operators = operatorsBucketOf(current)
+        const teams = teamsBucketOf(current)
+        const source = operators[view].find((operator) => operator.side === view && operator.team === 'A') ?? buildDefaultOperators(view)[0]
+        const demoOperator: OperatorUnit = { ...source, name: '麦晓雯', side: view, team: 'A', operatorId: '10016', cls: 'recon', status: 'alive', lat: -121, lng: 83, rotation: 32, fireLineEnabled: phase === 'linked', fireLineLength: 58 }
+        const teamMarker: TeamMarker = { uid: 'cinematic_action_team', side: view, team: 'A', role: 'infantry', name: 'A队侦察组', lat: -119, lng: 79, rotation: 20 }
+        const allRoutePoints: [number, number][] = [[-119,79],[-108,89],[-121,105],[-104,123]]
+        const routePointCount = phase === 'route2' ? 2 : phase === 'route3' ? 3 : ['route4','operator','skill','item','linked'].includes(phase) ? 4 : 0
+        const route: TacticalRoute = { uid: 'cinematic_action_route', side: view, team: 'A', teamMarkerUid: teamMarker.uid, anchorMode: 'team', name: 'A 队侧翼推进', showLabel: true, orderType: 'flank', status: 'executing', color: '#01ff84', lineStyle: 'solid', geometryType: 'curve', opacity: 1, strokeWidth: 5, waypoints: allRoutePoints.slice(0, routePointCount), operatorIds: [], vehicleIds: [], createdAt: Date.now() }
+        const showTeam = phase !== 'empty'
+        const showOperator = ['operator','skill','item','linked'].includes(phase)
+        const skillActions = [] as MapState['skillActions']
+        if (['skill','item','linked'].includes(phase)) skillActions.push({ uid: 'cinematic_action_skill', sourceOperatorUid: demoOperator.uid, operatorId: '10016', skillSlot: 3, skillName: '数据飞刀', kind: 'gadget', sourceKind: 'skill', iconUrl: '/icons/operators/skills/10016/skill_3.png', placementMode: 'trajectory', side: view, geometry: { type: 'trajectory', points: [[-121,83],[-115,94],[-109,104]] }, visible: true, createdAt: Date.now() })
+        if (['item','linked'].includes(phase)) skillActions.push({ uid: 'cinematic_action_item', sourceOperatorUid: demoOperator.uid, operatorId: '10016', skillName: '侦察信标', kind: 'gadget', sourceKind: 'tactical-item', tacticalItemId: 'recon-beacon', tacticalItemUseType: 'placement', iconUrl: '/icons/operators/tactical-items/recon-beacon.png', placementMode: 'target-point', side: view, geometry: { type: 'point', position: [-129,96] }, effectArea: false, visible: true, createdAt: Date.now() })
+        const currentWargame = wargameOf(current)
+        const supports = fieldSupportsBucketOf(current)
+        const fallbackSupport = { uid: 'cinematic_action_support', definitionId: 'smoke-cover', name: '烟幕覆盖', iconUrl: '/icons/field-supports/deploy_ymfg.png', side: view, lat: -112, lng: 101, radius: 85, stageId: activeModeStageId ?? 'S1' }
+        return { ...current,
+          operators: { ...operators, [view]: showOperator ? [demoOperator, ...operators[view].filter((operator) => operator.uid !== source.uid)] : operators[view].map((operator) => operator.uid === source.uid ? { ...operator, lat: null, lng: null, fireLineEnabled: false } : operator) },
+          teams: { ...teams, [view]: showTeam ? [teamMarker] : [] },
+          routes: { ...routesBucketOf(current), [view]: routePointCount >= 2 ? [route] : [] },
+          fieldSupports: { ...supports, [view]: stateName === 'support' ? [] : supports[view].length ? supports[view] : [fallbackSupport] },
+          skillActions,
+          wargame: { ...currentWargame, enabled: true, showFireLines: true, showRouteLabels: true },
+        }
+      })
+      const showMapCursor = (lat: number, lng: number) => {
+        const map = mapRef.current
+        if (!map) return
+        const point = map.latLngToContainerPoint([lat, lng])
+        const rect = map.getContainer().getBoundingClientRect()
+        setCinematicActionCursor({ x: rect.left + point.x, y: rect.top + point.y })
+      }
+      const focusElement = (element: HTMLElement | null | undefined) => {
+        document.querySelectorAll('.cinematic-demo-target').forEach((target) => target.classList.remove('cinematic-demo-target'))
+        if (!element) return
+        element.classList.add('cinematic-demo-target')
+        element.focus({ preventScroll: true })
+        element.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        const rect = element.getBoundingClientRect()
+        setCinematicActionCursor({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
+      }
+      const clickMapAt = (lat: number, lng: number) => {
+        const map = mapRef.current
+        if (!map) return
+        const container = map.getContainer()
+        const point = map.latLngToContainerPoint([lat, lng])
+        const rect = container.getBoundingClientRect()
+        // 使用真实 DOM 鼠标事件走 Leaflet 的正常输入链路。这样技能部署组件会像
+        // 用户点击地图时一样创建对象、结束草稿并自动收起顶部部署提示。
+        container.dispatchEvent(new MouseEvent('click', {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+          clientX: rect.left + point.x,
+          clientY: rect.top + point.y,
+          button: 0,
+        }))
+      }
+      const setDemoFireLineLength = (length: number) => updateMap(mapId, (current) => {
+        const operators = operatorsBucketOf(current)
+        return {
+          ...current,
+          operators: {
+            ...operators,
+            [view]: operators[view].map((operator) => operator.operatorId === '10016' && operator.team === 'A'
+              ? { ...operator, fireLineLength: length }
+              : operator),
+          },
+        }
+      })
+      if (stateName === 'support') {
+        renderPhase('empty')
+        later(800, () => {
+          const button = document.querySelector<HTMLButtonElement>('.wg-support-entry')
+          button?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+          const rect = button?.getBoundingClientRect()
+          if (rect) setCinematicActionCursor({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
+          setCinematicActionFocus('support-entry')
+        })
+        later(1800, () => document.querySelector<HTMLButtonElement>('.wg-support-entry')?.click())
+        later(2750, () => [...document.querySelectorAll<HTMLButtonElement>('.wg-support-list button')].find((entry) => entry.textContent?.includes('烟幕覆盖'))?.scrollIntoView({ block: 'center', behavior: 'smooth' }))
+        later(3200, () => {
+          const button = [...document.querySelectorAll<HTMLButtonElement>('.wg-support-list button')].find((entry) => entry.textContent?.includes('烟幕覆盖'))
+          const rect = button?.getBoundingClientRect()
+          if (rect) setCinematicActionCursor({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
+          setCinematicActionFocus('smoke')
+        })
+        later(4700, () => [...document.querySelectorAll<HTMLButtonElement>('.wg-support-list button')].find((button) => button.textContent?.includes('烟幕覆盖'))?.click())
+        later(5400, () => { setCinematicActionFocus('deployed'); setCinematicActionCursor(null) })
+      } else if (stateName === 'route') {
+        showMapCursor(-119,79); later(700, () => renderPhase('team'))
+        later(1900, () => showMapCursor(-108,89)); later(2400, () => renderPhase('route2'))
+        later(4000, () => showMapCursor(-121,105)); later(4600, () => renderPhase('route3'))
+        later(6200, () => showMapCursor(-104,123)); later(6800, () => renderPhase('route4')); later(7900, () => setCinematicActionCursor(null))
+      } else if (stateName === 'skill') {
+        renderPhase('route4')
+        later(600, () => focusElement(document.querySelector<HTMLElement>('.wg-unit-tabs button:first-child')))
+        later(1200, () => document.querySelector<HTMLButtonElement>('.wg-unit-tabs button:first-child')?.click())
+        later(1900, () => focusElement(document.querySelector<HTMLSelectElement>('.wg-side.own .wg-team[open] .wg-member .wg-operator-select')))
+        later(2700, () => {
+          const select = document.querySelector<HTMLSelectElement>('.wg-side.own .wg-team[open] .wg-member .wg-operator-select')
+          if (!select) return
+          select.value = '10016'; select.dispatchEvent(new Event('change', { bubbles: true }))
+        })
+        later(3500, () => focusElement(document.querySelector<HTMLButtonElement>('.wg-side.own .wg-team[open] .wg-member .wg-op-deploy')))
+        later(4200, () => document.querySelector<HTMLButtonElement>('.wg-side.own .wg-team[open] .wg-member .wg-op-deploy')?.click())
+        later(4850, () => { setUi((current) => ({ ...current, paletteOpen: false })); setCinematicActionCursor(null); document.querySelectorAll('.cinematic-demo-target').forEach((target) => target.classList.remove('cinematic-demo-target')) })
+        later(5500, () => document.querySelector<HTMLElement>('.op-marker-wrap .op-marker')?.click())
+        later(6000, () => document.querySelector<HTMLButtonElement>('.op-marker-wrap .op-info')?.click())
+        later(6500, () => focusElement([...document.querySelectorAll<HTMLButtonElement>('.op-cascade-main .op-bubble-item')].find((button) => button.textContent?.includes('使用技能'))))
+        later(7000, () => [...document.querySelectorAll<HTMLButtonElement>('.op-cascade-main .op-bubble-item')].find((button) => button.textContent?.includes('使用技能'))?.click())
+        later(7500, () => focusElement([...document.querySelectorAll<HTMLButtonElement>('.op-cascade-skill')].find((button) => button.textContent?.includes('数据飞刀'))))
+        later(8000, () => [...document.querySelectorAll<HTMLButtonElement>('.op-cascade-skill')].find((button) => button.textContent?.includes('数据飞刀'))?.click())
+        later(8350, () => showMapCursor(-109,104)); later(8800, () => clickMapAt(-109,104))
+        later(9000, () => { setCinematicActionCursor(null) })
+        later(9400, () => { setCinematicActionFocus('none'); document.querySelector<HTMLElement>('.op-marker-wrap .op-marker')?.click() })
+        later(9800, () => document.querySelector<HTMLButtonElement>('.op-marker-wrap .op-info')?.click())
+        later(10200, () => focusElement([...document.querySelectorAll<HTMLButtonElement>('.op-cascade-main .op-bubble-item')].find((button) => button.textContent?.includes('使用战术道具'))))
+        later(10650, () => [...document.querySelectorAll<HTMLButtonElement>('.op-cascade-main .op-bubble-item')].find((button) => button.textContent?.includes('使用战术道具'))?.click())
+        later(11200, () => focusElement([...document.querySelectorAll<HTMLElement>('.op-tactical-item')].find((article) => article.textContent?.includes('侦察信标'))?.querySelector<HTMLButtonElement>('.op-tactical-item-actions button')))
+        later(11700, () => [...document.querySelectorAll<HTMLElement>('.op-tactical-item')].find((article) => article.textContent?.includes('侦察信标'))?.querySelector<HTMLButtonElement>('.op-tactical-item-actions button')?.click())
+        later(12100, () => showMapCursor(-129,96)); later(12550, () => clickMapAt(-129,96))
+        later(12750, () => { setCinematicActionFocus('tools-deployed'); setCinematicActionCursor(null) })
+        later(13300, () => { document.querySelectorAll('.cinematic-demo-target').forEach((target) => target.classList.remove('cinematic-demo-target')) })
+      } else if (stateName === 'linked') {
+        renderPhase('item')
+        later(650, () => focusElement(document.querySelector<HTMLElement>('.op-marker-wrap .op-marker')))
+        later(1450, () => {
+          setCinematicActionFocus('fireline-button')
+          focusElement(document.querySelector<HTMLButtonElement>('.op-marker-wrap .op-fireline'))
+        })
+        later(2350, () => document.querySelector<HTMLButtonElement>('.op-marker-wrap .op-fireline')?.click())
+        later(3100, () => {
+          const marker = document.querySelector<HTMLElement>('.op-marker-wrap .op-marker')
+          focusElement(marker)
+          marker?.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -100 }))
+        })
+        later(4200, () => {
+          const marker = document.querySelector<HTMLElement>('.op-marker-wrap .op-marker')
+          marker?.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -100 }))
+        })
+        later(5300, () => focusElement(document.querySelector<HTMLButtonElement>('.op-marker-wrap .op-fireline')))
+        later(5850, () => setDemoFireLineLength(36))
+        later(6450, () => setDemoFireLineLength(68))
+        later(7050, () => setDemoFireLineLength(96))
+        later(7800, () => {
+          setCinematicActionFocus('fireline-active')
+          setCinematicActionCursor(null)
+          document.querySelectorAll('.cinematic-demo-target').forEach((target) => target.classList.remove('cinematic-demo-target'))
+        })
+      }
+      else renderPhase('empty')
+    }
+    window.addEventListener('message', onMessage)
+    return () => { pendingTimers.forEach(window.clearTimeout); window.removeEventListener('message', onMessage) }
+  }, [activeModeStageId, isCinematicActionSequence, mapId, updateMap, view])
 
   const handleOpenModeEditor = useCallback(() => {
     const editor = platform.openPath(
@@ -610,19 +976,19 @@ export default function App() {
   const pushEntry = useCallback(
     (before: MapStateSnapshot, after: MapStateSnapshot) => {
       if (sameState(before, after)) return
-      const key: HistoryKey = `${mapId}:${view}`
+      const key: HistoryKey = `${activeTacticalContextKey}:${view}`
       const bucket = historyRef.current[key] ?? (historyRef.current[key] = { undo: [], redo: [] })
       bucket.undo.push({ before, after })
       bucket.redo = []
       setHistVersion((v) => v + 1)
     },
-    [mapId, view, sameState],
+    [activeTacticalContextKey, view, sameState],
   )
 
   /** 载具类操作的统一入栈入口：mutator 为纯函数（输入当前视角载具数组 → 输出新数组） */
   const commitVehicleChange = useCallback(
     (mutator: (vs: VehicleItem[]) => VehicleItem[]) => {
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const before = cloneState(cur)
       updateMap(mapId, (s) => {
         const bucket = vehiclesBucketOf(s)
@@ -643,7 +1009,7 @@ export default function App() {
   /** 绘制操作提交（LayerManager 上报 before/after GeoJSON，App 统一入栈 + 落盘） */
   const handleCommitDraw = useCallback(
     (beforeStr: string, afterStr: string) => {
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const curBucket = vehiclesBucketOf(cur)
       const ops = operatorsBucketOf(cur)
       const conns = connectionsBucketOf(cur)
@@ -1267,26 +1633,26 @@ export default function App() {
   // 撤回/恢复按钮状态：从当前 地图+视角 的栈长度直接派生
   // histVersion 在此处被读取，驱动栈变化后的按钮置灰状态重渲染
   void histVersion
-  const undoCount = historyRef.current[`${mapId}:${view}`]?.undo.length ?? 0
-  const redoCount = historyRef.current[`${mapId}:${view}`]?.redo.length ?? 0
+  const undoCount = historyRef.current[`${activeTacticalContextKey}:${view}`]?.undo.length ?? 0
+  const redoCount = historyRef.current[`${activeTacticalContextKey}:${view}`]?.redo.length ?? 0
 
   const handleUndo = useCallback(() => {
-    const bucket = historyRef.current[`${mapId}:${view}`]
+    const bucket = historyRef.current[`${activeTacticalContextKey}:${view}`]
     const entry = bucket?.undo.pop()
     if (!entry) return
     bucket.redo.push(entry)
     updateMap(mapId, (state) => ({ ...state, ...entry.before }))
     setHistVersion((v) => v + 1)
-  }, [mapId, updateMap, view])
+  }, [activeTacticalContextKey, mapId, updateMap, view])
 
   const handleRedo = useCallback(() => {
-    const bucket = historyRef.current[`${mapId}:${view}`]
+    const bucket = historyRef.current[`${activeTacticalContextKey}:${view}`]
     const entry = bucket?.redo.pop()
     if (!entry) return
     bucket.undo.push(entry)
     updateMap(mapId, (state) => ({ ...state, ...entry.after }))
     setHistVersion((v) => v + 1)
-  }, [mapId, updateMap, view])
+  }, [activeTacticalContextKey, mapId, updateMap, view])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1329,7 +1695,7 @@ export default function App() {
   // 自动持久化（v14：载具队伍 + 行动指令 V2 + 干员独立任务；旧版本由 storage 统一迁移）
   useEffect(() => {
     if (isCinematicDemoFrame) return
-    const snapshot = { version: 16 as const, lastMapId: mapId, lastView: view, maps, progress, plans, ui }
+    const snapshot = { version: APP_STORAGE_VERSION, lastMapId: mapId, lastView: view, maps, progress, plans, ui }
     // 桌面端连续编辑时合并密集写入；Android 保留已验收的持久化行为。
     if (platform.kind === 'android') {
       saveState(snapshot)
@@ -1401,8 +1767,8 @@ export default function App() {
 
   const handleMapReady = useCallback((m: L.Map) => {
     mapRef.current = m
-    if (isCinematicTouchPrinciples || isCinematicPawnMotion || isCinematicUnitCards || isCinematicRouteGrow || cinematicDefenseDemo || isCinematicStylePanelDemo) setCinematicTouchMap(m)
-  }, [cinematicDefenseDemo, isCinematicPawnMotion, isCinematicRouteGrow, isCinematicStylePanelDemo, isCinematicTouchPrinciples, isCinematicUnitCards])
+    if (isCinematicTouchPrinciples || isCinematicPawnMotion || isCinematicUnitCards || isCinematicRouteGrow || cinematicDefenseDemo || isCinematicStylePanelDemo || isCinematicRefreshSidebar || isCinematicCompassDemo) setCinematicTouchMap(m)
+  }, [cinematicDefenseDemo, isCinematicCompassDemo, isCinematicPawnMotion, isCinematicRefreshSidebar, isCinematicRouteGrow, isCinematicStylePanelDemo, isCinematicTouchPrinciples, isCinematicUnitCards])
 
   const handleLayerChange = useCallback((key: keyof LayerVisibility, value: boolean) => {
     setUi((u) => {
@@ -1446,7 +1812,7 @@ export default function App() {
     (uid: string, rotation: number) => {
       const ses = rotateSessionRef.current[uid]
       if (!ses) {
-        const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+        const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
         rotateSessionRef.current[uid] = { before: cloneState(cur), timer: 0 }
       }
       updateMap(mapId, (s) => {
@@ -1459,7 +1825,7 @@ export default function App() {
       const s = rotateSessionRef.current[uid]
       clearTimeout(s.timer)
       s.timer = window.setTimeout(() => {
-        const cur2 = mapsRef.current[mapId] ?? createEmptyMapState()
+        const cur2 = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
         pushEntry(s.before, cloneState(cur2))
         delete rotateSessionRef.current[uid]
       }, 300)
@@ -1477,7 +1843,7 @@ export default function App() {
   /** 快捷切换载具阵营（攻↔守）：底色随视角实时判定，切换 side 后自动反转 */
   const handleToggleVehicleSide = useCallback(
     (uid: string) => {
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const before = cloneState(cur)
       const vehicle = vehiclesBucketOf(cur)[view].find((item) => item.uid === uid)
       if (!vehicle) return
@@ -1499,7 +1865,7 @@ export default function App() {
   /** 载具队伍角标点击后循环切换所属队伍。 */
   const handleVehicleTeamChange = useCallback(
     (uid: string, team?: OperatorTeam) => {
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const before = cloneState(cur)
       const nextVehicles = vehiclesBucketOf(cur)[view].map((vehicle) => vehicle.uid === uid ? { ...vehicle, team } : vehicle)
       const nextRoutes = routesBucketOf(cur)[view].map((route) =>
@@ -1556,7 +1922,7 @@ export default function App() {
       stageId: stages[capturedStageIndex]?.id ?? '',
       rotation: 0,
     }
-    const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+    const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
     const before = cloneState(cur)
     const nextBuildings = [...buildingsBucketOf(cur)[view], building]
     updateMap(mapId, (state) => ({ ...state, buildings: { ...buildingsBucketOf(state), [view]: nextBuildings } }))
@@ -1565,7 +1931,7 @@ export default function App() {
   }, [capturedStageIndex, cloneState, mapId, pushEntry, stages, updateMap, view])
 
   const handleMoveBuilding = useCallback((uid: string, lat: number, lng: number) => {
-    const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+    const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
     const before = cloneState(cur)
     const originalBuilding = buildingsBucketOf(cur)[view].find((item) => item.uid === uid)
     const nextBuildings = buildingsBucketOf(cur)[view].map((item) => item.uid === uid ? { ...item, lat, lng } : item)
@@ -1597,7 +1963,7 @@ export default function App() {
   const handleRotateBuilding = useCallback((uid: string, rotation: number) => {
     const session = buildingRotateSessionRef.current[uid]
     if (!session) {
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       buildingRotateSessionRef.current[uid] = { before: cloneState(cur), timer: 0 }
     }
     updateMap(mapId, (state) => {
@@ -1607,7 +1973,7 @@ export default function App() {
     const active = buildingRotateSessionRef.current[uid]
     clearTimeout(active.timer)
     active.timer = window.setTimeout(() => {
-      const current = mapsRef.current[mapId] ?? createEmptyMapState()
+      const current = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       pushEntry(active.before, cloneState(current))
       delete buildingRotateSessionRef.current[uid]
     }, 300)
@@ -1621,7 +1987,7 @@ export default function App() {
   }, [mapId, updateMap, view])
 
   const handleToggleBuildingSide = useCallback((uid: string) => {
-    const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+    const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
     const before = cloneState(cur)
     const nextBuildings = buildingsBucketOf(cur)[view].map((item) => item.uid === uid
       ? { ...item, side: (item.side === 'attack' ? 'defense' : 'attack') as Side }
@@ -1631,7 +1997,7 @@ export default function App() {
   }, [cloneState, mapId, pushEntry, updateMap, view])
 
   const handleBuildingTeamChange = useCallback((uid: string, team?: OperatorTeam) => {
-    const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+    const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
     const before = cloneState(cur)
     const nextBuildings = buildingsBucketOf(cur)[view].map((item) => item.uid === uid ? { ...item, team } : item)
     updateMap(mapId, (state) => ({ ...state, buildings: { ...buildingsBucketOf(state), [view]: nextBuildings } }))
@@ -1639,7 +2005,7 @@ export default function App() {
   }, [cloneState, mapId, pushEntry, updateMap, view])
 
   const handleDeleteBuilding = useCallback((uid: string) => {
-    const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+    const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
     const before = cloneState(cur)
     const nextBuildings = buildingsBucketOf(cur)[view].filter((item) => item.uid !== uid)
     const currentRoutes = routesBucketOf(cur)[view]
@@ -1652,7 +2018,7 @@ export default function App() {
 
   const handleMoveVehicle = useCallback(
     (uid: string, lat: number, lng: number) => {
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const before = cloneState(cur)
       const nextVehicles = vehiclesBucketOf(cur)[view].map((vehicle) => vehicle.uid === uid ? { ...vehicle, lat, lng } : vehicle)
       const anchored = routesBucketOf(cur)[view].map((route) =>
@@ -1676,8 +2042,7 @@ export default function App() {
   )
 
   // 点击出生点：弹出底部载具部署栏（仅基地类出生点有载具，附属复活点 baseName=null 不弹）
-  const handleSpawnSelect = useCallback((spawn: { stageId: string; side: Side; pos: [number, number]; baseName: string | null }) => {
-    if (!spawn.baseName) return
+  const handleSpawnSelect = useCallback((spawn: { uid: string; stageId: string; side: Side; pos: [number, number]; baseName: string | null }) => {
     setDeployTarget(spawn)
   }, [])
 
@@ -1716,7 +2081,7 @@ export default function App() {
     point: Omit<ModeVehicleRefreshPoint, 'verification'>,
     force: boolean,
   ) => {
-    const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+    const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
     const currentWargame = wargameOf(cur)
     if (currentWargame.usedVehicleRefreshRuleIds[view].includes(rule.uid) || rule.action !== 'refresh') return
     if (!force && activeOfficialModeMap && !evaluateVehicleRefreshRule(rule, currentWargame.battleContext, {
@@ -1755,8 +2120,106 @@ export default function App() {
     setTool('pan')
   }, [activeModeStageId, activeOfficialModeMap, cloneState, mapId, pointPanelStageIndex, pushEntry, updateMap, view])
 
+  useEffect(() => {
+    if (!isCinematicRefreshSidebar || !cinematicTouchMap) return
+    if (cinematicRefreshState !== 'deploy' && cinematicRefreshState !== 'route') return
+    if (cinematicRefreshState === 'deploy' && refreshDeployStartedRef.current) return
+    if (cinematicRefreshState === 'route' && refreshRouteStartedRef.current) return
+    if (cinematicRefreshState === 'deploy') refreshDeployStartedRef.current = true
+    else refreshRouteStartedRef.current = true
+
+    const map = cinematicTouchMap
+    const container = map.getContainer()
+    const touchPoint = document.createElement('div')
+    touchPoint.className = 'app-touch-demo-point cinematic-refresh-touch'
+    container.appendChild(touchPoint)
+    const timers: number[] = []
+    const later = (delay: number, action: () => void) => timers.push(window.setTimeout(action, delay))
+    const showTouch = (x: number, y: number) => {
+      const bounds = container.getBoundingClientRect()
+      touchPoint.style.left = `${x - bounds.left}px`
+      touchPoint.style.top = `${y - bounds.top}px`
+      touchPoint.classList.add('visible')
+      touchPoint.classList.remove('contact')
+      void touchPoint.offsetWidth
+      touchPoint.classList.add('contact')
+    }
+    const clickElement = (element: HTMLElement, hideDelay = 180) => {
+      const bounds = element.getBoundingClientRect()
+      const x = bounds.left + bounds.width / 2
+      const y = bounds.top + bounds.height / 2
+      showTouch(x, y)
+      later(130, () => element.click())
+      later(hideDelay, () => touchPoint.classList.remove('visible'))
+    }
+    const waitFor = (selector: string, action: (element: HTMLElement) => void, attempt = 0) => {
+      const element = document.querySelector<HTMLElement>(selector)
+      if (element) action(element)
+      else if (attempt < 100) later(70, () => waitFor(selector, action, attempt + 1))
+    }
+    const clickMap = (origin: L.Point, dx: number, dy: number) => {
+      const point = origin.add([dx, dy])
+      const bounds = container.getBoundingClientRect()
+      const x = bounds.left + point.x
+      const y = bounds.top + point.y
+      showTouch(x, y)
+      later(130, () => {
+        const target = document.elementFromPoint(x, y) ?? container
+        target.dispatchEvent(new MouseEvent('click', {
+          bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: 0, detail: 1,
+        }))
+      })
+      later(220, () => touchPoint.classList.remove('visible'))
+    }
+
+    if (cinematicRefreshState === 'deploy') {
+      later(900, () => waitFor('.vehicle-refresh-marker-wrap', (marker) => clickElement(marker)))
+      later(2100, () => waitFor('.vehicle-refresh-rule-actions .deploy', (button) => clickElement(button)))
+      later(3600, () => waitFor('.veh-marker-wrap', (vehicle) => {
+        const bounds = vehicle.getBoundingClientRect()
+        showTouch(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2)
+        later(700, () => touchPoint.classList.remove('visible'))
+      }))
+      later(4800, () => waitFor('.veh-marker-wrap', (vehicle) => clickElement(vehicle)))
+      later(5700, () => waitFor('.veh-route', (button) => clickElement(button)))
+      later(6600, () => waitFor('.veh-marker-wrap', (vehicle) => {
+        const bounds = vehicle.getBoundingClientRect()
+        const mapBounds = container.getBoundingClientRect()
+        const origin = L.point(
+          bounds.left + bounds.width / 2 - mapBounds.left,
+          bounds.top + bounds.height / 2 - mapBounds.top,
+        )
+        clickMap(origin, 70, -45)
+        later(1200, () => clickMap(origin, 165, -82))
+        later(2400, () => clickMap(origin, 260, 20))
+      }))
+      later(10200, () => waitFor('.route-mobile-actions .primary', (button) => clickElement(button)))
+      later(10800, () => {
+        map.closePopup()
+        map.invalidateSize({ animate: false })
+        map.setView([-89.6235418555546, 48.1867340962776], 4.25, { animate: false })
+      })
+    } else {
+      later(700, () => waitFor('.veh-marker-wrap', (vehicle) => clickElement(vehicle)))
+      later(1600, () => waitFor('.veh-route', (button) => clickElement(button)))
+      later(2500, () => waitFor('.veh-marker-wrap', (vehicle) => {
+        const bounds = vehicle.getBoundingClientRect()
+        const origin = L.point(bounds.left + bounds.width / 2 - container.getBoundingClientRect().left, bounds.top + bounds.height / 2 - container.getBoundingClientRect().top)
+        clickMap(origin, 70, -45)
+        later(1200, () => clickMap(origin, 165, -82))
+        later(2400, () => clickMap(origin, 260, 20))
+      }))
+      later(6100, () => waitFor('.route-mobile-actions .primary', (button) => clickElement(button)))
+    }
+
+    return () => {
+      timers.forEach(window.clearTimeout)
+      touchPoint.remove()
+    }
+  }, [cinematicRefreshRunId, cinematicRefreshState, cinematicTouchMap, isCinematicRefreshSidebar])
+
   const locateVehicleRefreshRule = useCallback((ruleUid: string) => {
-    const vehicle = vehiclesBucketOf(mapsRef.current[mapId])[view].find((item) => item.sourceRuleUid === ruleUid)
+    const vehicle = vehiclesBucketOf(mapsRef.current[activeTacticalContextKeyRef.current])[view].find((item) => item.sourceRuleUid === ruleUid)
     if (!vehicle) return
     mapRef.current?.setView([vehicle.lat, vehicle.lng], Math.max(mapRef.current.getZoom(), 4), { animate: true })
   }, [mapId, view])
@@ -1769,7 +2232,7 @@ export default function App() {
   }, [activeOfficialModeMap])
 
   const deleteVehicleInstances = useCallback((uids: string[], restoreRules: boolean) => {
-    const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+    const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
     const before = cloneState(cur)
     const currentVehicles = vehiclesBucketOf(cur)[view]
     const selected = currentVehicles.filter((vehicle) => uids.includes(vehicle.uid))
@@ -1799,7 +2262,7 @@ export default function App() {
   }, [cloneState, mapId, pushEntry, updateMap, view])
 
   const handleRestoreVehicleRefresh = useCallback((ruleUid: string) => {
-    const vehicle = vehiclesBucketOf(mapsRef.current[mapId])[view].find((item) => item.sourceRuleUid === ruleUid)
+    const vehicle = vehiclesBucketOf(mapsRef.current[activeTacticalContextKeyRef.current])[view].find((item) => item.sourceRuleUid === ruleUid)
     if (vehicle) {
       deleteVehicleInstances([vehicle.uid], true)
       return
@@ -1812,7 +2275,7 @@ export default function App() {
 
   const handleDeleteVehicle = useCallback(
     (uid: string) => {
-      const vehicle = vehiclesBucketOf(mapsRef.current[mapId])[view].find((item) => item.uid === uid)
+      const vehicle = vehiclesBucketOf(mapsRef.current[activeTacticalContextKeyRef.current])[view].find((item) => item.uid === uid)
       if (vehicle?.sourceType === 'vehicle-refresh') {
         setRefreshVehicleDelete({ vehicles: [vehicle], uids: [uid] })
         return
@@ -1825,7 +2288,7 @@ export default function App() {
   /** 批量移动载具（套索整体移动，第十四轮）：一次入历史栈 */
   const handleMoveVehicles = useCallback(
     (updates: Record<string, [number, number]>) => {
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const before = cloneState(cur)
       const nextVehicles = vehiclesBucketOf(cur)[view].map((vehicle) => {
         const point = updates[vehicle.uid]
@@ -1853,14 +2316,14 @@ export default function App() {
   /** 批量删除载具（套索 Delete/删除按钮，第十四轮）：一次入历史栈 */
   const handleDeleteVehicles = useCallback(
     (uids: string[]) => {
-      const selectedVehicles = vehiclesBucketOf(mapsRef.current[mapId])[view].filter((vehicle) => uids.includes(vehicle.uid))
+      const selectedVehicles = vehiclesBucketOf(mapsRef.current[activeTacticalContextKeyRef.current])[view].filter((vehicle) => uids.includes(vehicle.uid))
       const refreshVehicles = selectedVehicles.filter((vehicle) => vehicle.sourceType === 'vehicle-refresh')
       if (refreshVehicles.length > 0) {
         setRefreshVehicleDelete({ vehicles: refreshVehicles, uids })
         return
       }
       const set = new Set(uids)
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const before = cloneState(cur)
       const nextVehicles = vehiclesBucketOf(cur)[view].filter((vehicle) => !set.has(vehicle.uid))
       const nextRoutes = routesBucketOf(cur)[view].map((route) => ({
@@ -1913,7 +2376,7 @@ export default function App() {
 
   /** 一键消除当前视角全部载具部署图标（入历史栈，可撤回；与"清空本层绘制"对称只清当前视角桶） */
   const clearCurrentVehicles = useCallback(() => {
-    const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+    const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
     const before = cloneState(cur)
     const after = { ...before, vehicles: { ...before.vehicles, [view]: [] } }
     pushEntry(before, after)
@@ -1932,7 +2395,7 @@ export default function App() {
   /** 一键清空本地图所有画笔和载具（入历史栈，可撤回）；兵棋推演数据不受影响：
    *  干员保留配置但回到未部署（保留自定义昵称/干员/状态），联线与推演状态原样保留。 */
   const clearAllMapContent = useCallback(() => {
-    const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+    const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
     const before = cloneState(cur)
     // 干员回未部署（lat/lng 置 null），配置全部保留；联线/推演状态不动
     const undeployOperators = (side: Side) =>
@@ -1984,12 +2447,12 @@ export default function App() {
 
   const handleResetProgress = useCallback(() => {
     if (!window.confirm('确定重置本图攻防进度？所有阶段回到未激活状态。')) return
-    setProgress((prev) => ({ ...prev, [mapId]: 0 }))
+    setProgress((prev) => ({ ...prev, [activeTacticalContextKey]: 0 }))
     setSelectedPoint(null)
-  }, [mapId])
+  }, [activeTacticalContextKey])
 
   // ================= 兵棋推演 =================
-  const state = maps[mapId] ?? createEmptyMapState()
+  const state = maps[activeTacticalContextKey] ?? createEmptyTacticalContextState()
   // 当前视角干员/联线/推演状态（派生，供面板与地图层使用）
   // 视角桶内同时存双方：我方 20 人（side === view）+ 敌方 20 人（side !== view），形成红蓝对抗
   const operators = operatorsBucketOf(state)[view]
@@ -2072,6 +2535,187 @@ export default function App() {
       return target ? applyTacticalBucket({ ...state, tacticalBuckets: { activeKey: target.key, buckets } }, target) : state
     })
   }, [activeModeStageId, capturedStageIndex, mapId, stages, updateMap])
+
+  useEffect(() => {
+    if (!isCinematicRoundCopy) return
+    let timers: number[] = []
+    const clearTargets = () => {
+      document.querySelectorAll('.cinematic-demo-target').forEach((element) => element.classList.remove('cinematic-demo-target'))
+      document.querySelectorAll('.cinematic-round-magnifier').forEach((element) => element.classList.remove('cinematic-round-magnifier'))
+    }
+    const focusElement = (element: HTMLElement | null | undefined) => {
+      clearTargets()
+      if (!element) return
+      element.closest<HTMLElement>('.wg-controls')?.classList.add('cinematic-round-magnifier')
+      element.classList.add('cinematic-demo-target')
+      element.focus({ preventScroll: true })
+      element.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      const rect = element.getBoundingClientRect()
+      setCinematicActionCursor({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
+    }
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; runId?: number }
+      if (data.type !== 'cinematic-v010-round-copy') return
+      timers.forEach(window.clearTimeout)
+      timers = []
+      clearTargets()
+      setCinematicRoundCopyFocus('none')
+      setCinematicActionCursor(null)
+      updateMap(mapId, (state) => {
+        const stageId = activeModeStageId ?? stages[capturedStageIndex]?.id ?? 'S1'
+        const roundOneKey = tacticalBucketKey(stageId, 1)
+        const storedBuckets = state.tacticalBuckets?.buckets ?? {}
+        const roundOne = storedBuckets[roundOneKey]
+        const restored = roundOne
+          ? applyTacticalBucket(state, roundOne)
+          : createTacticalRound(state, stageId, 1)
+        const resetBuckets = Object.fromEntries(
+          Object.entries(restored.tacticalBuckets?.buckets ?? {}).filter(([, bucket]) => bucket.stageId !== stageId || bucket.round === 1),
+        )
+        return {
+          ...restored,
+          wargame: { ...wargameOf(restored), round: 1 },
+          tacticalBuckets: { activeKey: roundOneKey, buckets: resetBuckets },
+        }
+      })
+      setUi((current) => ({ ...current, paletteOpen: true, panelOpen: false, sections: { ...current.sections, wargame: true } }))
+      timers.push(window.setTimeout(() => {
+        setCinematicRoundCopyFocus('copy')
+        focusElement(document.querySelector<HTMLButtonElement>('[aria-label="复制当前回合"]'))
+      }, 850))
+      timers.push(window.setTimeout(() => document.querySelector<HTMLButtonElement>('[aria-label="复制当前回合"]')?.click(), 1900))
+      timers.push(window.setTimeout(() => {
+        setCinematicRoundCopyFocus('result')
+        const roundSelects = document.querySelectorAll<HTMLSelectElement>('.wg-round select')
+        focusElement(roundSelects.item(roundSelects.length - 1))
+      }, 2700))
+      timers.push(window.setTimeout(() => {
+        setCinematicRoundCopyFocus('none')
+        setCinematicActionCursor(null)
+        clearTargets()
+      }, 5200))
+    }
+    window.addEventListener('message', onMessage)
+    return () => {
+      timers.forEach(window.clearTimeout)
+      clearTargets()
+      window.removeEventListener('message', onMessage)
+    }
+  }, [activeModeStageId, capturedStageIndex, isCinematicRoundCopy, mapId, stages, updateMap])
+
+  useEffect(() => {
+    if (!isCinematicRoundCopy) return
+    let timers: number[] = []
+    const clear = () => {
+      timers.forEach(window.clearTimeout)
+      timers = []
+      document.querySelectorAll('.cinematic-html-export-target').forEach((element) => element.classList.remove('cinematic-html-export-target'))
+    }
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; active?: boolean }
+      if (data.type !== 'cinematic-v010-html-export-focus') return
+      clear()
+      if (!data.active) {
+        document.querySelector<HTMLButtonElement>('.tb-close')?.click()
+        return
+      }
+      document.querySelector<HTMLButtonElement>('.tactical-btn')?.click()
+      const selectMode = (index: number) => {
+        const buttons = document.querySelectorAll<HTMLButtonElement>('.tb-seg-btn')
+        const button = buttons.item(index)
+        if (!button) return
+        document.querySelectorAll('.tb-seg-btn.cinematic-html-export-target').forEach((element) => element.classList.remove('cinematic-html-export-target'))
+        button.click()
+        button.classList.add('cinematic-html-export-target')
+      }
+      timers.push(window.setTimeout(() => {
+        document.querySelector('.tb-modal')?.classList.add('cinematic-html-export-target')
+        selectMode(0)
+      }, 220))
+      timers.push(window.setTimeout(() => selectMode(1), 3600))
+      timers.push(window.setTimeout(() => selectMode(2), 7000))
+    }
+    window.addEventListener('message', onMessage)
+    return () => { clear(); window.removeEventListener('message', onMessage) }
+  }, [isCinematicRoundCopy])
+
+  useEffect(() => {
+    if (!isCinematicCompassDemo || !cinematicTouchMap) return
+    const map = cinematicTouchMap
+    const container = map.getContainer()
+    let timers: number[] = []
+    let touchPoint: HTMLSpanElement | null = null
+    const clearRun = () => {
+      timers.forEach(window.clearTimeout)
+      timers = []
+      touchPoint?.remove()
+      touchPoint = null
+    }
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string }
+      if (data.type !== 'cinematic-v010-compass-run') return
+      clearRun()
+      map.setBearing(0)
+      touchPoint = document.createElement('span')
+      touchPoint.className = 'app-touch-demo-point cinematic-compass-touch'
+      container.appendChild(touchPoint)
+      const later = (delay: number, action: () => void) => timers.push(window.setTimeout(action, delay))
+      const clickControl = (control: HTMLElement | undefined) => {
+        if (!control || !touchPoint) return
+        const rect = control.getBoundingClientRect()
+        const mapRect = container.getBoundingClientRect()
+        touchPoint.style.left = `${rect.left + rect.width / 2 - mapRect.left}px`
+        touchPoint.style.top = `${rect.top + rect.height / 2 - mapRect.top}px`
+        touchPoint.classList.add('visible', 'contact')
+        control.click()
+        later(260, () => touchPoint?.classList.remove('visible', 'contact'))
+      }
+      const steps = Array.from(container.querySelectorAll<HTMLElement>('.map-rotation-step'))
+      const reset = container.querySelector<HTMLElement>('.map-bearing-reset') ?? undefined
+      later(900, () => clickControl(steps[1]))
+      later(2200, () => clickControl(steps[1]))
+      later(3500, () => clickControl(steps[1]))
+      later(5000, () => clickControl(steps[0]))
+      later(6900, () => clickControl(reset))
+    }
+    window.addEventListener('message', onMessage)
+    return () => { clearRun(); window.removeEventListener('message', onMessage) }
+  }, [cinematicTouchMap, isCinematicCompassDemo])
+
+  useEffect(() => {
+    if (!isCinematicRoundCopy) return
+    let timer = 0
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; active?: boolean }
+      if (data.type !== 'cinematic-v010-note-focus') return
+      window.clearTimeout(timer)
+      document.querySelector('.wg-notes-dock')?.classList.remove('cinematic-note-magnifier')
+      if (!data.active) {
+        document.querySelector<HTMLButtonElement>('[aria-label="还原备注窗口"]')?.click()
+        document.querySelector<HTMLButtonElement>('[aria-label="收起备注"]')?.click()
+        return
+      }
+      const stageId = activeModeStageId ?? stages[capturedStageIndex]?.id ?? 'S1'
+      updateMap(mapId, (state) => ({
+        ...state,
+        wargame: {
+          ...wargameOf(state),
+          enabled: true,
+          stageNotes: {
+            ...(wargameOf(state).stageNotes ?? {}),
+            [stageId]: '## 行动目标\n\n压制 A 点北侧火力，烟幕落地后由 A 队沿壕沟推进。\n\n## 分队任务\n\n- A 队：主攻\n- B 队：侧翼支援\n- 载具组：封锁道路\n\n> 备用路线：遇阻后转入东侧曲线路线。',
+          },
+        },
+      }))
+      document.querySelector<HTMLButtonElement>('[aria-label="展开备注"]')?.click()
+      timer = window.setTimeout(() => {
+        document.querySelector<HTMLButtonElement>('[aria-label="放大备注窗口"]')?.click()
+        window.requestAnimationFrame(() => document.querySelector('.wg-notes-dock')?.classList.add('cinematic-note-magnifier'))
+      }, 180)
+    }
+    window.addEventListener('message', onMessage)
+    return () => { window.clearTimeout(timer); window.removeEventListener('message', onMessage) }
+  }, [activeModeStageId, capturedStageIndex, isCinematicRoundCopy, mapId, stages, updateMap])
 
   // 枪线按钮上的滚轮只调整该兵棋的地图距离，不触发兵棋朝向旋转。
   useEffect(() => {
@@ -2185,7 +2829,7 @@ export default function App() {
   /** 干员操作的统一入栈入口（与 commitVehicleChange 对称） */
   const commitOperatorChange = useCallback(
     (mutator: (ops: OperatorUnit[]) => OperatorUnit[]) => {
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const before = cloneState(cur)
       const current = operatorsBucketOf(cur)[view] ?? []
       const currentByUid = new Map(current.map((operator) => [operator.uid, operator]))
@@ -2266,7 +2910,7 @@ export default function App() {
     (uid: string) => {
       const center = mapRef.current?.getCenter() ?? { lat: 0, lng: 0 }
       const offset = device.mobileLayout ? 0 : 12
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const before = cloneState(cur)
       const current = operatorsBucketOf(cur)[view]
       const operator = current.find((item) => item.uid === uid)
@@ -2381,7 +3025,7 @@ export default function App() {
   /** 批量移动干员（套索整体移动，第十七轮）：一次入历史栈 */
   const handleMoveOperators = useCallback(
     (updates: Record<string, [number, number]>) => {
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const before = cloneState(cur)
       const nextOperators = operatorsBucketOf(cur)[view].map((operator) => {
         const point = updates[operator.uid]
@@ -2418,7 +3062,7 @@ export default function App() {
   /** 一键建立协同：该队已部署干员按顺序建立关系（1-2、2-3、3-4），已有关系跳过。 */
   const handleConnectTeam = useCallback(
     (side: Side, team: OperatorTeam) => {
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const before = cloneState(cur)
       // 该方该队已部署干员（按当前列表顺序，即 1-2-3-4 的顺序）
       const deployed = (operatorsBucketOf(cur)[view] ?? []).filter(
@@ -2455,7 +3099,7 @@ export default function App() {
   /** 一键清除某方全部干员部署（回未部署；保留配置/状态/连线），入历史栈 */
   const handleClearSideDeploy = useCallback(
     (side: Side) => {
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const before = cloneState(cur)
       updateMap(mapId, (s) => ({
         ...s,
@@ -2479,7 +3123,7 @@ export default function App() {
   /** 一键解除某方全部协同关系。 */
   const handleClearSideConnections = useCallback(
     (side: Side) => {
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const before = cloneState(cur)
       const ops = operatorsBucketOf(cur)[view]
       const uids = new Set(ops.filter((o) => o.side === side).map((o) => o.uid))
@@ -2495,7 +3139,7 @@ export default function App() {
   /** 一键解除某队全部协同关系。 */
   const handleClearTeamConnections = useCallback(
     (side: Side, team: OperatorTeam) => {
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const before = cloneState(cur)
       const ops = operatorsBucketOf(cur)[view]
       const uids = new Set(ops.filter((o) => o.side === side && o.team === team).map((o) => o.uid))
@@ -2511,7 +3155,7 @@ export default function App() {
   /** 一键重置推演：清空当前视角全部阶段/回合兵棋数据，回到第 1 回合。 */
   const handleWargameReset = useCallback(() => {
     if (!window.confirm(`确定重置${view === 'attack' ? '攻方' : '守方'}视角全部兵棋推演？将清空所有阶段/回合中的兵棋、路线、枪线、绘制与备注。`)) return
-    const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+    const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
     const before = cloneState(cur)
     updateMap(mapId, (s) => {
       const resetView = (bucket: TacticalBucket): TacticalBucket => ({
@@ -2554,11 +3198,16 @@ export default function App() {
   /** 导出战术板 HTML（当前视角全部战术层 + 静态层，范围可选当前阶段/全部阶段） */
   const handleExportTactical = useCallback(
     async (stageMode: 'current' | 'all' | 'overview', exportStageId: string, exportRound: number) => {
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const stageId = exportStageId || activeModeStageId || stages[capturedStageIndex]?.id || 'S1'
-      const allBuckets = cur.tacticalBuckets?.buckets ?? {}
+      const liveStageId = activeModeStageId || stages[capturedStageIndex]?.id || 'S1'
+      const liveBucket = snapshotTacticalBucket(cur, liveStageId, wargameOf(cur).round)
+      // 导出以实时投影覆盖同阶段/回合的桶，避免 React 状态提交与用户
+      // 点击导出发生在相邻时刻时读到上一份快照。
+      const allBuckets = { ...(cur.tacticalBuckets?.buckets ?? {}), [liveBucket.key]: liveBucket }
       const bucket = allBuckets[tacticalBucketKey(stageId, exportRound)]
-      const source = bucket ? applyTacticalBucket(cur, bucket) : cur
+      const synchronizedCur = { ...cur, tacticalBuckets: { activeKey: liveBucket.key, buckets: allBuckets } }
+      const source = bucket ? applyTacticalBucket(synchronizedCur, bucket) : synchronizedCur
       const snapshots = stageMode !== 'current'
         ? Object.values(allBuckets).sort((a, b) => {
             const stageOrder = stages.findIndex((stage) => stage.id === a.stageId) - stages.findIndex((stage) => stage.id === b.stageId)
@@ -2614,7 +3263,7 @@ export default function App() {
 
   const handleOperatorSkillUse = useCallback(
     (uid: string, activeSkillSlot?: 1 | 2 | 3 | 4) => {
-      const current = mapsRef.current[mapId] ?? createEmptyMapState()
+      const current = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const operator = operatorsBucketOf(current)[view].find((item) => item.uid === uid)
       if (!operator || activeSkillSlot == null) {
         setSkillActionDraft(null)
@@ -2641,7 +3290,7 @@ export default function App() {
   )
 
   const handleOperatorTacticalItemUse = useCallback((uid: string, tacticalItem: OperatorTacticalItemDefinition, tacticalMode: TacticalItemUseMode) => {
-    const current = mapsRef.current[mapId] ?? createEmptyMapState()
+    const current = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
     const operator = operatorsBucketOf(current)[view].find((item) => item.uid === uid)
     if (!operator) return
     if (tacticalMode.placementMode === 'self') {
@@ -2705,7 +3354,7 @@ export default function App() {
 
   const handleSelectSkillTarget = useCallback((targetUid: string) => {
     if (!skillActionDraft) return
-    const current = mapsRef.current[mapId] ?? createEmptyMapState()
+    const current = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
     const target = operatorsBucketOf(current)[view].find((item) => item.uid === targetUid)
     const { operator } = skillActionDraft
     const isTacticalItem = 'tacticalItem' in skillActionDraft
@@ -2741,41 +3390,51 @@ export default function App() {
   }, [mapId, updateMap])
 
   const handleExportNativeTactical = useCallback((scope: 'all' | 'stage' | 'current' = 'all') => {
-    const current = mapsRef.current[mapId] ?? createEmptyMapState()
-    const activeKey = current.tacticalBuckets?.activeKey
-    const currentBucket = activeKey ? current.tacticalBuckets?.buckets[activeKey] : undefined
-    const buckets = current.tacticalBuckets?.buckets ?? {}
+    const current = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
+    const liveStageId = activeModeStageId ?? stages[capturedStageIndex]?.id ?? 'S1'
+    const currentBucket = snapshotTacticalBucket(current, liveStageId, wargameOf(current).round)
+    const buckets = { ...(current.tacticalBuckets?.buckets ?? {}), [currentBucket.key]: currentBucket }
     const selectedBuckets = scope === 'stage' && currentBucket
       ? Object.fromEntries(Object.entries(buckets).filter(([, bucket]) => bucket.stageId === currentBucket.stageId))
       : scope === 'current' && currentBucket ? { [currentBucket.key]: currentBucket } : buckets
     const payload = {
       format: 'deltaforce-native-tactical-board',
-      version: 1,
+      version: 2,
       scope,
       exportedAt: new Date().toISOString(),
+      gameDataPlatform,
+      modeId: activeModeId,
       mapId,
       view,
       mapState: { ...createEmptyMapState(), tacticalBuckets: { activeKey: currentBucket?.key ?? '', buckets: selectedBuckets } },
     }
     const suffix = currentBucket ? (scope === 'stage' ? `_${currentBucket.stageId}-all` : scope === 'current' ? `_${currentBucket.stageId}-R${currentBucket.round}` : '_all') : ''
     downloadText(`原生战术包_${config.name}_${view === 'attack' ? '攻方' : '守方'}${suffix}.dfboard`, JSON.stringify(payload), 'application/json')
-  }, [config.name, mapId, view])
+  }, [activeModeId, activeModeStageId, capturedStageIndex, config.name, gameDataPlatform, mapId, stages, view])
 
   const handleImportNativeTactical = useCallback(async (file: File) => {
-    let payload: { format?: unknown; version?: unknown; scope?: unknown; mapId?: unknown; view?: unknown; mapState?: unknown }
+    let payload: { format?: unknown; version?: unknown; scope?: unknown; gameDataPlatform?: unknown; modeId?: unknown; mapId?: unknown; view?: unknown; mapState?: unknown }
     try {
       payload = JSON.parse(await file.text()) as typeof payload
     } catch {
       window.alert('无法读取原生战术包：文件不是有效的 JSON。')
       return
     }
-    if (payload.format !== 'deltaforce-native-tactical-board' || payload.version !== 1 || typeof payload.mapId !== 'string' || !MAP_BY_ID[payload.mapId] || !payload.mapState || typeof payload.mapState !== 'object') {
+    if (payload.format !== 'deltaforce-native-tactical-board' || (payload.version !== 1 && payload.version !== 2) || typeof payload.mapId !== 'string' || !MAP_BY_ID[payload.mapId] || !payload.mapState || typeof payload.mapState !== 'object') {
       window.alert('无法导入：文件不是受支持的原生战术包。')
       return
     }
     const targetMapId = payload.mapId
+    const targetPlatform: GameDataPlatform = payload.version === 2 && payload.gameDataPlatform === 'mobile' ? 'mobile' : payload.version === 2 && payload.gameDataPlatform === 'pc' ? 'pc' : gameDataPlatform
+    const targetModeId = payload.version === 2 && typeof payload.modeId === 'string' ? payload.modeId : activeModeId
+    const targetProfile = modeStore.profiles.find((profile) => profile.id === targetModeId)
+    if (!targetProfile) {
+      window.alert(`无法导入：数据包所属模式“${targetModeId}”在当前应用中不存在。`)
+      return
+    }
+    const targetContextKey = tacticalContextKey(targetPlatform, targetModeId, targetMapId)
     const source = payload.mapState as MapState
-    if (!window.confirm(`导入将覆盖“${MAP_BY_ID[targetMapId].name}”现有战术数据，是否继续？`)) return
+    if (!window.confirm(`导入将覆盖“${targetPlatform === 'mobile' ? '移动端' : 'PC端'} · ${targetProfile.name} · ${MAP_BY_ID[targetMapId].name}”对应范围的战术数据，是否继续？`)) return
     const imported: MapState = {
       ...createEmptyMapState(),
       ...source,
@@ -2802,33 +3461,39 @@ export default function App() {
     if (activeBucket) Object.assign(imported, applyTacticalBucket(imported, activeBucket))
     const packageScope = payload.scope === 'stage' || payload.scope === 'current' ? payload.scope : 'all'
     setMaps((current) => {
-      if (packageScope === 'all') return { ...current, [targetMapId]: imported }
-      const existing = current[targetMapId] ?? createEmptyMapState()
+      if (packageScope === 'all') return { ...current, [targetContextKey]: imported }
+      const existing = current[targetContextKey] ?? createEmptyMapState()
       const existingStore = existing.tacticalBuckets ?? { activeKey: '', buckets: {} }
       const mergedBuckets = packageScope === 'stage' && activeBucket
         ? { ...existingStore.buckets, ...Object.fromEntries(Object.entries(existingStore.buckets).filter(([, bucket]) => bucket.stageId !== activeBucket.stageId)), ...migratedBuckets }
         : { ...existingStore.buckets, ...migratedBuckets }
       const merged = { ...existing, tacticalBuckets: { activeKey, buckets: mergedBuckets } }
-      return { ...current, [targetMapId]: activeBucket ? applyTacticalBucket(merged, activeBucket) : merged }
+      return { ...current, [targetContextKey]: activeBucket ? applyTacticalBucket(merged, activeBucket) : merged }
     })
+    setGameDataPlatform(targetPlatform)
+    localStorage.setItem('deltaforce-game-data-platform', targetPlatform)
+    setModeStore((current) => ({ ...current, activeModeId: targetModeId }))
     setMapId(targetMapId)
     setView(payload.view === 'defense' ? 'defense' : 'attack')
     if (activeBucket) {
-      setProgress((current) => ({ ...current, [targetMapId]: Math.max(0, stages.findIndex((stage) => stage.id === activeBucket.stageId)) }))
-      setModeStageSelection((current) => ({ ...current, [`${activeModeProfile?.id ?? 'attack-defense'}:${targetMapId}`]: activeBucket.stageId }))
+      const targetModeMap = (targetProfile.id === 'attack-defense' ? targetProfile.platformMaps?.[targetPlatform] : targetProfile.maps)?.[targetMapId] ?? targetProfile.maps[targetMapId]
+      setProgress((current) => ({ ...current, [targetContextKey]: Math.max(0, targetModeMap?.stages.findIndex((stage) => stage.id === activeBucket.stageId) ?? 0) }))
+      setModeStageSelection((current) => ({ ...current, [targetContextKey]: activeBucket.stageId }))
     }
     window.alert(packageScope === 'stage' ? '当前阶段原生包已导入，其他阶段保持不变。' : packageScope === 'current' ? '当前回合原生包已导入，其他阶段回合保持不变。' : '原生战术包已导入。')
-  }, [])
+  }, [activeModeId, gameDataPlatform, modeStore.profiles])
 
   /** 保存当前战术为方案（自定义名称；记录当前 地图×阶段×视角 的完整部署快照） */
   const handleSavePlan = useCallback(
     (name: string) => {
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const stageId = activeModeStageId ?? stages[capturedStageIndex]?.id ?? 'S1'
       const plan: TacticalPlan = {
         id: genUid('plan'),
         name: name.trim() || '未命名战术',
         mapId,
+        gameDataPlatform,
+        modeId: activeModeId,
         stageId,
         view,
         createdAt: Date.now(),
@@ -2845,13 +3510,14 @@ export default function App() {
       }
       setPlans((prev) => [...prev, plan])
     },
-    [activeModeStageId, mapId, view, capturedStageIndex, stages],
+    [activeModeId, activeModeStageId, gameDataPlatform, mapId, view, capturedStageIndex, stages],
   )
 
   /** 应用方案：将方案快照写入当前地图/视角（阶段由用户自行切换），入历史栈 */
   const handleApplyPlan = useCallback(
     (plan: TacticalPlan) => {
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      if (plan.gameDataPlatform !== gameDataPlatform || plan.modeId !== activeModeId || plan.mapId !== mapId) return
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const before = cloneState(cur)
       const veh = (plan.vehicles ?? []).map((v) => ({ ...v }))
       const ops = (plan.operators ?? []).map((o) => ({ ...o }))
@@ -2888,7 +3554,7 @@ export default function App() {
       }
       pushEntry(before, after)
     },
-    [mapId, view, cloneState, pushEntry, updateMap],
+    [activeModeId, gameDataPlatform, mapId, view, cloneState, pushEntry, updateMap],
   )
 
   /** 删除方案 */
@@ -2909,7 +3575,7 @@ export default function App() {
       }
       if (pendingConnect === uid) {
         // 再次点击同一干员：解除其所有协同关系
-        const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+        const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
         const before = cloneState(cur)
         const bucket = connectionsBucketOf(cur)
         const remain = bucket[view].filter((c) => c.operatorAId !== uid && c.operatorBId !== uid)
@@ -2920,7 +3586,7 @@ export default function App() {
         return
       }
       // 两个不同干员：建立协同关系（仅允许同阵营协同）
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const before = cloneState(cur)
       const a = operatorsBucketOf(cur)[view].find((o) => o.uid === pendingConnect)
       const b = operatorsBucketOf(cur)[view].find((o) => o.uid === uid)
@@ -2966,7 +3632,7 @@ export default function App() {
   /** 关系编辑模式下点击关系线：解除该关系。 */
   const handleRemoveConnection = useCallback(
     (id: string) => {
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const before = cloneState(cur)
       const remain = connectionsBucketOf(cur)[view].filter((c) => c.id !== id)
       updateMap(mapId, (s) => ({ ...s, connections: { ...connectionsBucketOf(s), [view]: remain } }))
@@ -2986,7 +3652,7 @@ export default function App() {
   /** 路线操作统一入历史栈；路线作为兵棋数据独立于普通绘制。 */
   const commitRouteChange = useCallback(
     (mutator: (items: TacticalRoute[]) => TacticalRoute[]) => {
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const before = cloneState(cur)
       const current = routesBucketOf(cur)[view] ?? []
       const next = mutator(current)
@@ -3002,7 +3668,7 @@ export default function App() {
   const handleCreateRoute = useCallback(
     (route: TacticalRoute) => {
       const boundOperators = operators.filter((o) => o.side === route.side && o.team === route.team).map((o) => o.uid)
-      const boundVehicles = vehiclesBucketOf(mapsRef.current[mapId])[view]
+      const boundVehicles = vehiclesBucketOf(mapsRef.current[activeTacticalContextKeyRef.current])[view]
         .filter((v) => v.side === route.side && v.team === route.team)
         .map((v) => v.uid)
       commitRouteChange((items) => [...items, {
@@ -3016,7 +3682,7 @@ export default function App() {
 
   const handleUpdateRoute = useCallback(
     (uid: string, patch: Partial<TacticalRoute>) => {
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const before = cloneState(cur)
       const current = routesBucketOf(cur)[view]
       const previous = current.find((route) => route.uid === uid)
@@ -3110,7 +3776,7 @@ export default function App() {
   /** 队标操作的统一入栈入口（与 commitOperatorChange 对称） */
   const commitTeamChange = useCallback(
     (mutator: (ts: TeamMarker[]) => TeamMarker[]) => {
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const before = cloneState(cur)
       updateMap(mapId, (s) => {
         const bucket = teamsBucketOf(s)
@@ -3208,7 +3874,7 @@ export default function App() {
   /** 删除队标 */
   const handleDeleteTeamMarker = useCallback(
     (uid: string) => {
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const before = cloneState(cur)
       const nextTeams = teamsBucketOf(cur)[view].filter((t) => t.uid !== uid)
       const currentRoutes = routesBucketOf(cur)[view]
@@ -3232,7 +3898,7 @@ export default function App() {
   /** 批量移动队标（套索整体移动） */
   const handleMoveTeamMarkers = useCallback(
     (updates: Record<string, [number, number]>) => {
-      const cur = mapsRef.current[mapId] ?? createEmptyMapState()
+      const cur = mapsRef.current[activeTacticalContextKeyRef.current] ?? createEmptyMapState()
       const before = cloneState(cur)
       const nextTeams = teamsBucketOf(cur)[view].map((t) => {
         const p = updates[t.uid]
@@ -3301,14 +3967,14 @@ export default function App() {
               return applyTacticalBucket({ ...staged, tacticalBuckets: { activeKey: target.key, buckets } }, target)
             })
           }
-          setProgress((prev) => ({ ...prev, [mapId]: idx }))
+          setProgress((prev) => ({ ...prev, [activeTacticalContextKey]: idx }))
         }
       }
       setSelectedPoint((prev) =>
         prev?.point.name === point.name && prev.stageId === stageId ? null : { point, stageId },
       )
     },
-    [activeModeMap, capturedStageIndex, handleSelectModeStage, mapId, modeStageKey, stages, updateMap],
+    [activeModeMap, activeTacticalContextKey, capturedStageIndex, handleSelectModeStage, mapId, modeStageKey, stages, updateMap],
   )
   const handleClosePointDetail = useCallback(() => setSelectedPoint(null), [])
   const handleResetPointPanel = useCallback(() => {
@@ -3332,13 +3998,14 @@ export default function App() {
     if (stageIndex !== capturedStageIndex) {
       updateMap(mapId, (state) => normalizeObjectivesForStageChange(state, stages, capturedStageIndex, stageIndex))
     }
-    setProgress((current) => ({ ...current, [mapId]: stageIndex }))
+    setProgress((current) => ({ ...current, [activeTacticalContextKey]: stageIndex }))
     setSelectedPoint(null)
     setDeployTarget(null)
-  }, [activeModeMap, capturedStageIndex, handleSelectModeStage, mapId, stages, updateMap])
+  }, [activeModeMap, activeTacticalContextKey, capturedStageIndex, handleSelectModeStage, mapId, stages, updateMap])
 
   return (
-    <div className={`app platform-${device.platform} ${device.mobileLayout ? 'mobile-layout' : 'desktop-layout'} ${ui.paletteOpen ? 'left-panel-open' : 'left-panel-closed'} ${isCinematicMapOnly ? 'cinematic-map-only' : ''} ${isCinematicLayerTour ? 'cinematic-layer-tour' : ''} ${isCinematicBattleCompare ? `cinematic-battle-${cinematicDemoStage?.toLowerCase()}` : ''} ${isCinematicC1Highlight ? `cinematic-c1-${cinematicDemoStage?.toLowerCase()}` : ''}`} style={{ '--left-panel-width': `${ui.leftPanelWidth}px` } as CSSProperties}>
+    <div className={`app platform-${device.platform} ${device.mobileLayout ? 'mobile-layout' : 'desktop-layout'} ${ui.paletteOpen ? 'left-panel-open' : 'left-panel-closed'} ${isCinematicMapOnly ? 'cinematic-map-only' : ''} ${isCinematicCompassDemo ? 'cinematic-compass-demo' : ''} ${isCinematicLayerTour ? 'cinematic-layer-tour' : ''} ${isCinematicObjectiveStates ? 'cinematic-objective-states' : ''} ${isCinematicActionSequence ? `cinematic-action-sequence cinematic-action-${cinematicActionState} cinematic-focus-${cinematicActionFocus}` : ''} ${isCinematicCompletePlan ? `cinematic-complete-plan cinematic-complete-${cinematicCompletePlanFocus}` : ''} ${isCinematicRoundCopy ? `cinematic-round-copy-demo cinematic-round-copy-${cinematicRoundCopyFocus}` : ''} ${isCinematicRefreshSidebar ? `cinematic-refresh-sidebar cinematic-refresh-${cinematicRefreshState}` : ''} ${isCinematicBattleCompare ? `cinematic-battle-${cinematicDemoStage?.toLowerCase()}` : ''} ${isCinematicC1Highlight ? `cinematic-c1-${cinematicDemoStage?.toLowerCase()}` : ''}`} style={{ '--left-panel-width': `${ui.leftPanelWidth}px` } as CSSProperties}>
+      {(isCinematicActionSequence || isCinematicRoundCopy) && cinematicActionCursor ? <span className="cinematic-action-cursor" style={{ left: cinematicActionCursor.x, top: cinematicActionCursor.y }} /> : null}
       <Toolbar
         mapId={mapId}
         onMapId={setMapId}
@@ -3346,7 +4013,8 @@ export default function App() {
         onGameDataPlatform={(nextPlatform) => {
           setGameDataPlatform(nextPlatform)
           localStorage.setItem('deltaforce-game-data-platform', nextPlatform)
-          setProgress((current) => ({ ...current, [mapId]: 0 }))
+          const nextContextKey = tacticalContextKey(nextPlatform, activeModeId, mapId)
+          setProgress((current) => ({ ...current, [nextContextKey]: 0 }))
           setSelectedPoint(null)
           setDeployTarget(null)
         }}
@@ -3372,6 +4040,7 @@ export default function App() {
         onClearAll={handleClearAll}
         onOpenTactical={() => setTacticalOpen(true)}
         cinematicModeSwitch={isCinematicModeSwitch}
+        cinematicInitiallyCollapsed={isCinematicObjectiveStates || isCinematicActionSequence}
       />
       <div className="main">
         {isCinematicLayerTour && <div className="cinematic-stage-indicator"><small>当前阶段</small><b>S1 · 外围争夺</b></div>}
@@ -3441,7 +4110,7 @@ export default function App() {
           onAddFieldSupport={handleAddFieldSupport}
         />
         <MapView
-          key={`${gameDataPlatform}:${mapId}`}
+          key={activeTacticalContextKey}
           config={config}
           mobileLayout={device.mobileLayout}
           modeData={activeOfficialModeMap}
@@ -3541,6 +4210,7 @@ export default function App() {
               }
             : null}
           cinematicBattleCompare={isCinematicBattleCompare ? cinematicDemoStage : null}
+          cinematicCompassCollapsed={isCinematicObjectiveStates || isCinematicActionSequence}
         />
         <PointPanel
           stages={pointPanelStages}
@@ -3650,7 +4320,7 @@ export default function App() {
         stageLabel={activeOfficialModeMap?.stages.find((stage) => stage.id === activeModeStageId)
           ? `${activeModeStageId} · ${activeOfficialModeMap.stages.find((stage) => stage.id === activeModeStageId)?.label}`
           : stages[capturedStageIndex] ? `${stages[capturedStageIndex].id} · ${stages[capturedStageIndex].label}` : ''}
-        plans={plans}
+        plans={plans.filter((plan) => plan.gameDataPlatform === gameDataPlatform && plan.modeId === activeModeId && plan.mapId === mapId)}
         round={wargame.round}
         roundOptions={(() => {
           const rounds = Array.from(new Set(Object.values(state.tacticalBuckets?.buckets ?? {}).map((bucket) => bucket.round))).sort((a, b) => a - b)

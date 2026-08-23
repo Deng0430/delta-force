@@ -14,6 +14,8 @@ import type { VehicleCategory } from '../types'
 import { vehicleLegendAssetUrl } from './vehicleLegendAssets'
 
 export interface DeployVehicleEntry {
+  /** 所属复活点唯一 ID；正式运行只用该字段关联复活点。 */
+  spawnUid?: string
   /** 载具名（官网 deploy 数据 name） */
   name: string
   /** 官网图标 key（deploy_*.png，位于 dzc_i 目录） */
@@ -26,7 +28,7 @@ export interface DeployVehicleEntry {
   cd: number
   /** 可部署数量 */
   num: number
-  /** 官网备注（出生点位置名） */
+  /** 官网备注（出生点位置名），仅用于显示与旧数据导入兼容。 */
   note: string
   /** 是否允许非队友的友方部署 */
   allowTeammate: boolean

@@ -1,6 +1,6 @@
 {
   "format": "deltaforce-map-mode",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "mode": {
     "id": "winner-takes-all",
     "name": "胜者为王",
@@ -890,7 +890,49 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_ascent_s1_attack_a8acem",
+              "stageId": "S1",
+              "name": "北边滩头",
+              "side": "attack",
+              "lat": -94.056,
+              "lng": 69.315
+            },
+            {
+              "uid": "spawn_wta_pc_ascent_s1_attack_1rouc6f",
+              "stageId": "S1",
+              "name": "S1 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -131.756,
+              "lng": 78.007
+            },
+            {
+              "uid": "spawn_wta_pc_ascent_s1_attack_1mccv0b",
+              "stageId": "S1",
+              "name": "S1 · 进攻方复活点 3",
+              "side": "attack",
+              "lat": -144.649,
+              "lng": 88.744
+            },
+            {
+              "uid": "spawn_wta_pc_ascent_s1_attack_57mcir",
+              "stageId": "S1",
+              "name": "海上基地",
+              "side": "attack",
+              "lat": -113.973,
+              "lng": 26.018
+            },
+            {
+              "uid": "spawn_wta_pc_ascent_s1_defense_gcu98o",
+              "stageId": "S1",
+              "name": "临时营地",
+              "side": "defense",
+              "lat": -131.021,
+              "lng": 107.378
+            }
+          ]
         },
         {
           "id": "S2",
@@ -1571,7 +1613,41 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_ascent_s2_attack_ha6do8",
+              "stageId": "S2",
+              "name": "北边废墟",
+              "side": "attack",
+              "lat": -108.282,
+              "lng": 91.399
+            },
+            {
+              "uid": "spawn_wta_pc_ascent_s2_attack_1odq54w",
+              "stageId": "S2",
+              "name": "南边高坡",
+              "side": "attack",
+              "lat": -129.365,
+              "lng": 90.591
+            },
+            {
+              "uid": "spawn_wta_pc_ascent_s2_attack_18b63a2",
+              "stageId": "S2",
+              "name": "S2 · 进攻方复活点 3",
+              "side": "attack",
+              "lat": -146.969,
+              "lng": 93.683
+            },
+            {
+              "uid": "spawn_wta_pc_ascent_s2_defense_nn4bk3",
+              "stageId": "S2",
+              "name": "隧道入口",
+              "side": "defense",
+              "lat": -137.151,
+              "lng": 186.716
+            }
+          ]
         },
         {
           "id": "S3",
@@ -2243,7 +2319,33 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_ascent_s3_attack_1fl1jkk",
+              "stageId": "S3",
+              "name": "隧道平台入口",
+              "side": "attack",
+              "lat": -133.32,
+              "lng": 171.892
+            },
+            {
+              "uid": "spawn_wta_pc_ascent_s3_defense_1bhefn7",
+              "stageId": "S3",
+              "name": "S3 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -163.618,
+              "lng": 207.16
+            },
+            {
+              "uid": "spawn_wta_pc_ascent_s3_defense_jbkc8s",
+              "stageId": "S3",
+              "name": "S3 · 防守方复活点 2",
+              "side": "defense",
+              "lat": -170.857,
+              "lng": 190.471
+            }
+          ]
         },
         {
           "id": "S4",
@@ -2798,7 +2900,33 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_ascent_s4_attack_1xdd3ey",
+              "stageId": "S4",
+              "name": "洞穴出口",
+              "side": "attack",
+              "lat": -153.407,
+              "lng": 208.457
+            },
+            {
+              "uid": "spawn_wta_pc_ascent_s4_defense_wso2ky",
+              "stageId": "S4",
+              "name": "S4 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -182.931,
+              "lng": 189.536
+            },
+            {
+              "uid": "spawn_wta_pc_ascent_s4_defense_1549tds",
+              "stageId": "S4",
+              "name": "S4 · 防守方复活点 2",
+              "side": "defense",
+              "lat": -168.665,
+              "lng": 182.465
+            }
+          ]
         },
         {
           "id": "S5",
@@ -3215,7 +3343,17 @@
           ],
           "defenseSpawnNames": [],
           "attackVehicles": [],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_ascent_s5_attack_1uf6t4w",
+              "stageId": "S5",
+              "name": "进攻复活点",
+              "side": "attack",
+              "lat": -161.74964700298045,
+              "lng": 205.31205528170955
+            }
+          ]
         }
       ],
       "props": [
@@ -3645,7 +3783,8 @@
               "cd": 120,
               "num": 1,
               "allowTeammate": false,
-              "note": "北边滩头"
+              "note": "北边滩头",
+              "spawnUid": "spawn_wta_pc_ascent_s1_attack_a8acem"
             },
             {
               "name": "突击直升机",
@@ -3657,7 +3796,8 @@
               "cd": 150,
               "num": 1,
               "allowTeammate": false,
-              "note": "海上基地"
+              "note": "海上基地",
+              "spawnUid": "spawn_wta_pc_ascent_s1_attack_57mcir"
             },
             {
               "name": "UCB-95/97攻击艇",
@@ -3668,7 +3808,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "海上基地"
+              "note": "海上基地",
+              "spawnUid": "spawn_wta_pc_ascent_s1_attack_57mcir"
             },
             {
               "name": "两栖装甲运输车",
@@ -3680,7 +3821,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": true,
-              "note": "海上基地"
+              "note": "海上基地",
+              "spawnUid": "spawn_wta_pc_ascent_s1_attack_57mcir"
             }
           ],
           "defense": [
@@ -3693,7 +3835,8 @@
               "cd": 45,
               "num": 1,
               "allowTeammate": true,
-              "note": "临时营地"
+              "note": "临时营地",
+              "spawnUid": "spawn_wta_pc_ascent_s1_defense_gcu98o"
             },
             {
               "name": "LAV AA防空车",
@@ -3705,7 +3848,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "临时营地"
+              "note": "临时营地",
+              "spawnUid": "spawn_wta_pc_ascent_s1_defense_gcu98o"
             },
             {
               "name": "M1A4主战坦克",
@@ -3716,7 +3860,8 @@
               "cd": 120,
               "num": 1,
               "allowTeammate": false,
-              "note": "临时营地"
+              "note": "临时营地",
+              "spawnUid": "spawn_wta_pc_ascent_s1_defense_gcu98o"
             }
           ]
         },
@@ -3731,7 +3876,8 @@
               "cd": 15,
               "num": 2,
               "allowTeammate": false,
-              "note": "北边废墟"
+              "note": "北边废墟",
+              "spawnUid": "spawn_wta_pc_ascent_s2_attack_ha6do8"
             },
             {
               "name": "ATV全地形车",
@@ -3742,7 +3888,8 @@
               "cd": 15,
               "num": 2,
               "allowTeammate": false,
-              "note": "南边高坡"
+              "note": "南边高坡",
+              "spawnUid": "spawn_wta_pc_ascent_s2_attack_1odq54w"
             },
             {
               "name": "轻型战术车",
@@ -3753,7 +3900,8 @@
               "cd": 15,
               "num": 1,
               "allowTeammate": false,
-              "note": "S2 · 进攻方复活点 3"
+              "note": "S2 · 进攻方复活点 3",
+              "spawnUid": "spawn_wta_pc_ascent_s2_attack_18b63a2"
             },
             {
               "name": "ATV全地形车",
@@ -3764,7 +3912,8 @@
               "cd": 15,
               "num": 2,
               "allowTeammate": false,
-              "note": "S2 · 进攻方复活点 3"
+              "note": "S2 · 进攻方复活点 3",
+              "spawnUid": "spawn_wta_pc_ascent_s2_attack_18b63a2"
             }
           ],
           "defense": [
@@ -3777,7 +3926,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "隧道入口"
+              "note": "隧道入口",
+              "spawnUid": "spawn_wta_pc_ascent_s2_defense_nn4bk3"
             }
           ]
         },
@@ -3792,7 +3942,8 @@
               "cd": 120,
               "num": 1,
               "allowTeammate": false,
-              "note": "隧道平台入口"
+              "note": "隧道平台入口",
+              "spawnUid": "spawn_wta_pc_ascent_s3_attack_1fl1jkk"
             }
           ],
           "defense": []
@@ -3808,7 +3959,8 @@
               "cd": 15,
               "num": 2,
               "allowTeammate": false,
-              "note": "洞穴出口"
+              "note": "洞穴出口",
+              "spawnUid": "spawn_wta_pc_ascent_s4_attack_1xdd3ey"
             }
           ],
           "defense": []
@@ -4371,7 +4523,41 @@
             "S1 · 防守方复活点 2"
           ],
           "attackVehicles": [],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_flashpoint_s1_attack_1arcz7",
+              "stageId": "S1",
+              "name": "公园",
+              "side": "attack",
+              "lat": -113.314,
+              "lng": 59.363
+            },
+            {
+              "uid": "spawn_wta_pc_flashpoint_s1_attack_u6bbvr",
+              "stageId": "S1",
+              "name": "S1 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -140.598,
+              "lng": 51.839
+            },
+            {
+              "uid": "spawn_wta_pc_flashpoint_s1_defense_qw4rez",
+              "stageId": "S1",
+              "name": "检查站",
+              "side": "defense",
+              "lat": -132.315,
+              "lng": 100.427
+            },
+            {
+              "uid": "spawn_wta_pc_flashpoint_s1_defense_m5py4d",
+              "stageId": "S1",
+              "name": "S1 · 防守方复活点 2",
+              "side": "defense",
+              "lat": -150.886,
+              "lng": 101.191
+            }
+          ]
         },
         {
           "id": "S2",
@@ -4805,7 +4991,33 @@
             "卸货场"
           ],
           "attackVehicles": [],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_flashpoint_s2_attack_1bx3kx1",
+              "stageId": "S2",
+              "name": "天桥",
+              "side": "attack",
+              "lat": -129.867,
+              "lng": 88.673
+            },
+            {
+              "uid": "spawn_wta_pc_flashpoint_s2_attack_piaat",
+              "stageId": "S2",
+              "name": "S2 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -144.392,
+              "lng": 87.043
+            },
+            {
+              "uid": "spawn_wta_pc_flashpoint_s2_defense_1h3ls4l",
+              "stageId": "S2",
+              "name": "卸货场",
+              "side": "defense",
+              "lat": -128.411,
+              "lng": 153.25
+            }
+          ]
         },
         {
           "id": "S3",
@@ -5248,7 +5460,41 @@
             "S3 · 防守方复活点 2"
           ],
           "attackVehicles": [],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_flashpoint_s3_attack_1hnsbzh",
+              "stageId": "S3",
+              "name": "海墙",
+              "side": "attack",
+              "lat": -130.661,
+              "lng": 133.663
+            },
+            {
+              "uid": "spawn_wta_pc_flashpoint_s3_attack_1ey6sr6",
+              "stageId": "S3",
+              "name": "S3 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -144.746,
+              "lng": 134.567
+            },
+            {
+              "uid": "spawn_wta_pc_flashpoint_s3_defense_42ttof",
+              "stageId": "S3",
+              "name": "集散区",
+              "side": "defense",
+              "lat": -92.793,
+              "lng": 188.037
+            },
+            {
+              "uid": "spawn_wta_pc_flashpoint_s3_defense_1q9ur92",
+              "stageId": "S3",
+              "name": "S3 · 防守方复活点 2",
+              "side": "defense",
+              "lat": -106.484,
+              "lng": 190.674
+            }
+          ]
         }
       ],
       "props": [
@@ -5364,7 +5610,8 @@
               "cd": 150,
               "num": 1,
               "allowTeammate": true,
-              "note": "公园"
+              "note": "公园",
+              "spawnUid": "spawn_wta_pc_flashpoint_s1_attack_1arcz7"
             },
             {
               "name": "FSV轮式突击炮",
@@ -5376,7 +5623,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "公园"
+              "note": "公园",
+              "spawnUid": "spawn_wta_pc_flashpoint_s1_attack_1arcz7"
             },
             {
               "name": "突击车",
@@ -5388,7 +5636,8 @@
               "cd": 75,
               "num": 1,
               "allowTeammate": true,
-              "note": "公园"
+              "note": "公园",
+              "spawnUid": "spawn_wta_pc_flashpoint_s1_attack_1arcz7"
             },
             {
               "name": "ATV全地形车",
@@ -5399,7 +5648,8 @@
               "cd": 15,
               "num": 2,
               "allowTeammate": false,
-              "note": "公园"
+              "note": "公园",
+              "spawnUid": "spawn_wta_pc_flashpoint_s1_attack_1arcz7"
             }
           ],
           "defense": [
@@ -5413,7 +5663,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "检查站"
+              "note": "检查站",
+              "spawnUid": "spawn_wta_pc_flashpoint_s1_defense_qw4rez"
             },
             {
               "name": "ATV全地形车",
@@ -5424,7 +5675,8 @@
               "cd": 15,
               "num": 1,
               "allowTeammate": false,
-              "note": "检查站"
+              "note": "检查站",
+              "spawnUid": "spawn_wta_pc_flashpoint_s1_defense_qw4rez"
             }
           ]
         },
@@ -5440,7 +5692,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "天桥"
+              "note": "天桥",
+              "spawnUid": "spawn_wta_pc_flashpoint_s2_attack_1bx3kx1"
             },
             {
               "name": "ATV全地形车",
@@ -5451,7 +5704,8 @@
               "cd": 15,
               "num": 2,
               "allowTeammate": false,
-              "note": "天桥"
+              "note": "天桥",
+              "spawnUid": "spawn_wta_pc_flashpoint_s2_attack_1bx3kx1"
             }
           ],
           "defense": [
@@ -5464,7 +5718,8 @@
               "cd": 15,
               "num": 2,
               "allowTeammate": false,
-              "note": "卸货场"
+              "note": "卸货场",
+              "spawnUid": "spawn_wta_pc_flashpoint_s2_defense_1h3ls4l"
             }
           ]
         },
@@ -5480,7 +5735,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "海墙"
+              "note": "海墙",
+              "spawnUid": "spawn_wta_pc_flashpoint_s3_attack_1hnsbzh"
             },
             {
               "name": "ATV全地形车",
@@ -5491,7 +5747,8 @@
               "cd": 15,
               "num": 2,
               "allowTeammate": false,
-              "note": "海墙"
+              "note": "海墙",
+              "spawnUid": "spawn_wta_pc_flashpoint_s3_attack_1hnsbzh"
             }
           ],
           "defense": [
@@ -5505,7 +5762,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "集散区"
+              "note": "集散区",
+              "spawnUid": "spawn_wta_pc_flashpoint_s3_defense_42ttof"
             },
             {
               "name": "ATV全地形车",
@@ -5516,7 +5774,8 @@
               "cd": 15,
               "num": 2,
               "allowTeammate": false,
-              "note": "集散区"
+              "note": "集散区",
+              "spawnUid": "spawn_wta_pc_flashpoint_s3_defense_42ttof"
             }
           ]
         }
@@ -6320,7 +6579,41 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_fault_s1_attack_tc6zhb",
+              "stageId": "S1",
+              "name": "S1 · 进攻方复活点 1",
+              "side": "attack",
+              "lat": -150.12621053501127,
+              "lng": 67.375
+            },
+            {
+              "uid": "spawn_wta_pc_fault_s1_attack_1qui15k",
+              "stageId": "S1",
+              "name": "GTI3号阵地",
+              "side": "attack",
+              "lat": -138.7498899513626,
+              "lng": 78
+            },
+            {
+              "uid": "spawn_wta_pc_fault_s1_attack_1zmjz1",
+              "stageId": "S1",
+              "name": "S1 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -162.8752200972748,
+              "lng": 72.5
+            },
+            {
+              "uid": "spawn_wta_pc_fault_s1_defense_f8y2np",
+              "stageId": "S1",
+              "name": "S1 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -160.638,
+              "lng": 125.966
+            }
+          ]
         },
         {
           "id": "S2",
@@ -7043,7 +7336,49 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_fault_s2_attack_f8y2np",
+              "stageId": "S2",
+              "name": "GTI4号阵地",
+              "side": "attack",
+              "lat": -160.638,
+              "lng": 125.966
+            },
+            {
+              "uid": "spawn_wta_pc_fault_s2_attack_3biiby",
+              "stageId": "S2",
+              "name": "复活点 4",
+              "side": "attack",
+              "lat": -144.87879667798987,
+              "lng": 110.13221431893382
+            },
+            {
+              "uid": "spawn_wta_pc_fault_s2_attack_4dhcdz",
+              "stageId": "S2",
+              "name": "复活点 5",
+              "side": "attack",
+              "lat": -152.4966435165597,
+              "lng": 146.98542312270223
+            },
+            {
+              "uid": "spawn_wta_pc_fault_s2_defense_aoluad",
+              "stageId": "S2",
+              "name": "S2 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -111.041,
+              "lng": 169.05
+            },
+            {
+              "uid": "spawn_wta_pc_fault_s2_defense_7ciyir",
+              "stageId": "S2",
+              "name": "哈夫克3号阵地",
+              "side": "defense",
+              "lat": -95.787,
+              "lng": 138.713
+            }
+          ]
         },
         {
           "id": "S3",
@@ -7729,7 +8064,41 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_fault_s3_attack_1bmlg0k",
+              "stageId": "S3",
+              "name": "GTI7号阵地",
+              "side": "attack",
+              "lat": -122.706,
+              "lng": 127.855
+            },
+            {
+              "uid": "spawn_wta_pc_fault_s3_attack_w39al7",
+              "stageId": "S3",
+              "name": "S3 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -125.728,
+              "lng": 156.408
+            },
+            {
+              "uid": "spawn_wta_pc_fault_s3_defense_66nm7k",
+              "stageId": "S3",
+              "name": "哈夫克4号阵地",
+              "side": "defense",
+              "lat": -48.459,
+              "lng": 153.849
+            },
+            {
+              "uid": "spawn_wta_pc_fault_s3_defense_1jkb94h",
+              "stageId": "S3",
+              "name": "S3 · 防守方复活点 2",
+              "side": "defense",
+              "lat": -59.979,
+              "lng": 127.24
+            }
+          ]
         }
       ],
       "props": [
@@ -8068,7 +8437,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "S1 · 进攻方复活点 1"
+              "note": "S1 · 进攻方复活点 1",
+              "spawnUid": "spawn_wta_pc_fault_s1_attack_tc6zhb"
             },
             {
               "name": "ATV全地形车",
@@ -8079,7 +8449,8 @@
               "cd": 15,
               "num": 3,
               "allowTeammate": false,
-              "note": "S1 · 进攻方复活点 1"
+              "note": "S1 · 进攻方复活点 1",
+              "spawnUid": "spawn_wta_pc_fault_s1_attack_tc6zhb"
             },
             {
               "name": "突击直升机",
@@ -8091,7 +8462,8 @@
               "cd": 150,
               "num": 1,
               "allowTeammate": false,
-              "note": "S1 · 进攻方复活点 2"
+              "note": "S1 · 进攻方复活点 2",
+              "spawnUid": "spawn_wta_pc_fault_s1_attack_1zmjz1"
             }
           ],
           "defense": [
@@ -8105,7 +8477,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "S1 · 防守方复活点 1"
+              "note": "S1 · 防守方复活点 1",
+              "spawnUid": "spawn_wta_pc_fault_s1_defense_f8y2np"
             },
             {
               "name": "ATV全地形车",
@@ -8116,7 +8489,8 @@
               "cd": 15,
               "num": 3,
               "allowTeammate": false,
-              "note": "S1 · 防守方复活点 1"
+              "note": "S1 · 防守方复活点 1",
+              "spawnUid": "spawn_wta_pc_fault_s1_defense_f8y2np"
             }
           ]
         },
@@ -8132,7 +8506,8 @@
               "cd": 150,
               "num": 1,
               "allowTeammate": false,
-              "note": "GTI4号阵地"
+              "note": "GTI4号阵地",
+              "spawnUid": "spawn_wta_pc_fault_s2_attack_f8y2np"
             },
             {
               "name": "FSV轮式突击炮",
@@ -8144,7 +8519,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "GTI4号阵地"
+              "note": "GTI4号阵地",
+              "spawnUid": "spawn_wta_pc_fault_s2_attack_f8y2np"
             },
             {
               "name": "ATV全地形车",
@@ -8155,7 +8531,8 @@
               "cd": 15,
               "num": 3,
               "allowTeammate": false,
-              "note": "GTI4号阵地"
+              "note": "GTI4号阵地",
+              "spawnUid": "spawn_wta_pc_fault_s2_attack_f8y2np"
             },
             {
               "name": "F-45A战斗机",
@@ -8166,7 +8543,8 @@
               "cd": 100,
               "num": 1,
               "allowTeammate": false,
-              "note": "复活点 4"
+              "note": "复活点 4",
+              "spawnUid": "spawn_wta_pc_fault_s2_attack_3biiby"
             }
           ],
           "defense": [
@@ -8180,7 +8558,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "哈夫克3号阵地"
+              "note": "哈夫克3号阵地",
+              "spawnUid": "spawn_wta_pc_fault_s2_defense_7ciyir"
             },
             {
               "name": "ATV全地形车",
@@ -8191,7 +8570,8 @@
               "cd": 15,
               "num": 3,
               "allowTeammate": false,
-              "note": "哈夫克3号阵地"
+              "note": "哈夫克3号阵地",
+              "spawnUid": "spawn_wta_pc_fault_s2_defense_7ciyir"
             },
             {
               "name": "F-45A战斗机",
@@ -8202,7 +8582,8 @@
               "cd": 100,
               "num": 1,
               "allowTeammate": false,
-              "note": "哈夫克3号阵地"
+              "note": "哈夫克3号阵地",
+              "spawnUid": "spawn_wta_pc_fault_s2_defense_7ciyir"
             }
           ]
         },
@@ -8217,7 +8598,8 @@
               "cd": 15,
               "num": 3,
               "allowTeammate": false,
-              "note": "GTI7号阵地"
+              "note": "GTI7号阵地",
+              "spawnUid": "spawn_wta_pc_fault_s3_attack_1bmlg0k"
             }
           ],
           "defense": [
@@ -8230,7 +8612,8 @@
               "cd": 15,
               "num": 3,
               "allowTeammate": false,
-              "note": "哈夫克4号阵地"
+              "note": "哈夫克4号阵地",
+              "spawnUid": "spawn_wta_pc_fault_s3_defense_66nm7k"
             }
           ]
         }
@@ -9242,7 +9625,49 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_brokentrack_s1_attack_yhix4u",
+              "stageId": "S1",
+              "name": "运输要道",
+              "side": "attack",
+              "lat": -168.904,
+              "lng": 207.159
+            },
+            {
+              "uid": "spawn_wta_pc_brokentrack_s1_attack_uf22e",
+              "stageId": "S1",
+              "name": "S1 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -177.622,
+              "lng": 190.373
+            },
+            {
+              "uid": "spawn_wta_pc_brokentrack_s1_attack_5al0vz",
+              "stageId": "S1",
+              "name": "山间小路",
+              "side": "attack",
+              "lat": -175.201,
+              "lng": 170.7
+            },
+            {
+              "uid": "spawn_wta_pc_brokentrack_s1_defense_1lvjhln",
+              "stageId": "S1",
+              "name": "S1 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -118.508,
+              "lng": 191.946
+            },
+            {
+              "uid": "spawn_wta_pc_brokentrack_s1_defense_4y8okb",
+              "stageId": "S1",
+              "name": "S1 · 防守方复活点 2",
+              "side": "defense",
+              "lat": -127.685,
+              "lng": 164.818
+            }
+          ]
         },
         {
           "id": "S2",
@@ -9785,7 +10210,33 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_brokentrack_s2_attack_g79tt0",
+              "stageId": "S2",
+              "name": "进攻方矿场入口",
+              "side": "attack",
+              "lat": -130.237,
+              "lng": 193.995
+            },
+            {
+              "uid": "spawn_wta_pc_brokentrack_s2_attack_1pf9i5y",
+              "stageId": "S2",
+              "name": "进攻方二号二号矿场入口",
+              "side": "attack",
+              "lat": -138.564,
+              "lng": 165.564
+            },
+            {
+              "uid": "spawn_wta_pc_brokentrack_s2_defense_ngx3xm",
+              "stageId": "S2",
+              "name": "S2 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -86.654,
+              "lng": 152.481
+            }
+          ]
         },
         {
           "id": "S3",
@@ -10507,7 +10958,49 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_brokentrack_s3_attack_cf433p",
+              "stageId": "S3",
+              "name": "进攻方工人宿舍",
+              "side": "attack",
+              "lat": -83.35,
+              "lng": 158.787
+            },
+            {
+              "uid": "spawn_wta_pc_brokentrack_s3_attack_1q61o5o",
+              "stageId": "S3",
+              "name": "S3 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -102.153,
+              "lng": 161.107
+            },
+            {
+              "uid": "spawn_wta_pc_brokentrack_s3_attack_1ommi5y",
+              "stageId": "S3",
+              "name": "进攻方矿山山头",
+              "side": "attack",
+              "lat": -120.339,
+              "lng": 160.227
+            },
+            {
+              "uid": "spawn_wta_pc_brokentrack_s3_defense_nf9hrr",
+              "stageId": "S3",
+              "name": "铁道岔路口",
+              "side": "defense",
+              "lat": -108.618,
+              "lng": 99.692
+            },
+            {
+              "uid": "spawn_wta_pc_brokentrack_s3_defense_1y3xobg",
+              "stageId": "S3",
+              "name": "园区出口",
+              "side": "defense",
+              "lat": -124.254,
+              "lng": 109.101
+            }
+          ]
         },
         {
           "id": "S4",
@@ -11534,7 +12027,57 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_brokentrack_s4_attack_15ftssf",
+              "stageId": "S4",
+              "name": "进攻方铁轨岔路口",
+              "side": "attack",
+              "lat": -91.353,
+              "lng": 114.839
+            },
+            {
+              "uid": "spawn_wta_pc_brokentrack_s4_attack_1ukp6cu",
+              "stageId": "S4",
+              "name": "S4 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -106.861,
+              "lng": 111.641
+            },
+            {
+              "uid": "spawn_wta_pc_brokentrack_s4_attack_bl9bce",
+              "stageId": "S4",
+              "name": "进攻方园区出口",
+              "side": "attack",
+              "lat": -121.116,
+              "lng": 121.035
+            },
+            {
+              "uid": "spawn_wta_pc_brokentrack_s4_defense_1gd2plo",
+              "stageId": "S4",
+              "name": "S4 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -144.916,
+              "lng": 44.076
+            },
+            {
+              "uid": "spawn_wta_pc_brokentrack_s4_defense_1025xzf",
+              "stageId": "S4",
+              "name": "S4 · 防守方复活点 2",
+              "side": "defense",
+              "lat": -160.037,
+              "lng": 47.403
+            },
+            {
+              "uid": "spawn_wta_pc_brokentrack_s4_defense_dvhdhc",
+              "stageId": "S4",
+              "name": "S4 · 防守方复活点 3",
+              "side": "defense",
+              "lat": -168.481,
+              "lng": 56.452
+            }
+          ]
         }
       ],
       "props": [
@@ -11936,7 +12479,8 @@
               "cd": 15,
               "num": 3,
               "allowTeammate": false,
-              "note": "运输要道"
+              "note": "运输要道",
+              "spawnUid": "spawn_wta_pc_brokentrack_s1_attack_yhix4u"
             },
             {
               "name": "轻型战术车",
@@ -11947,7 +12491,8 @@
               "cd": 15,
               "num": 1,
               "allowTeammate": false,
-              "note": "运输要道"
+              "note": "运输要道",
+              "spawnUid": "spawn_wta_pc_brokentrack_s1_attack_yhix4u"
             },
             {
               "name": "M1A4主战坦克",
@@ -11958,7 +12503,8 @@
               "cd": 120,
               "num": 1,
               "allowTeammate": false,
-              "note": "运输要道"
+              "note": "运输要道",
+              "spawnUid": "spawn_wta_pc_brokentrack_s1_attack_yhix4u"
             },
             {
               "name": "ATV全地形车",
@@ -11969,7 +12515,8 @@
               "cd": 15,
               "num": 2,
               "allowTeammate": false,
-              "note": "山间小路"
+              "note": "山间小路",
+              "spawnUid": "spawn_wta_pc_brokentrack_s1_attack_5al0vz"
             },
             {
               "name": "轻型战术车",
@@ -11980,7 +12527,8 @@
               "cd": 15,
               "num": 1,
               "allowTeammate": false,
-              "note": "山间小路"
+              "note": "山间小路",
+              "spawnUid": "spawn_wta_pc_brokentrack_s1_attack_5al0vz"
             }
           ],
           "defense": []
@@ -11997,7 +12545,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "进攻方矿场入口"
+              "note": "进攻方矿场入口",
+              "spawnUid": "spawn_wta_pc_brokentrack_s2_attack_g79tt0"
             },
             {
               "name": "轻型战术车",
@@ -12008,7 +12557,8 @@
               "cd": 15,
               "num": 1,
               "allowTeammate": false,
-              "note": "进攻方矿场入口"
+              "note": "进攻方矿场入口",
+              "spawnUid": "spawn_wta_pc_brokentrack_s2_attack_g79tt0"
             },
             {
               "name": "ATV全地形车",
@@ -12019,7 +12569,8 @@
               "cd": 15,
               "num": 2,
               "allowTeammate": false,
-              "note": "进攻方二号二号矿场入口"
+              "note": "进攻方二号二号矿场入口",
+              "spawnUid": "spawn_wta_pc_brokentrack_s2_attack_1pf9i5y"
             }
           ],
           "defense": [
@@ -12033,7 +12584,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "S2 · 防守方复活点 1"
+              "note": "S2 · 防守方复活点 1",
+              "spawnUid": "spawn_wta_pc_brokentrack_s2_defense_ngx3xm"
             }
           ]
         },
@@ -12048,7 +12600,8 @@
               "cd": 15,
               "num": 2,
               "allowTeammate": false,
-              "note": "进攻方工人宿舍"
+              "note": "进攻方工人宿舍",
+              "spawnUid": "spawn_wta_pc_brokentrack_s3_attack_cf433p"
             },
             {
               "name": "ATV全地形车",
@@ -12059,7 +12612,8 @@
               "cd": 15,
               "num": 3,
               "allowTeammate": false,
-              "note": "进攻方矿山山头"
+              "note": "进攻方矿山山头",
+              "spawnUid": "spawn_wta_pc_brokentrack_s3_attack_1ommi5y"
             },
             {
               "name": "FSV轮式突击炮",
@@ -12071,7 +12625,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "进攻方矿山山头"
+              "note": "进攻方矿山山头",
+              "spawnUid": "spawn_wta_pc_brokentrack_s3_attack_1ommi5y"
             }
           ],
           "defense": [
@@ -12084,7 +12639,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "园区出口"
+              "note": "园区出口",
+              "spawnUid": "spawn_wta_pc_brokentrack_s3_defense_1y3xobg"
             }
           ]
         },
@@ -12099,7 +12655,8 @@
               "cd": 15,
               "num": 3,
               "allowTeammate": false,
-              "note": "进攻方铁轨岔路口"
+              "note": "进攻方铁轨岔路口",
+              "spawnUid": "spawn_wta_pc_brokentrack_s4_attack_15ftssf"
             },
             {
               "name": "轻型战术车",
@@ -12110,7 +12667,8 @@
               "cd": 15,
               "num": 1,
               "allowTeammate": false,
-              "note": "进攻方铁轨岔路口"
+              "note": "进攻方铁轨岔路口",
+              "spawnUid": "spawn_wta_pc_brokentrack_s4_attack_15ftssf"
             },
             {
               "name": "ATV全地形车",
@@ -12121,7 +12679,8 @@
               "cd": 15,
               "num": 1,
               "allowTeammate": false,
-              "note": "进攻方园区出口"
+              "note": "进攻方园区出口",
+              "spawnUid": "spawn_wta_pc_brokentrack_s4_attack_bl9bce"
             },
             {
               "name": "FSV轮式突击炮",
@@ -12133,7 +12692,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "进攻方园区出口"
+              "note": "进攻方园区出口",
+              "spawnUid": "spawn_wta_pc_brokentrack_s4_attack_bl9bce"
             }
           ],
           "defense": []
@@ -12619,7 +13179,49 @@
             "S1 · 防守方复活点 2"
           ],
           "attackVehicles": [],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_colosseum_s1_attack_1k4vw9l",
+              "stageId": "S1",
+              "name": "GTI1号阵地",
+              "side": "attack",
+              "lat": -166.003,
+              "lng": 166.772
+            },
+            {
+              "uid": "spawn_wta_pc_colosseum_s1_attack_1sd93dq",
+              "stageId": "S1",
+              "name": "S1 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -158.115,
+              "lng": 180.998
+            },
+            {
+              "uid": "spawn_wta_pc_colosseum_s1_attack_li04h0",
+              "stageId": "S1",
+              "name": "S1 · 进攻方复活点 3",
+              "side": "attack",
+              "lat": -161.961,
+              "lng": 173.496
+            },
+            {
+              "uid": "spawn_wta_pc_colosseum_s1_defense_1fu6v5s",
+              "stageId": "S1",
+              "name": "S1 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -133.8749449756813,
+              "lng": 145.75
+            },
+            {
+              "uid": "spawn_wta_pc_colosseum_s1_defense_mmlpd0",
+              "stageId": "S1",
+              "name": "S1 · 防守方复活点 2",
+              "side": "defense",
+              "lat": -149.429,
+              "lng": 145.447
+            }
+          ]
         },
         {
           "id": "S2",
@@ -13092,7 +13694,49 @@
             "S2 · 防守方复活点 2"
           ],
           "attackVehicles": [],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_colosseum_s2_attack_el2l5i",
+              "stageId": "S2",
+              "name": "GTI4号阵地",
+              "side": "attack",
+              "lat": -137.238,
+              "lng": 147.442
+            },
+            {
+              "uid": "spawn_wta_pc_colosseum_s2_attack_zxi8oi",
+              "stageId": "S2",
+              "name": "S2 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -151.002,
+              "lng": 144.907
+            },
+            {
+              "uid": "spawn_wta_pc_colosseum_s2_attack_15lym2e",
+              "stageId": "S2",
+              "name": "S2 · 进攻方复活点 3",
+              "side": "attack",
+              "lat": -172.388,
+              "lng": 132.988
+            },
+            {
+              "uid": "spawn_wta_pc_colosseum_s2_defense_wzppty",
+              "stageId": "S2",
+              "name": "哈夫克3号阵地",
+              "side": "defense",
+              "lat": -121.481,
+              "lng": 97.814
+            },
+            {
+              "uid": "spawn_wta_pc_colosseum_s2_defense_ova2ya",
+              "stageId": "S2",
+              "name": "S2 · 防守方复活点 2",
+              "side": "defense",
+              "lat": -127.13,
+              "lng": 86.936
+            }
+          ]
         },
         {
           "id": "S3",
@@ -13468,7 +14112,49 @@
             "S3 · 防守方复活点 2"
           ],
           "attackVehicles": [],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_colosseum_s3_attack_1gxw9dt",
+              "stageId": "S3",
+              "name": "S3 · 进攻方复活点 1",
+              "side": "attack",
+              "lat": -132.168,
+              "lng": 99.978
+            },
+            {
+              "uid": "spawn_wta_pc_colosseum_s3_attack_n3drjo",
+              "stageId": "S3",
+              "name": "S3 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -129.334,
+              "lng": 119.979
+            },
+            {
+              "uid": "spawn_wta_pc_colosseum_s3_attack_1ejbu1i",
+              "stageId": "S3",
+              "name": "S3 · 进攻方复活点 3",
+              "side": "attack",
+              "lat": -136.795,
+              "lng": 86.636
+            },
+            {
+              "uid": "spawn_wta_pc_colosseum_s3_defense_qeifh4",
+              "stageId": "S3",
+              "name": "S3 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -132.133,
+              "lng": 145.171
+            },
+            {
+              "uid": "spawn_wta_pc_colosseum_s3_defense_1r6cnkt",
+              "stageId": "S3",
+              "name": "S3 · 防守方复活点 2",
+              "side": "defense",
+              "lat": -93.119,
+              "lng": 119.474
+            }
+          ]
         },
         {
           "id": "S4",
@@ -13938,7 +14624,57 @@
             "S4 · 防守方复活点 3"
           ],
           "attackVehicles": [],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_colosseum_s4_attack_1e3djys",
+              "stageId": "S4",
+              "name": "GTI10号阵地",
+              "side": "attack",
+              "lat": -100.087,
+              "lng": 101.952
+            },
+            {
+              "uid": "spawn_wta_pc_colosseum_s4_attack_1yhscuh",
+              "stageId": "S4",
+              "name": "S4 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -114.825,
+              "lng": 110.778
+            },
+            {
+              "uid": "spawn_wta_pc_colosseum_s4_attack_w88eb5",
+              "stageId": "S4",
+              "name": "S4 · 进攻方复活点 3",
+              "side": "attack",
+              "lat": -129.276,
+              "lng": 132.787
+            },
+            {
+              "uid": "spawn_wta_pc_colosseum_s4_defense_rl9o9r",
+              "stageId": "S4",
+              "name": "哈夫克7号阵地",
+              "side": "defense",
+              "lat": -79.536,
+              "lng": 147.364
+            },
+            {
+              "uid": "spawn_wta_pc_colosseum_s4_defense_h2w0u4",
+              "stageId": "S4",
+              "name": "S4 · 防守方复活点 2",
+              "side": "defense",
+              "lat": -93.228,
+              "lng": 157.3
+            },
+            {
+              "uid": "spawn_wta_pc_colosseum_s4_defense_fqml8d",
+              "stageId": "S4",
+              "name": "S4 · 防守方复活点 3",
+              "side": "defense",
+              "lat": -100.576,
+              "lng": 158.798
+            }
+          ]
         }
       ],
       "props": [
@@ -14243,7 +14979,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "S1 · 进攻方复活点 2"
+              "note": "S1 · 进攻方复活点 2",
+              "spawnUid": "spawn_wta_pc_colosseum_s1_attack_1sd93dq"
             }
           ],
           "defense": []
@@ -14259,7 +14996,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "S2 · 进攻方复活点 2"
+              "note": "S2 · 进攻方复活点 2",
+              "spawnUid": "spawn_wta_pc_colosseum_s2_attack_zxi8oi"
             },
             {
               "name": "鱼鹰直升机",
@@ -14270,7 +15008,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "S2 · 进攻方复活点 3"
+              "note": "S2 · 进攻方复活点 3",
+              "spawnUid": "spawn_wta_pc_colosseum_s2_attack_15lym2e"
             }
           ],
           "defense": [
@@ -14284,7 +15023,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "哈夫克3号阵地"
+              "note": "哈夫克3号阵地",
+              "spawnUid": "spawn_wta_pc_colosseum_s2_defense_wzppty"
             }
           ]
         },
@@ -14303,7 +15043,8 @@
               "cd": 120,
               "num": 1,
               "allowTeammate": false,
-              "note": "GTI10号阵地"
+              "note": "GTI10号阵地",
+              "spawnUid": "spawn_wta_pc_colosseum_s4_attack_1e3djys"
             },
             {
               "name": "F-45A战斗机",
@@ -14314,7 +15055,8 @@
               "cd": 100,
               "num": 1,
               "allowTeammate": false,
-              "note": "S4 · 进攻方复活点 2"
+              "note": "S4 · 进攻方复活点 2",
+              "spawnUid": "spawn_wta_pc_colosseum_s4_attack_1yhscuh"
             }
           ],
           "defense": [
@@ -14327,7 +15069,8 @@
               "cd": 100,
               "num": 1,
               "allowTeammate": false,
-              "note": "哈夫克7号阵地"
+              "note": "哈夫克7号阵地",
+              "spawnUid": "spawn_wta_pc_colosseum_s4_defense_rl9o9r"
             },
             {
               "name": "LAV AA防空车",
@@ -14339,7 +15082,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "哈夫克7号阵地"
+              "note": "哈夫克7号阵地",
+              "spawnUid": "spawn_wta_pc_colosseum_s4_defense_rl9o9r"
             },
             {
               "name": "两栖装甲运输车",
@@ -14351,7 +15095,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "哈夫克7号阵地"
+              "note": "哈夫克7号阵地",
+              "spawnUid": "spawn_wta_pc_colosseum_s4_defense_rl9o9r"
             }
           ]
         }
@@ -15188,7 +15933,41 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_stormeye_s1_attack_18eizej",
+              "stageId": "S1",
+              "name": "进攻方1号阵地",
+              "side": "attack",
+              "lat": -124.275,
+              "lng": 55.613
+            },
+            {
+              "uid": "spawn_wta_pc_stormeye_s1_attack_1sgem7f",
+              "stageId": "S1",
+              "name": "S1 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -134.541,
+              "lng": 69.095
+            },
+            {
+              "uid": "spawn_wta_pc_stormeye_s1_defense_fehmd7",
+              "stageId": "S1",
+              "name": "防守方1号阵地",
+              "side": "defense",
+              "lat": -105.357,
+              "lng": 101.026
+            },
+            {
+              "uid": "spawn_wta_pc_stormeye_s1_defense_rpzyeb",
+              "stageId": "S1",
+              "name": "S1 · 防守方复活点 2",
+              "side": "defense",
+              "lat": -93.457,
+              "lng": 94.406
+            }
+          ]
         },
         {
           "id": "S2",
@@ -15946,7 +16725,49 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_stormeye_s2_attack_1st27aj",
+              "stageId": "S2",
+              "name": "进攻方3号阵地",
+              "side": "attack",
+              "lat": -110.867,
+              "lng": 70.739
+            },
+            {
+              "uid": "spawn_wta_pc_stormeye_s2_attack_ml8sth",
+              "stageId": "S2",
+              "name": "进攻方4号阵地",
+              "side": "attack",
+              "lat": -116.146,
+              "lng": 78.276
+            },
+            {
+              "uid": "spawn_wta_pc_stormeye_s2_defense_es0fzu",
+              "stageId": "S2",
+              "name": "防守方3号阵地",
+              "side": "defense",
+              "lat": -111.455,
+              "lng": 117.705
+            },
+            {
+              "uid": "spawn_wta_pc_stormeye_s2_defense_zmywu9",
+              "stageId": "S2",
+              "name": "防守方4号阵地",
+              "side": "defense",
+              "lat": -94.854,
+              "lng": 117.705
+            },
+            {
+              "uid": "spawn_wta_pc_stormeye_s2_defense_1dehazz",
+              "stageId": "S2",
+              "name": "S2 · 防守方复活点 3",
+              "side": "defense",
+              "lat": -88.576,
+              "lng": 115.945
+            }
+          ]
         },
         {
           "id": "S3",
@@ -16419,7 +17240,49 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_stormeye_s3_attack_1np9avb",
+              "stageId": "S3",
+              "name": "S3 · 进攻方复活点 1",
+              "side": "attack",
+              "lat": -110.306,
+              "lng": 86.149
+            },
+            {
+              "uid": "spawn_wta_pc_stormeye_s3_attack_7yn2bs",
+              "stageId": "S3",
+              "name": "进攻方6号阵地",
+              "side": "attack",
+              "lat": -93.627,
+              "lng": 83.327
+            },
+            {
+              "uid": "spawn_wta_pc_stormeye_s3_attack_1j9ys9x",
+              "stageId": "S3",
+              "name": "进攻方7号阵地",
+              "side": "attack",
+              "lat": -145.355,
+              "lng": 70.414
+            },
+            {
+              "uid": "spawn_wta_pc_stormeye_s3_defense_1972rjt",
+              "stageId": "S3",
+              "name": "防守方6号阵地",
+              "side": "defense",
+              "lat": -83.472,
+              "lng": 127.506
+            },
+            {
+              "uid": "spawn_wta_pc_stormeye_s3_defense_1bj7k4s",
+              "stageId": "S3",
+              "name": "防守方7号阵地",
+              "side": "defense",
+              "lat": -100.96,
+              "lng": 134.066
+            }
+          ]
         },
         {
           "id": "S4",
@@ -17013,7 +17876,49 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_stormeye_s4_attack_1ezemdb",
+              "stageId": "S4",
+              "name": "进攻方8号阵地",
+              "side": "attack",
+              "lat": -88.767,
+              "lng": 101.087
+            },
+            {
+              "uid": "spawn_wta_pc_stormeye_s4_attack_1ypdp0",
+              "stageId": "S4",
+              "name": "进攻方9号阵地",
+              "side": "attack",
+              "lat": -113.099,
+              "lng": 108.334
+            },
+            {
+              "uid": "spawn_wta_pc_stormeye_s4_defense_1qdsx7h",
+              "stageId": "S4",
+              "name": "防守方8号阵地",
+              "side": "defense",
+              "lat": -104.062,
+              "lng": 153.038
+            },
+            {
+              "uid": "spawn_wta_pc_stormeye_s4_defense_1pjptul",
+              "stageId": "S4",
+              "name": "S4 · 防守方复活点 2",
+              "side": "defense",
+              "lat": -89.951,
+              "lng": 156.445
+            },
+            {
+              "uid": "spawn_wta_pc_stormeye_s4_defense_4b6vvx",
+              "stageId": "S4",
+              "name": "防守方10号阵地",
+              "side": "defense",
+              "lat": -75.416,
+              "lng": 153.557
+            }
+          ]
         },
         {
           "id": "S5",
@@ -17652,7 +18557,57 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_stormeye_s5_attack_10ezjwg",
+              "stageId": "S5",
+              "name": "S5 · 进攻方复活点 1",
+              "side": "attack",
+              "lat": -101.397,
+              "lng": 133.967
+            },
+            {
+              "uid": "spawn_wta_pc_stormeye_s5_attack_1mpwzvd",
+              "stageId": "S5",
+              "name": "S5 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -91.054,
+              "lng": 127.376
+            },
+            {
+              "uid": "spawn_wta_pc_stormeye_s5_attack_52wftq",
+              "stageId": "S5",
+              "name": "S5 · 进攻方复活点 3",
+              "side": "attack",
+              "lat": -138.166,
+              "lng": 121.272
+            },
+            {
+              "uid": "spawn_wta_pc_stormeye_s5_attack_1hkp59f",
+              "stageId": "S5",
+              "name": "进攻方13号阵地",
+              "side": "attack",
+              "lat": -82.703,
+              "lng": 131.514
+            },
+            {
+              "uid": "spawn_wta_pc_stormeye_s5_defense_biyvlh",
+              "stageId": "S5",
+              "name": "S5 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -107.34,
+              "lng": 188.067
+            },
+            {
+              "uid": "spawn_wta_pc_stormeye_s5_defense_1ddro1f",
+              "stageId": "S5",
+              "name": "防守方12号阵地",
+              "side": "defense",
+              "lat": -81.495,
+              "lng": 181.163
+            }
+          ]
         }
       ],
       "props": [
@@ -17907,7 +18862,8 @@
               "cd": 100,
               "num": 1,
               "allowTeammate": false,
-              "note": "进攻方1号阵地"
+              "note": "进攻方1号阵地",
+              "spawnUid": "spawn_wta_pc_stormeye_s1_attack_18eizej"
             },
             {
               "name": "两栖装甲运输车",
@@ -17919,7 +18875,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "进攻方1号阵地"
+              "note": "进攻方1号阵地",
+              "spawnUid": "spawn_wta_pc_stormeye_s1_attack_18eizej"
             },
             {
               "name": "摩托艇",
@@ -17930,7 +18887,8 @@
               "cd": 5,
               "num": 2,
               "allowTeammate": false,
-              "note": "S1 · 进攻方复活点 2"
+              "note": "S1 · 进攻方复活点 2",
+              "spawnUid": "spawn_wta_pc_stormeye_s1_attack_1sgem7f"
             }
           ],
           "defense": [
@@ -17943,7 +18901,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "防守方1号阵地"
+              "note": "防守方1号阵地",
+              "spawnUid": "spawn_wta_pc_stormeye_s1_defense_fehmd7"
             },
             {
               "name": "LAV AA防空车",
@@ -17955,7 +18914,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "S1 · 防守方复活点 2"
+              "note": "S1 · 防守方复活点 2",
+              "spawnUid": "spawn_wta_pc_stormeye_s1_defense_rpzyeb"
             }
           ]
         },
@@ -17970,7 +18930,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "进攻方3号阵地"
+              "note": "进攻方3号阵地",
+              "spawnUid": "spawn_wta_pc_stormeye_s2_attack_1st27aj"
             },
             {
               "name": "摩托艇",
@@ -17981,7 +18942,8 @@
               "cd": 5,
               "num": 2,
               "allowTeammate": false,
-              "note": "进攻方3号阵地"
+              "note": "进攻方3号阵地",
+              "spawnUid": "spawn_wta_pc_stormeye_s2_attack_1st27aj"
             }
           ],
           "defense": [
@@ -17995,7 +18957,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "防守方3号阵地"
+              "note": "防守方3号阵地",
+              "spawnUid": "spawn_wta_pc_stormeye_s2_defense_es0fzu"
             },
             {
               "name": "UCB-95/97攻击艇",
@@ -18006,7 +18969,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "防守方3号阵地"
+              "note": "防守方3号阵地",
+              "spawnUid": "spawn_wta_pc_stormeye_s2_defense_es0fzu"
             },
             {
               "name": "GTQ-35轻型坦克",
@@ -18017,7 +18981,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "S2 · 防守方复活点 3"
+              "note": "S2 · 防守方复活点 3",
+              "spawnUid": "spawn_wta_pc_stormeye_s2_defense_1dehazz"
             },
             {
               "name": "UCB-95/97攻击艇",
@@ -18028,7 +18993,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "S2 · 防守方复活点 3"
+              "note": "S2 · 防守方复活点 3",
+              "spawnUid": "spawn_wta_pc_stormeye_s2_defense_1dehazz"
             }
           ]
         },
@@ -18043,7 +19009,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "进攻方6号阵地"
+              "note": "进攻方6号阵地",
+              "spawnUid": "spawn_wta_pc_stormeye_s3_attack_7yn2bs"
             },
             {
               "name": "摩托艇",
@@ -18054,7 +19021,8 @@
               "cd": 5,
               "num": 2,
               "allowTeammate": false,
-              "note": "进攻方6号阵地"
+              "note": "进攻方6号阵地",
+              "spawnUid": "spawn_wta_pc_stormeye_s3_attack_7yn2bs"
             },
             {
               "name": "UCB-95/97攻击艇",
@@ -18065,7 +19033,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "进攻方7号阵地"
+              "note": "进攻方7号阵地",
+              "spawnUid": "spawn_wta_pc_stormeye_s3_attack_1j9ys9x"
             }
           ],
           "defense": [
@@ -18078,7 +19047,8 @@
               "cd": 5,
               "num": 2,
               "allowTeammate": false,
-              "note": "防守方6号阵地"
+              "note": "防守方6号阵地",
+              "spawnUid": "spawn_wta_pc_stormeye_s3_defense_1972rjt"
             },
             {
               "name": "FSV轮式突击炮",
@@ -18090,7 +19060,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "防守方7号阵地"
+              "note": "防守方7号阵地",
+              "spawnUid": "spawn_wta_pc_stormeye_s3_defense_1bj7k4s"
             },
             {
               "name": "UCB-95/97攻击艇",
@@ -18101,7 +19072,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "防守方7号阵地"
+              "note": "防守方7号阵地",
+              "spawnUid": "spawn_wta_pc_stormeye_s3_defense_1bj7k4s"
             }
           ]
         },
@@ -18116,7 +19088,8 @@
               "cd": 5,
               "num": 2,
               "allowTeammate": false,
-              "note": "进攻方8号阵地"
+              "note": "进攻方8号阵地",
+              "spawnUid": "spawn_wta_pc_stormeye_s4_attack_1ezemdb"
             },
             {
               "name": "UCB-95/97攻击艇",
@@ -18127,7 +19100,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "进攻方8号阵地"
+              "note": "进攻方8号阵地",
+              "spawnUid": "spawn_wta_pc_stormeye_s4_attack_1ezemdb"
             }
           ],
           "defense": [
@@ -18140,7 +19114,8 @@
               "cd": 5,
               "num": 2,
               "allowTeammate": false,
-              "note": "防守方8号阵地"
+              "note": "防守方8号阵地",
+              "spawnUid": "spawn_wta_pc_stormeye_s4_defense_1qdsx7h"
             },
             {
               "name": "UCB-95/97攻击艇",
@@ -18151,7 +19126,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "防守方8号阵地"
+              "note": "防守方8号阵地",
+              "spawnUid": "spawn_wta_pc_stormeye_s4_defense_1qdsx7h"
             },
             {
               "name": "UCB-95/97攻击艇",
@@ -18162,7 +19138,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "防守方10号阵地"
+              "note": "防守方10号阵地",
+              "spawnUid": "spawn_wta_pc_stormeye_s4_defense_4b6vvx"
             },
             {
               "name": "摩托艇",
@@ -18173,7 +19150,8 @@
               "cd": 5,
               "num": 2,
               "allowTeammate": false,
-              "note": "防守方10号阵地"
+              "note": "防守方10号阵地",
+              "spawnUid": "spawn_wta_pc_stormeye_s4_defense_4b6vvx"
             }
           ]
         },
@@ -18188,7 +19166,8 @@
               "cd": 5,
               "num": 2,
               "allowTeammate": false,
-              "note": "S5 · 进攻方复活点 1"
+              "note": "S5 · 进攻方复活点 1",
+              "spawnUid": "spawn_wta_pc_stormeye_s5_attack_10ezjwg"
             },
             {
               "name": "两栖装甲运输车",
@@ -18200,7 +19179,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "S5 · 进攻方复活点 1"
+              "note": "S5 · 进攻方复活点 1",
+              "spawnUid": "spawn_wta_pc_stormeye_s5_attack_10ezjwg"
             },
             {
               "name": "GTQ-35轻型坦克",
@@ -18211,7 +19191,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "S5 · 进攻方复活点 2"
+              "note": "S5 · 进攻方复活点 2",
+              "spawnUid": "spawn_wta_pc_stormeye_s5_attack_1mpwzvd"
             },
             {
               "name": "UCB-95/97攻击艇",
@@ -18222,7 +19203,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "S5 · 进攻方复活点 3"
+              "note": "S5 · 进攻方复活点 3",
+              "spawnUid": "spawn_wta_pc_stormeye_s5_attack_52wftq"
             }
           ],
           "defense": [
@@ -18235,7 +19217,8 @@
               "cd": 5,
               "num": 2,
               "allowTeammate": false,
-              "note": "防守方12号阵地"
+              "note": "防守方12号阵地",
+              "spawnUid": "spawn_wta_pc_stormeye_s5_defense_1ddro1f"
             },
             {
               "name": "冲锋舟",
@@ -18247,7 +19230,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": true,
-              "note": "防守方12号阵地"
+              "note": "防守方12号阵地",
+              "spawnUid": "spawn_wta_pc_stormeye_s5_defense_1ddro1f"
             },
             {
               "name": "FSV轮式突击炮",
@@ -18259,7 +19243,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "防守方12号阵地"
+              "note": "防守方12号阵地",
+              "spawnUid": "spawn_wta_pc_stormeye_s5_defense_1ddro1f"
             }
           ]
         }
@@ -18998,7 +19983,41 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_ember_s1_attack_1vfk3ss",
+              "stageId": "S1",
+              "name": "S1 · 进攻方复活点 1",
+              "side": "attack",
+              "lat": -150.128,
+              "lng": 49.046
+            },
+            {
+              "uid": "spawn_wta_pc_ember_s1_attack_nmfavg",
+              "stageId": "S1",
+              "name": "S1 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -163.688,
+              "lng": 45.566
+            },
+            {
+              "uid": "spawn_wta_pc_ember_s1_attack_eydzbu",
+              "stageId": "S1",
+              "name": "S1 · 进攻复活点3",
+              "side": "attack",
+              "lat": -176.375,
+              "lng": 57.87901380216552
+            },
+            {
+              "uid": "spawn_wta_pc_ember_s1_defense_t78cxj",
+              "stageId": "S1",
+              "name": "S1 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -133.595,
+              "lng": 95.986
+            }
+          ]
         },
         {
           "id": "S2",
@@ -19432,7 +20451,49 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_ember_s2_attack_1qohxbw",
+              "stageId": "S2",
+              "name": "岩下村",
+              "side": "attack",
+              "lat": -143.886,
+              "lng": 62.819
+            },
+            {
+              "uid": "spawn_wta_pc_ember_s2_attack_1kvuawx",
+              "stageId": "S2",
+              "name": "S2 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -151.562,
+              "lng": 80.777
+            },
+            {
+              "uid": "spawn_wta_pc_ember_s2_attack_1ixpn96",
+              "stageId": "S2",
+              "name": "S2 · 防守方复活点3",
+              "side": "attack",
+              "lat": -161.375,
+              "lng": 96.00259428676551
+            },
+            {
+              "uid": "spawn_wta_pc_ember_s2_defense_1s5r1pv",
+              "stageId": "S2",
+              "name": "S2 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -115.684,
+              "lng": 128.548
+            },
+            {
+              "uid": "spawn_wta_pc_ember_s2_defense_1bzkq7f",
+              "stageId": "S2",
+              "name": "办公区",
+              "side": "defense",
+              "lat": -128.185,
+              "lng": 131.108
+            }
+          ]
         },
         {
           "id": "S3",
@@ -19731,7 +20792,41 @@
             "S3 · 防守方复活点 2"
           ],
           "attackVehicles": [],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_ember_s3_attack_18stlr4",
+              "stageId": "S3",
+              "name": "S3 · 进攻方复活点 1",
+              "side": "attack",
+              "lat": -113.661,
+              "lng": 113.605
+            },
+            {
+              "uid": "spawn_wta_pc_ember_s3_attack_1i8ktse",
+              "stageId": "S3",
+              "name": "S3 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -132.435,
+              "lng": 110.17
+            },
+            {
+              "uid": "spawn_wta_pc_ember_s3_defense_xiymge",
+              "stageId": "S3",
+              "name": "S3 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -111.033,
+              "lng": 163.267
+            },
+            {
+              "uid": "spawn_wta_pc_ember_s3_defense_458n16",
+              "stageId": "S3",
+              "name": "S3 · 防守方复活点 2",
+              "side": "defense",
+              "lat": -132.665,
+              "lng": 167.427
+            }
+          ]
         },
         {
           "id": "S4",
@@ -19984,7 +21079,17 @@
           ],
           "defenseSpawnNames": [],
           "attackVehicles": [],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_ember_s4_attack_11nyjhx",
+              "stageId": "S4",
+              "name": "C1大仓",
+              "side": "attack",
+              "lat": -112.5,
+              "lng": 128.12686005466207
+            }
+          ]
         }
       ],
       "props": [
@@ -20120,7 +21225,8 @@
               "cd": 15,
               "num": 2,
               "allowTeammate": false,
-              "note": "S1 · 进攻复活点3"
+              "note": "S1 · 进攻复活点3",
+              "spawnUid": "spawn_wta_pc_ember_s1_attack_eydzbu"
             }
           ],
           "defense": []
@@ -20136,7 +21242,8 @@
               "cd": 120,
               "num": 1,
               "allowTeammate": false,
-              "note": "岩下村"
+              "note": "岩下村",
+              "spawnUid": "spawn_wta_pc_ember_s2_attack_1qohxbw"
             }
           ],
           "defense": [
@@ -20149,7 +21256,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "办公区"
+              "note": "办公区",
+              "spawnUid": "spawn_wta_pc_ember_s2_defense_1bzkq7f"
             }
           ]
         },
@@ -20598,7 +21706,41 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_pyramid_s1_attack_15ddoc9",
+              "stageId": "S1",
+              "name": "GTI1号阵地",
+              "side": "attack",
+              "lat": -144.856,
+              "lng": 51.131
+            },
+            {
+              "uid": "spawn_wta_pc_pyramid_s1_attack_39lfof",
+              "stageId": "S1",
+              "name": "GTI2号阵地",
+              "side": "attack",
+              "lat": -161.272,
+              "lng": 55.783
+            },
+            {
+              "uid": "spawn_wta_pc_pyramid_s1_attack_ww7dl3",
+              "stageId": "S1",
+              "name": "S1 · 进攻方复活点 3",
+              "side": "attack",
+              "lat": -173.927,
+              "lng": 65.83
+            },
+            {
+              "uid": "spawn_wta_pc_pyramid_s1_defense_9vy5iw",
+              "stageId": "S1",
+              "name": "哈夫克1号阵地",
+              "side": "defense",
+              "lat": -131.668,
+              "lng": 85.213
+            }
+          ]
         },
         {
           "id": "S2",
@@ -21131,7 +22273,41 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_pyramid_s2_attack_12zbw3k",
+              "stageId": "S2",
+              "name": "S2 · 进攻方复活点 1",
+              "side": "attack",
+              "lat": -143.402,
+              "lng": 76.148
+            },
+            {
+              "uid": "spawn_wta_pc_pyramid_s2_attack_i22jkh",
+              "stageId": "S2",
+              "name": "S2 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -153.046,
+              "lng": 86.503
+            },
+            {
+              "uid": "spawn_wta_pc_pyramid_s2_defense_8pnsoj",
+              "stageId": "S2",
+              "name": "S2 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -114.853,
+              "lng": 115.17
+            },
+            {
+              "uid": "spawn_wta_pc_pyramid_s2_defense_biw240",
+              "stageId": "S2",
+              "name": "S2 · 防守方复活点 2",
+              "side": "defense",
+              "lat": -104.566,
+              "lng": 100.757
+            }
+          ]
         },
         {
           "id": "S3",
@@ -21600,7 +22776,41 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_pyramid_s3_attack_qn6kzx",
+              "stageId": "S3",
+              "name": "GTI4号阵地",
+              "side": "attack",
+              "lat": -93.891,
+              "lng": 108.066
+            },
+            {
+              "uid": "spawn_wta_pc_pyramid_s3_attack_10yn8as",
+              "stageId": "S3",
+              "name": "S3 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -122.507,
+              "lng": 105.339
+            },
+            {
+              "uid": "spawn_wta_pc_pyramid_s3_defense_cdxul4",
+              "stageId": "S3",
+              "name": "S3 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -120.136,
+              "lng": 150.696
+            },
+            {
+              "uid": "spawn_wta_pc_pyramid_s3_defense_12h9tdv",
+              "stageId": "S3",
+              "name": "哈夫克5号阵地",
+              "side": "defense",
+              "lat": -107.084,
+              "lng": 151.57
+            }
+          ]
         },
         {
           "id": "S4",
@@ -22362,7 +23572,49 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_pyramid_s4_attack_1b6w43k",
+              "stageId": "S4",
+              "name": "S4 · 进攻方复活点 1",
+              "side": "attack",
+              "lat": -99.417,
+              "lng": 168.674
+            },
+            {
+              "uid": "spawn_wta_pc_pyramid_s4_attack_1ecydzi",
+              "stageId": "S4",
+              "name": "S4 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -121.483,
+              "lng": 141.919
+            },
+            {
+              "uid": "spawn_wta_pc_pyramid_s4_defense_7umfx2",
+              "stageId": "S4",
+              "name": "S4 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -151.068,
+              "lng": 156.137
+            },
+            {
+              "uid": "spawn_wta_pc_pyramid_s4_defense_r76e17",
+              "stageId": "S4",
+              "name": "S4 · 防守方复活点 2",
+              "side": "defense",
+              "lat": -158.156,
+              "lng": 180.824
+            },
+            {
+              "uid": "spawn_wta_pc_pyramid_s4_defense_uy5ath",
+              "stageId": "S4",
+              "name": "S4 · 防守方复活点 3",
+              "side": "defense",
+              "lat": -136.061,
+              "lng": 202.134
+            }
+          ]
         }
       ],
       "props": [
@@ -22561,7 +23813,8 @@
               "cd": 120,
               "num": 1,
               "allowTeammate": false,
-              "note": "GTI1号阵地"
+              "note": "GTI1号阵地",
+              "spawnUid": "spawn_wta_pc_pyramid_s1_attack_15ddoc9"
             },
             {
               "name": "侦察直升机",
@@ -22573,7 +23826,8 @@
               "cd": 120,
               "num": 1,
               "allowTeammate": true,
-              "note": "GTI2号阵地"
+              "note": "GTI2号阵地",
+              "spawnUid": "spawn_wta_pc_pyramid_s1_attack_39lfof"
             },
             {
               "name": "ATV全地形车",
@@ -22584,7 +23838,8 @@
               "cd": 15,
               "num": 1,
               "allowTeammate": false,
-              "note": "GTI2号阵地"
+              "note": "GTI2号阵地",
+              "spawnUid": "spawn_wta_pc_pyramid_s1_attack_39lfof"
             }
           ],
           "defense": [
@@ -22598,7 +23853,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "哈夫克1号阵地"
+              "note": "哈夫克1号阵地",
+              "spawnUid": "spawn_wta_pc_pyramid_s1_defense_9vy5iw"
             }
           ]
         },
@@ -22617,7 +23873,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "GTI4号阵地"
+              "note": "GTI4号阵地",
+              "spawnUid": "spawn_wta_pc_pyramid_s3_attack_qn6kzx"
             },
             {
               "name": "ATV全地形车",
@@ -22628,7 +23885,8 @@
               "cd": 15,
               "num": 2,
               "allowTeammate": false,
-              "note": "GTI4号阵地"
+              "note": "GTI4号阵地",
+              "spawnUid": "spawn_wta_pc_pyramid_s3_attack_qn6kzx"
             }
           ],
           "defense": [
@@ -22642,7 +23900,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "哈夫克5号阵地"
+              "note": "哈夫克5号阵地",
+              "spawnUid": "spawn_wta_pc_pyramid_s3_defense_12h9tdv"
             }
           ]
         },
@@ -23025,7 +24284,33 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_trench_s1_attack_1hycxg8",
+              "stageId": "S1",
+              "name": "S1 · 进攻方复活点 1",
+              "side": "attack",
+              "lat": -116.767,
+              "lng": 50.74
+            },
+            {
+              "uid": "spawn_wta_pc_trench_s1_attack_134svjp",
+              "stageId": "S1",
+              "name": "进攻方2号阵地",
+              "side": "attack",
+              "lat": -102.815,
+              "lng": 50.526
+            },
+            {
+              "uid": "spawn_wta_pc_trench_s1_defense_1xp33qq",
+              "stageId": "S1",
+              "name": "S1 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -105.068,
+              "lng": 112.675
+            }
+          ]
         },
         {
           "id": "S2",
@@ -23578,7 +24863,41 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_trench_s2_attack_1tdr692",
+              "stageId": "S2",
+              "name": "进攻方3号阵地",
+              "side": "attack",
+              "lat": -93.822,
+              "lng": 86.723
+            },
+            {
+              "uid": "spawn_wta_pc_trench_s2_attack_2fxpkw",
+              "stageId": "S2",
+              "name": "S2 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -112.791,
+              "lng": 86.782
+            },
+            {
+              "uid": "spawn_wta_pc_trench_s2_defense_103k6zx",
+              "stageId": "S2",
+              "name": "S2 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -114.99,
+              "lng": 153.323
+            },
+            {
+              "uid": "spawn_wta_pc_trench_s2_defense_kpuv1n",
+              "stageId": "S2",
+              "name": "S2 · 防守方复活点 2",
+              "side": "defense",
+              "lat": -96.991,
+              "lng": 157.323
+            }
+          ]
         },
         {
           "id": "S3",
@@ -23921,7 +25240,33 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_trench_s3_attack_1mhzieg",
+              "stageId": "S3",
+              "name": "S3 · 进攻方复活点 1",
+              "side": "attack",
+              "lat": -92.921,
+              "lng": 130.919
+            },
+            {
+              "uid": "spawn_wta_pc_trench_s3_attack_1urxbsz",
+              "stageId": "S3",
+              "name": "S3 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -111.085,
+              "lng": 127.708
+            },
+            {
+              "uid": "spawn_wta_pc_trench_s3_defense_uslvo0",
+              "stageId": "S3",
+              "name": "防守方4号阵地",
+              "side": "defense",
+              "lat": -144.068,
+              "lng": 183.117
+            }
+          ]
         },
         {
           "id": "S4",
@@ -24349,7 +25694,33 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_trench_s4_attack_1j3fwh5",
+              "stageId": "S4",
+              "name": "S4 · 进攻方复活点 1",
+              "side": "attack",
+              "lat": -125.518,
+              "lng": 190.203
+            },
+            {
+              "uid": "spawn_wta_pc_trench_s4_attack_pqm57a",
+              "stageId": "S4",
+              "name": "进攻方8号阵地",
+              "side": "attack",
+              "lat": -126.073,
+              "lng": 165.67
+            },
+            {
+              "uid": "spawn_wta_pc_trench_s4_defense_d8vgid",
+              "stageId": "S4",
+              "name": "S4 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -182.518,
+              "lng": 131.294
+            }
+          ]
         },
         {
           "id": "S5",
@@ -24663,7 +26034,41 @@
             "防守方8号阵地"
           ],
           "attackVehicles": [],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_trench_s5_attack_1a6u9bn",
+              "stageId": "S5",
+              "name": "进攻方9号阵地",
+              "side": "attack",
+              "lat": -176.832,
+              "lng": 151.261
+            },
+            {
+              "uid": "spawn_wta_pc_trench_s5_defense_25erq7",
+              "stageId": "S5",
+              "name": "S5 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -171.084,
+              "lng": 73.183
+            },
+            {
+              "uid": "spawn_wta_pc_trench_s5_defense_9vtl3n",
+              "stageId": "S5",
+              "name": "S5 · 防守方复活点 2",
+              "side": "defense",
+              "lat": -187.456,
+              "lng": 74.689
+            },
+            {
+              "uid": "spawn_wta_pc_trench_s5_defense_xlplm8",
+              "stageId": "S5",
+              "name": "防守方8号阵地",
+              "side": "defense",
+              "lat": -153.335,
+              "lng": 83.069
+            }
+          ]
         }
       ],
       "props": [
@@ -24890,7 +26295,8 @@
               "cd": 120,
               "num": 1,
               "allowTeammate": false,
-              "note": "进攻方2号阵地"
+              "note": "进攻方2号阵地",
+              "spawnUid": "spawn_wta_pc_trench_s1_attack_134svjp"
             }
           ],
           "defense": []
@@ -24906,7 +26312,8 @@
               "cd": 120,
               "num": 1,
               "allowTeammate": false,
-              "note": "进攻方3号阵地"
+              "note": "进攻方3号阵地",
+              "spawnUid": "spawn_wta_pc_trench_s2_attack_1tdr692"
             }
           ],
           "defense": []
@@ -24926,7 +26333,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "进攻方8号阵地"
+              "note": "进攻方8号阵地",
+              "spawnUid": "spawn_wta_pc_trench_s4_attack_pqm57a"
             }
           ],
           "defense": []
@@ -24942,7 +26350,8 @@
               "cd": 120,
               "num": 1,
               "allowTeammate": false,
-              "note": "进攻方9号阵地"
+              "note": "进攻方9号阵地",
+              "spawnUid": "spawn_wta_pc_trench_s5_attack_1a6u9bn"
             },
             {
               "name": "ATV全地形车",
@@ -24953,7 +26362,8 @@
               "cd": 15,
               "num": 2,
               "allowTeammate": false,
-              "note": "进攻方9号阵地"
+              "note": "进攻方9号阵地",
+              "spawnUid": "spawn_wta_pc_trench_s5_attack_1a6u9bn"
             }
           ],
           "defense": [
@@ -24966,7 +26376,8 @@
               "cd": 120,
               "num": 1,
               "allowTeammate": false,
-              "note": "S5 · 防守方复活点 2"
+              "note": "S5 · 防守方复活点 2",
+              "spawnUid": "spawn_wta_pc_trench_s5_defense_9vtl3n"
             }
           ]
         }
@@ -25459,7 +26870,41 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_umuscanal_s1_attack_8qjr4c",
+              "stageId": "S1",
+              "name": "GTI1号阵地",
+              "side": "attack",
+              "lat": -106.682,
+              "lng": 206.735
+            },
+            {
+              "uid": "spawn_wta_pc_umuscanal_s1_attack_gdwbu5",
+              "stageId": "S1",
+              "name": "GTI2号阵地",
+              "side": "attack",
+              "lat": -114.365,
+              "lng": 207.314
+            },
+            {
+              "uid": "spawn_wta_pc_umuscanal_s1_attack_1yxejln",
+              "stageId": "S1",
+              "name": "S1 · 进攻方复活点 3",
+              "side": "attack",
+              "lat": -120.904,
+              "lng": 205.985
+            },
+            {
+              "uid": "spawn_wta_pc_umuscanal_s1_defense_q46xxx",
+              "stageId": "S1",
+              "name": "S1 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -105.656,
+              "lng": 156.684
+            }
+          ]
         },
         {
           "id": "S2",
@@ -25906,7 +27351,49 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_umuscanal_s2_attack_h83eb",
+              "stageId": "S2",
+              "name": "GTI4号阵地",
+              "side": "attack",
+              "lat": -103.243,
+              "lng": 172.657
+            },
+            {
+              "uid": "spawn_wta_pc_umuscanal_s2_attack_mc8y04",
+              "stageId": "S2",
+              "name": "S2 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -113.842,
+              "lng": 173.835
+            },
+            {
+              "uid": "spawn_wta_pc_umuscanal_s2_attack_10cwkp1",
+              "stageId": "S2",
+              "name": "S2 · 进攻方复活点 3",
+              "side": "attack",
+              "lat": -142.99565307882318,
+              "lng": 148.50672018749998
+            },
+            {
+              "uid": "spawn_wta_pc_umuscanal_s2_defense_z3w2sr",
+              "stageId": "S2",
+              "name": "哈夫克2号阵地",
+              "side": "defense",
+              "lat": -114.36,
+              "lng": 112.404
+            },
+            {
+              "uid": "spawn_wta_pc_umuscanal_s2_defense_xgfmco",
+              "stageId": "S2",
+              "name": "S2 · 防守方复活点 2",
+              "side": "defense",
+              "lat": -139.064,
+              "lng": 111.978
+            }
+          ]
         },
         {
           "id": "S3",
@@ -26122,7 +27609,41 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_umuscanal_s3_attack_1hybvjm",
+              "stageId": "S3",
+              "name": "GTI8号阵地",
+              "side": "attack",
+              "lat": -104.936,
+              "lng": 127.562
+            },
+            {
+              "uid": "spawn_wta_pc_umuscanal_s3_attack_y3cr34",
+              "stageId": "S3",
+              "name": "S3 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -132.174,
+              "lng": 133.142
+            },
+            {
+              "uid": "spawn_wta_pc_umuscanal_s3_defense_wixi81",
+              "stageId": "S3",
+              "name": "S3 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -151.485,
+              "lng": 88.126
+            },
+            {
+              "uid": "spawn_wta_pc_umuscanal_s3_defense_vt5k4t",
+              "stageId": "S3",
+              "name": "哈夫克5号阵地",
+              "side": "defense",
+              "lat": -138.848,
+              "lng": 88.49
+            }
+          ]
         },
         {
           "id": "S4",
@@ -26345,7 +27866,41 @@
             "S4 · 防守方复活点 2"
           ],
           "attackVehicles": [],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_umuscanal_s4_attack_1hxpspj",
+              "stageId": "S4",
+              "name": "S4 · 进攻方复活点 1",
+              "side": "attack",
+              "lat": -151.847,
+              "lng": 100.017
+            },
+            {
+              "uid": "spawn_wta_pc_umuscanal_s4_attack_kxl6a",
+              "stageId": "S4",
+              "name": "GTI11号阵地",
+              "side": "attack",
+              "lat": -145.843,
+              "lng": 100.004
+            },
+            {
+              "uid": "spawn_wta_pc_umuscanal_s4_defense_fe5dl6",
+              "stageId": "S4",
+              "name": "哈夫克7号阵地",
+              "side": "defense",
+              "lat": -112.507,
+              "lng": 64.493
+            },
+            {
+              "uid": "spawn_wta_pc_umuscanal_s4_defense_1ihh9cj",
+              "stageId": "S4",
+              "name": "S4 · 防守方复活点 2",
+              "side": "defense",
+              "lat": -125.414,
+              "lng": 56.827
+            }
+          ]
         }
       ],
       "props": [
@@ -26537,7 +28092,8 @@
               "cd": 120,
               "num": 1,
               "allowTeammate": false,
-              "note": "GTI1号阵地"
+              "note": "GTI1号阵地",
+              "spawnUid": "spawn_wta_pc_umuscanal_s1_attack_8qjr4c"
             },
             {
               "name": "两栖装甲运输车",
@@ -26549,7 +28105,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "GTI2号阵地"
+              "note": "GTI2号阵地",
+              "spawnUid": "spawn_wta_pc_umuscanal_s1_attack_gdwbu5"
             },
             {
               "name": "ATV全地形车",
@@ -26560,7 +28117,8 @@
               "cd": 15,
               "num": 1,
               "allowTeammate": false,
-              "note": "S1 · 进攻方复活点 3"
+              "note": "S1 · 进攻方复活点 3",
+              "spawnUid": "spawn_wta_pc_umuscanal_s1_attack_1yxejln"
             }
           ],
           "defense": []
@@ -26577,7 +28135,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "GTI4号阵地"
+              "note": "GTI4号阵地",
+              "spawnUid": "spawn_wta_pc_umuscanal_s2_attack_h83eb"
             }
           ],
           "defense": [
@@ -26591,7 +28150,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "S2 · 防守方复活点 2"
+              "note": "S2 · 防守方复活点 2",
+              "spawnUid": "spawn_wta_pc_umuscanal_s2_defense_xgfmco"
             },
             {
               "name": "FSV轮式突击炮",
@@ -26603,7 +28163,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "S2 · 防守方复活点 2"
+              "note": "S2 · 防守方复活点 2",
+              "spawnUid": "spawn_wta_pc_umuscanal_s2_defense_xgfmco"
             }
           ]
         },
@@ -26619,7 +28180,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "GTI8号阵地"
+              "note": "GTI8号阵地",
+              "spawnUid": "spawn_wta_pc_umuscanal_s3_attack_1hybvjm"
             },
             {
               "name": "F-45A战斗机",
@@ -26630,7 +28192,8 @@
               "cd": 100,
               "num": 2,
               "allowTeammate": false,
-              "note": "GTI8号阵地"
+              "note": "GTI8号阵地",
+              "spawnUid": "spawn_wta_pc_umuscanal_s3_attack_1hybvjm"
             },
             {
               "name": "LAV AA防空车",
@@ -26642,7 +28205,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "GTI8号阵地"
+              "note": "GTI8号阵地",
+              "spawnUid": "spawn_wta_pc_umuscanal_s3_attack_1hybvjm"
             }
           ],
           "defense": [
@@ -26655,7 +28219,8 @@
               "cd": 100,
               "num": 2,
               "allowTeammate": false,
-              "note": "哈夫克5号阵地"
+              "note": "哈夫克5号阵地",
+              "spawnUid": "spawn_wta_pc_umuscanal_s3_defense_vt5k4t"
             },
             {
               "name": "轮式突击炮",
@@ -26667,7 +28232,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "哈夫克5号阵地"
+              "note": "哈夫克5号阵地",
+              "spawnUid": "spawn_wta_pc_umuscanal_s3_defense_vt5k4t"
             }
           ]
         },
@@ -26683,7 +28249,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "GTI11号阵地"
+              "note": "GTI11号阵地",
+              "spawnUid": "spawn_wta_pc_umuscanal_s4_attack_kxl6a"
             },
             {
               "name": "侦察直升机",
@@ -26695,7 +28262,8 @@
               "cd": 100,
               "num": 1,
               "allowTeammate": false,
-              "note": "GTI11号阵地"
+              "note": "GTI11号阵地",
+              "spawnUid": "spawn_wta_pc_umuscanal_s4_attack_kxl6a"
             },
             {
               "name": "摩托艇",
@@ -26706,7 +28274,8 @@
               "cd": 5,
               "num": 3,
               "allowTeammate": false,
-              "note": "GTI11号阵地"
+              "note": "GTI11号阵地",
+              "spawnUid": "spawn_wta_pc_umuscanal_s4_attack_kxl6a"
             }
           ],
           "defense": [
@@ -26719,7 +28288,8 @@
               "cd": 100,
               "num": 1,
               "allowTeammate": false,
-              "note": "哈夫克7号阵地"
+              "note": "哈夫克7号阵地",
+              "spawnUid": "spawn_wta_pc_umuscanal_s4_defense_fe5dl6"
             }
           ]
         }
@@ -27231,7 +28801,33 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_aftershock_s1_attack_1jagxdw",
+              "stageId": "S1",
+              "name": "GTI1号阵地",
+              "side": "attack",
+              "lat": -119.429,
+              "lng": 56.465
+            },
+            {
+              "uid": "spawn_wta_pc_aftershock_s1_attack_1o46ubc",
+              "stageId": "S1",
+              "name": "GTI2号阵地",
+              "side": "attack",
+              "lat": -92.813,
+              "lng": 80.245
+            },
+            {
+              "uid": "spawn_wta_pc_aftershock_s1_defense_1kwnh87",
+              "stageId": "S1",
+              "name": "哈夫克1号阵地",
+              "side": "defense",
+              "lat": -134.565,
+              "lng": 121.827
+            }
+          ]
         },
         {
           "id": "S2",
@@ -27598,7 +29194,49 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_aftershock_s2_attack_122offd",
+              "stageId": "S2",
+              "name": "GTI3号阵地",
+              "side": "attack",
+              "lat": -105.14,
+              "lng": 103.789
+            },
+            {
+              "uid": "spawn_wta_pc_aftershock_s2_attack_nlv59a",
+              "stageId": "S2",
+              "name": "S2 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -123.441,
+              "lng": 98.2
+            },
+            {
+              "uid": "spawn_wta_pc_aftershock_s2_attack_1wfyhf7",
+              "stageId": "S2",
+              "name": "S2 · 进攻方复活点 3",
+              "side": "attack",
+              "lat": -144.238,
+              "lng": 91.827
+            },
+            {
+              "uid": "spawn_wta_pc_aftershock_s2_defense_1hwlo62",
+              "stageId": "S2",
+              "name": "哈夫克2号阵地",
+              "side": "defense",
+              "lat": -104.719,
+              "lng": 164.472
+            },
+            {
+              "uid": "spawn_wta_pc_aftershock_s2_defense_1enlqqf",
+              "stageId": "S2",
+              "name": "S2 · 防守方复活点 2",
+              "side": "defense",
+              "lat": -130.84,
+              "lng": 163.625
+            }
+          ]
         },
         {
           "id": "S3",
@@ -27929,7 +29567,57 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_aftershock_s3_attack_12luasl",
+              "stageId": "S3",
+              "name": "S3 · 进攻方复活点 1",
+              "side": "attack",
+              "lat": -135.399,
+              "lng": 121.287
+            },
+            {
+              "uid": "spawn_wta_pc_aftershock_s3_attack_v40y0h",
+              "stageId": "S3",
+              "name": "S3 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -149.652,
+              "lng": 87.696
+            },
+            {
+              "uid": "spawn_wta_pc_aftershock_s3_attack_o18l69",
+              "stageId": "S3",
+              "name": "S3 · 进攻方复活点 3",
+              "side": "attack",
+              "lat": -119.75687803983672,
+              "lng": 134.12050712801576
+            },
+            {
+              "uid": "spawn_wta_pc_aftershock_s3_defense_1wvoncc",
+              "stageId": "S3",
+              "name": "S3 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -134.474,
+              "lng": 170.276
+            },
+            {
+              "uid": "spawn_wta_pc_aftershock_s3_defense_1pq2kf3",
+              "stageId": "S3",
+              "name": "S3 · 防守方复活点 2",
+              "side": "defense",
+              "lat": -165.228,
+              "lng": 185.656
+            },
+            {
+              "uid": "spawn_wta_pc_aftershock_s3_defense_el424l",
+              "stageId": "S3",
+              "name": "S3 · 防守方复活点 3",
+              "side": "defense",
+              "lat": -189.501,
+              "lng": 165.1
+            }
+          ]
         },
         {
           "id": "S4",
@@ -28171,7 +29859,57 @@
               ]
             }
           ],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_aftershock_s4_attack_14uepd5",
+              "stageId": "S4",
+              "name": "S4 · 进攻方复活点 1",
+              "side": "attack",
+              "lat": -135.387,
+              "lng": 139.889
+            },
+            {
+              "uid": "spawn_wta_pc_aftershock_s4_attack_1xg09v2",
+              "stageId": "S4",
+              "name": "S4 · 进攻方复活点 2",
+              "side": "attack",
+              "lat": -159.502,
+              "lng": 146.094
+            },
+            {
+              "uid": "spawn_wta_pc_aftershock_s4_attack_112ajty",
+              "stageId": "S4",
+              "name": "S4 · 进攻方复活点 3",
+              "side": "attack",
+              "lat": -104.152,
+              "lng": 134.076
+            },
+            {
+              "uid": "spawn_wta_pc_aftershock_s4_defense_bf2hw6",
+              "stageId": "S4",
+              "name": "S4 · 防守方复活点 1",
+              "side": "defense",
+              "lat": -105.37654068092343,
+              "lng": 204.3746510390692
+            },
+            {
+              "uid": "spawn_wta_pc_aftershock_s4_defense_73irkj",
+              "stageId": "S4",
+              "name": "S4 · 防守方复活点 2",
+              "side": "defense",
+              "lat": -128.50060526750565,
+              "lng": 203.8740839775566
+            },
+            {
+              "uid": "spawn_wta_pc_aftershock_s4_defense_gfr088",
+              "stageId": "S4",
+              "name": "S4 · 防守方复活点 3",
+              "side": "defense",
+              "lat": -156.129,
+              "lng": 196.017
+            }
+          ]
         },
         {
           "id": "S5",
@@ -28427,7 +30165,49 @@
             "复活点 3"
           ],
           "attackVehicles": [],
-          "defenseVehicles": []
+          "defenseVehicles": [],
+          "spawns": [
+            {
+              "uid": "spawn_wta_pc_aftershock_s5_attack_a9wm49",
+              "stageId": "S5",
+              "name": "复活点 4",
+              "side": "attack",
+              "lat": -136.0007703404617,
+              "lng": 141.375
+            },
+            {
+              "uid": "spawn_wta_pc_aftershock_s5_attack_86n3cz",
+              "stageId": "S5",
+              "name": "复活点 5",
+              "side": "attack",
+              "lat": -82.87863160503379,
+              "lng": 159.125
+            },
+            {
+              "uid": "spawn_wta_pc_aftershock_s5_defense_1hbbwi0",
+              "stageId": "S5",
+              "name": "复活点 1",
+              "side": "defense",
+              "lat": -168.25203589979168,
+              "lng": 153.75
+            },
+            {
+              "uid": "spawn_wta_pc_aftershock_s5_defense_1tun781",
+              "stageId": "S5",
+              "name": "复活点2",
+              "side": "defense",
+              "lat": -123.5,
+              "lng": 205.375
+            },
+            {
+              "uid": "spawn_wta_pc_aftershock_s5_defense_1p780kh",
+              "stageId": "S5",
+              "name": "复活点 3",
+              "side": "defense",
+              "lat": -101.00847374507885,
+              "lng": 205.25
+            }
+          ]
         }
       ],
       "props": [
@@ -28522,7 +30302,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "GTI2号阵地"
+              "note": "GTI2号阵地",
+              "spawnUid": "spawn_wta_pc_aftershock_s1_attack_1o46ubc"
             }
           ],
           "defense": [
@@ -28535,7 +30316,8 @@
               "cd": 120,
               "num": 1,
               "allowTeammate": false,
-              "note": "哈夫克1号阵地"
+              "note": "哈夫克1号阵地",
+              "spawnUid": "spawn_wta_pc_aftershock_s1_defense_1kwnh87"
             }
           ]
         },
@@ -28551,7 +30333,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "GTI3号阵地"
+              "note": "GTI3号阵地",
+              "spawnUid": "spawn_wta_pc_aftershock_s2_attack_122offd"
             }
           ],
           "defense": [
@@ -28565,7 +30348,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "哈夫克2号阵地"
+              "note": "哈夫克2号阵地",
+              "spawnUid": "spawn_wta_pc_aftershock_s2_defense_1hwlo62"
             }
           ]
         },
@@ -28580,7 +30364,8 @@
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
-              "note": "S3 · 进攻方复活点 2"
+              "note": "S3 · 进攻方复活点 2",
+              "spawnUid": "spawn_wta_pc_aftershock_s3_attack_v40y0h"
             }
           ],
           "defense": []

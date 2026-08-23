@@ -340,6 +340,7 @@ export default function WargamePanel({
   fieldSupports,
   onAddFieldSupport,
 }: WargamePanelProps) {
+  const cinematicRefreshSidebar = new URLSearchParams(window.location.search).get('refreshSidebarDemo') === '1'
   const sideLabel = view === 'attack' ? '攻方' : '守方'
   const enemySide: Side = view === 'attack' ? 'defense' : 'attack'
   const [vehicleTeam, setVehicleTeam] = useState<OperatorTeam | undefined>('A')
@@ -511,7 +512,7 @@ export default function WargamePanel({
         />
       </div>
 
-      <details className="wg-battle-context">
+      <details className="wg-battle-context" open={cinematicRefreshSidebar ? true : undefined}>
         <summary><span className="caret" aria-hidden="true" /><i className="fa-solid fa-gauge-high" />对局状态<em>{stageLabel}</em></summary>
         <div className="wg-battle-context-body">
           <div className="wg-battle-context-tip">用于判断载具刷新条件；据点归属和占领进度请直接点击地图据点设置。</div>
@@ -698,7 +699,7 @@ export default function WargamePanel({
             <button type="button" className={`veh-own-opt enemy ${!customOwn ? 'active' : ''}`} onClick={() => onCustomOwnChange(false)}><span className="own-dot enemy" />敌方</button>
           </div>
           <div className="wg-support-list">
-            {FIELD_SUPPORTS.map((support) => <button type="button" key={support.id} className={support.id === 'vehicle-airdrop' ? 'vehicle-airdrop' : undefined} disabled={!wargame.enabled} onClick={() => onAddFieldSupport(support, customOwn ? view : (view === 'attack' ? 'defense' : 'attack'))}>
+            {FIELD_SUPPORTS.map((support) => <button type="button" key={support.id} className={`support-${support.id}${support.id === 'vehicle-airdrop' ? ' vehicle-airdrop' : ''}`} disabled={!wargame.enabled} onClick={() => onAddFieldSupport(support, customOwn ? view : (view === 'attack' ? 'defense' : 'attack'))}>
               <img src={support.iconUrl} alt="" draggable={false} /><span><b>{support.name}</b><small>{support.description}</small></span><em>部署</em>
             </button>)}
           </div>

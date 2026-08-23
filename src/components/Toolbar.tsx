@@ -59,6 +59,7 @@ interface ToolbarProps {
   /** 打开战术板弹窗（导出 HTML / 方案管理） */
   onOpenTactical: () => void
   cinematicModeSwitch?: boolean
+  cinematicInitiallyCollapsed?: boolean
 }
 
 /** 左上角图标（来自 enn.com.cn，三角洲行动标题标识） */
@@ -100,9 +101,10 @@ export default function Toolbar({
   onClearAll,
   onOpenTactical,
   cinematicModeSwitch = false,
+  cinematicInitiallyCollapsed = false,
 }: ToolbarProps) {
   const [openMenu, setOpenMenu] = useState<ToolbarMenu | null>(null)
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(cinematicInitiallyCollapsed)
   const currentMap = MAPS.find((m) => m.id === mapId) ?? MAPS[0]
   const attackDefenseMode = gameModeOptions.find((mode) => mode.id === 'attack-defense')
   const selectableModeOptions = [
