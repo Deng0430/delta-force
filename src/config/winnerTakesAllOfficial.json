@@ -3988,6 +3988,54 @@
           "name": "B点载具刷新位置 3",
           "lat": -122.49235161970157,
           "lng": 84.25424953033088
+        },
+        {
+          "uid": "vehicle_refresh_point_mt5ffpzm_e",
+          "name": "A点载具刷新位置 4",
+          "lat": -87.80589708175675,
+          "lng": 39.994366901654416
+        },
+        {
+          "uid": "vehicle_refresh_point_mt5fftmy_g",
+          "name": "A点载具刷新位置 5",
+          "lat": -86.8063372763063,
+          "lng": 35.43367048138787
+        },
+        {
+          "uid": "vehicle_refresh_point_mt5ffzom_i",
+          "name": "A点载具刷新位置 6",
+          "lat": -82.62068059098254,
+          "lng": 39.49456455422795
+        },
+        {
+          "uid": "vehicle_refresh_point_mt5fg2gu_k",
+          "name": "A点载具刷新位置 7",
+          "lat": -81.43370332201013,
+          "lng": 34.68396696024817
+        },
+        {
+          "uid": "vehicle_refresh_point_mt5fg65b_m",
+          "name": "A点载具刷新位置 8",
+          "lat": -78.43502390565878,
+          "lng": 40.24426807536766
+        },
+        {
+          "uid": "vehicle_refresh_point_mt5fg8vl_o",
+          "name": "A点载具刷新位置 9",
+          "lat": -76.6857942461205,
+          "lng": 34.68396696024817
+        },
+        {
+          "uid": "vehicle_refresh_point_mt5fgdkw_q",
+          "name": "A点载具刷新位置 10",
+          "lat": -75.24892702578548,
+          "lng": 30.872974061121326
+        },
+        {
+          "uid": "vehicle_refresh_point_mt5fghag_s",
+          "name": "A点载具刷新位置 11",
+          "lat": -79.55952868679054,
+          "lng": 27.99911056341912
         }
       ],
       "vehicleRefreshRules": [
@@ -4086,6 +4134,198 @@
           "quantity": 1,
           "refreshPointUid": "vehicle_refresh_point_msu2xox6_1",
           "note": ""
+        },
+        {
+          "uid": "vehicle_refresh_rule_mt5ff7ou_1",
+          "objective": "A",
+          "side": "attack",
+          "action": "refresh",
+          "trigger": {
+            "type": "map-event",
+            "value": "无"
+          },
+          "vehicle": {
+            "name": "冲锋舟",
+            "icon": "cfz",
+            "iconUrl": "/icons/vehicles/legend/nav_cfz.png",
+            "legendKey": "nav_cfz",
+            "badge": "舟",
+            "category": "supply",
+            "cd": 90,
+            "num": 1,
+            "allowTeammate": true
+          },
+          "quantity": 1,
+          "refreshPointUid": "vehicle_refresh_point_mt5fghag_s",
+          "note": "开局部署1"
+        },
+        {
+          "uid": "vehicle_refresh_rule_mt5ff7ou_2",
+          "objective": "A",
+          "side": "attack",
+          "action": "refresh",
+          "trigger": {
+            "type": "map-event",
+            "value": "无"
+          },
+          "vehicle": {
+            "name": "冲锋舟",
+            "icon": "cfz",
+            "iconUrl": "/icons/vehicles/legend/nav_cfz.png",
+            "legendKey": "nav_cfz",
+            "badge": "舟",
+            "category": "supply",
+            "cd": 90,
+            "num": 1,
+            "allowTeammate": true
+          },
+          "quantity": 1,
+          "refreshPointUid": "vehicle_refresh_point_mt5fgdkw_q",
+          "note": "开局部署2"
+        },
+        {
+          "uid": "vehicle_refresh_rule_mt5ff7ou_3",
+          "objective": "A",
+          "side": "attack",
+          "action": "refresh",
+          "trigger": {
+            "type": "map-event",
+            "value": "无"
+          },
+          "vehicle": {
+            "name": "冲锋舟",
+            "icon": "cfz",
+            "iconUrl": "/icons/vehicles/legend/nav_cfz.png",
+            "legendKey": "nav_cfz",
+            "badge": "舟",
+            "category": "supply",
+            "cd": 90,
+            "num": 1,
+            "allowTeammate": true
+          },
+          "quantity": 1,
+          "refreshPointUid": "vehicle_refresh_point_mt5fg8vl_o",
+          "note": "开局部署3"
+        },
+        {
+          "uid": "vehicle_refresh_rule_mt5ff7ou_4",
+          "objective": "A",
+          "side": "attack",
+          "action": "refresh",
+          "trigger": {
+            "type": "map-event",
+            "value": "无"
+          },
+          "vehicle": {
+            "name": "冲锋舟",
+            "icon": "cfz",
+            "iconUrl": "/icons/vehicles/legend/nav_cfz.png",
+            "legendKey": "nav_cfz",
+            "badge": "舟",
+            "category": "supply",
+            "cd": 90,
+            "num": 1,
+            "allowTeammate": true
+          },
+          "quantity": 1,
+          "refreshPointUid": "vehicle_refresh_point_mt5fg65b_m",
+          "note": "开局部署4"
+        },
+        {
+          "uid": "vehicle_refresh_rule_mt5ff7ou_5",
+          "objective": "A",
+          "side": "attack",
+          "action": "refresh",
+          "trigger": {
+            "type": "map-event",
+            "value": "无"
+          },
+          "vehicle": {
+            "name": "冲锋舟",
+            "icon": "cfz",
+            "iconUrl": "/icons/vehicles/legend/nav_cfz.png",
+            "legendKey": "nav_cfz",
+            "badge": "舟",
+            "category": "supply",
+            "cd": 90,
+            "num": 1,
+            "allowTeammate": true
+          },
+          "quantity": 1,
+          "refreshPointUid": "vehicle_refresh_point_mt5fg2gu_k",
+          "note": "开局部署5"
+        },
+        {
+          "uid": "vehicle_refresh_rule_mt5ff7ou_6",
+          "objective": "A",
+          "side": "attack",
+          "action": "refresh",
+          "trigger": {
+            "type": "map-event",
+            "value": "无"
+          },
+          "vehicle": {
+            "name": "冲锋舟",
+            "icon": "cfz",
+            "iconUrl": "/icons/vehicles/legend/nav_cfz.png",
+            "legendKey": "nav_cfz",
+            "badge": "舟",
+            "category": "supply",
+            "cd": 90,
+            "num": 1,
+            "allowTeammate": true
+          },
+          "quantity": 1,
+          "refreshPointUid": "vehicle_refresh_point_mt5ffzom_i",
+          "note": "开局部署6"
+        },
+        {
+          "uid": "vehicle_refresh_rule_mt5ff7ou_7",
+          "objective": "A",
+          "side": "attack",
+          "action": "refresh",
+          "trigger": {
+            "type": "map-event",
+            "value": "无"
+          },
+          "vehicle": {
+            "name": "冲锋舟",
+            "icon": "cfz",
+            "iconUrl": "/icons/vehicles/legend/nav_cfz.png",
+            "legendKey": "nav_cfz",
+            "badge": "舟",
+            "category": "supply",
+            "cd": 90,
+            "num": 1,
+            "allowTeammate": true
+          },
+          "quantity": 1,
+          "refreshPointUid": "vehicle_refresh_point_mt5fftmy_g",
+          "note": "开局部署7"
+        },
+        {
+          "uid": "vehicle_refresh_rule_mt5ff7ou_8",
+          "objective": "A",
+          "side": "attack",
+          "action": "refresh",
+          "trigger": {
+            "type": "map-event",
+            "value": "无"
+          },
+          "vehicle": {
+            "name": "冲锋舟",
+            "icon": "cfz",
+            "iconUrl": "/icons/vehicles/legend/nav_cfz.png",
+            "legendKey": "nav_cfz",
+            "badge": "舟",
+            "category": "supply",
+            "cd": 90,
+            "num": 1,
+            "allowTeammate": true
+          },
+          "quantity": 1,
+          "refreshPointUid": "vehicle_refresh_point_mt5ffpzm_e",
+          "note": "开局部署8"
         }
       ]
     },

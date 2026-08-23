@@ -31,7 +31,7 @@ import { makeWinnerSpawnUid } from '../config/attackDefenseSpawns'
 export const MODE_CONFIG_STORAGE_KEY = 'deltaforce-mode-configs-v1'
 export const MODE_CONFIG_SYNC_CHANNEL = 'deltaforce-mode-config-sync-v1'
 export const MODE_CONFIG_SYNC_MESSAGE = 'deltaforce-mode-config-sync'
-const MODE_STORAGE_VERSION = 22 as const
+const MODE_STORAGE_VERSION = 23 as const
 
 const SIDES: Side[] = ['attack', 'defense']
 const VERIFICATIONS: ModeConfigVerification[] = ['draft', 'confirmed']
@@ -917,6 +917,23 @@ export function normalizeModeConfigStore(value: unknown): ModeConfigStore | null
           spawns: [...migrated, ...added.map((spawn) => ({ ...spawn, deployVehicles: spawn.deployVehicles.map((vehicle) => ({ ...vehicle })) }))],
           updatedAt: Date.now(),
         }
+      }
+    }
+    // v23 固化 2026-08-23“攀升·胜者为王”新增的 8 个冲锋舟刷新点与规则。
+    // 按稳定 UID 更新官方条目并追加缺失条目，同时保留用户自建的其他刷新数据。
+    if (sourceVersion < 23) {
+      const official = winnerTakesAllOfficial.maps.ascent as unknown as OfficialModeMapData
+      const current = winner.maps.ascent ?? modeMapFromOfficial('ascent', official)
+      const builtin = modeMapFromOfficial('ascent', official)
+      const refreshPoints = new Map(current.vehicleRefreshPoints.map((point) => [point.uid, point]))
+      const refreshRules = new Map(current.vehicleRefreshRules.map((rule) => [rule.uid, rule]))
+      builtin.vehicleRefreshPoints.forEach((point) => refreshPoints.set(point.uid, point))
+      builtin.vehicleRefreshRules.forEach((rule) => refreshRules.set(rule.uid, rule))
+      winner.maps.ascent = {
+        ...current,
+        vehicleRefreshPoints: [...refreshPoints.values()],
+        vehicleRefreshRules: [...refreshRules.values()],
+        updatedAt: Date.now(),
       }
     }
   }
