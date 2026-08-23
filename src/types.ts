@@ -288,7 +288,7 @@ export interface GameModeProfile {
 }
 
 export interface ModeConfigStore {
-  version: 23
+  version: 25
   activeModeId: string
   profiles: GameModeProfile[]
 }

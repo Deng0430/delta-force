@@ -31,7 +31,7 @@ import { makeWinnerSpawnUid } from '../config/attackDefenseSpawns'
 export const MODE_CONFIG_STORAGE_KEY = 'deltaforce-mode-configs-v1'
 export const MODE_CONFIG_SYNC_CHANNEL = 'deltaforce-mode-config-sync-v1'
 export const MODE_CONFIG_SYNC_MESSAGE = 'deltaforce-mode-config-sync'
-const MODE_STORAGE_VERSION = 23 as const
+const MODE_STORAGE_VERSION = 25 as const
 
 const SIDES: Side[] = ['attack', 'defense']
 const VERIFICATIONS: ModeConfigVerification[] = ['draft', 'confirmed']
@@ -936,8 +936,200 @@ export function normalizeModeConfigStore(value: unknown): ModeConfigStore | null
         updatedAt: Date.now(),
       }
     }
+    // v24 固化 2026-08-23“堑壕战·胜者为王”A 点占领区及 S1-S3 活动区范围。
+    // 仅按稳定 UID 替换本次变更的官方区域，保留其他地图元素和用户自建区域。
+    if (sourceVersion < 24) {
+      const official = winnerTakesAllOfficial.maps.trench as unknown as OfficialModeMapData
+      const current = winner.maps.trench ?? modeMapFromOfficial('trench', official)
+      const builtin = modeMapFromOfficial('trench', official)
+      const updatedZoneUids = new Set([
+        'builtin_wta_trench_S1_front',
+        'builtin_wta_trench_S1_attack-base',
+        'builtin_wta_trench_S1_defense-base',
+        'builtin_wta_trench_S1_capture-0',
+        'builtin_wta_trench_S2_front',
+        'builtin_wta_trench_S2_attack-base',
+        'builtin_wta_trench_S2_defense-base',
+        'builtin_wta_trench_S3_front',
+        'builtin_wta_trench_S3_attack-base',
+      ])
+      const replacements = new Map(
+        builtin.zones
+          .filter((zone) => updatedZoneUids.has(zone.uid))
+          .map((zone) => [zone.uid, zone]),
+      )
+      const zones = current.zones.map((zone) => replacements.get(zone.uid) ?? zone)
+      const existingZoneUids = new Set(zones.map((zone) => zone.uid))
+      replacements.forEach((zone, uid) => {
+        if (!existingZoneUids.has(uid)) zones.push(zone)
+      })
+      winner.maps.trench = {
+        ...current,
+        zones,
+        updatedAt: Date.now(),
+      }
+    }
+    // v25 固化 2026-08-23“堑壕战·胜者为王”S4、S5 进攻方活动区。
+    // 其余数据与上一版语义一致，仅替换本次变化的两个官方区域。
+    if (sourceVersion < 25) {
+      const official = winnerTakesAllOfficial.maps.trench as unknown as OfficialModeMapData
+      const current = winner.maps.trench ?? modeMapFromOfficial('trench', official)
+      const builtin = modeMapFromOfficial('trench', official)
+      const updatedZoneUids = new Set([
+        'builtin_wta_trench_S4_attack-base',
+        'builtin_wta_trench_S5_attack-base',
+      ])
+      const replacements = new Map(
+        builtin.zones
+          .filter((zone) => updatedZoneUids.has(zone.uid))
+          .map((zone) => [zone.uid, zone]),
+      )
+      const zones = current.zones.map((zone) => replacements.get(zone.uid) ?? zone)
+      const existingZoneUids = new Set(zones.map((zone) => zone.uid))
+      replacements.forEach((zone, uid) => {
+        if (!existingZoneUids.has(uid)) zones.push(zone)
+      })
+      winner.maps.trench = {
+        ...current,
+        zones,
+        updatedAt: Date.now(),
+      }
+    }
   }
   return { version: MODE_STORAGE_VERSION, activeModeId, profiles }
+}
+
+export interface ModeConfigImportResult {
+  store: ModeConfigStore
+  profileId: string
+  kind: 'backup' | 'official'
+}
+
+function mergeItemsByUid<T extends { uid: string }>(current: T[], incoming: T[]): T[] {
+  const replacements = new Map(incoming.map((item) => [item.uid, item]))
+  const merged = current.map((item) => replacements.get(item.uid) ?? item)
+  const existingUids = new Set(merged.map((item) => item.uid))
+  incoming.forEach((item) => {
+    if (!existingUids.has(item.uid)) merged.push(item)
+  })
+  return merged
+}
+
+function mergeImportedMaps(
+  current: Record<string, ModeMapOverride>,
+  incoming: Record<string, ModeMapOverride>,
+  zonesOnly: boolean,
+): Record<string, ModeMapOverride> {
+  const maps = { ...current }
+  for (const [mapId, imported] of Object.entries(incoming)) {
+    const existing = current[mapId]
+    maps[mapId] = existing && zonesOnly
+      ? {
+          ...existing,
+          zones: mergeItemsByUid(existing.zones, imported.zones),
+          updatedAt: Date.now(),
+        }
+      : imported
+  }
+  return maps
+}
+
+/**
+ * 同时接收编辑器完整备份与“导出正式数据”文件。
+ * 正式数据只更新文件中包含的模式/地图；攻防数据写入当前选择的数据端。
+ */
+export function importModeConfigData(
+  currentStore: ModeConfigStore,
+  value: unknown,
+  gameDataPlatform: GameDataPlatform = 'pc',
+): ModeConfigImportResult | null {
+  const backup = normalizeModeConfigStore(value)
+  if (backup) {
+    return {
+      store: backup,
+      profileId: backup.profiles[0]?.id ?? 'attack-defense',
+      kind: 'backup',
+    }
+  }
+
+  if (!value || typeof value !== 'object') return null
+  const source = value as {
+    format?: unknown
+    importScope?: unknown
+    mode?: { id?: unknown; name?: unknown; description?: unknown }
+    maps?: unknown
+  }
+  if (
+    source.format !== 'deltaforce-map-mode'
+    || !source.mode
+    || typeof source.mode.id !== 'string'
+    || !source.mode.id.trim()
+    || typeof source.mode.name !== 'string'
+    || !source.maps
+    || typeof source.maps !== 'object'
+    || Array.isArray(source.maps)
+  ) return null
+
+  const importedMaps: Record<string, ModeMapOverride> = {}
+  try {
+    for (const map of MAPS) {
+      const rawMap = (source.maps as Record<string, unknown>)[map.id]
+      if (rawMap == null) continue
+      if (!rawMap || typeof rawMap !== 'object') return null
+      const official = rawMap as Partial<OfficialModeMapData>
+      if (!Array.isArray(official.stages) || !Array.isArray(official.props) || !official.deploy || typeof official.deploy !== 'object') return null
+      importedMaps[map.id] = modeMapFromOfficial(map.id, official as OfficialModeMapData)
+    }
+  } catch {
+    return null
+  }
+  if (Object.keys(importedMaps).length === 0) return null
+
+  const now = Date.now()
+  const zonesOnly = source.importScope === 'zones'
+  const profileId = source.mode.id.trim()
+  const existing = currentStore.profiles.find((profile) => profile.id === profileId)
+  let importedProfile: GameModeProfile
+  if (profileId === 'attack-defense') {
+    const base = existing ?? createModeProfile(source.mode.name.trim() || '攻防模式', profileId)
+    const pcMaps = base.platformMaps?.pc ?? base.maps
+    const mobileMaps = base.platformMaps?.mobile ?? {}
+    const targetMaps = mergeImportedMaps(
+      gameDataPlatform === 'pc' ? pcMaps : mobileMaps,
+      importedMaps,
+      zonesOnly,
+    )
+    importedProfile = {
+      ...base,
+      name: source.mode.name.trim() || base.name,
+      description: typeof source.mode.description === 'string' ? source.mode.description : base.description,
+      maps: gameDataPlatform === 'pc' ? targetMaps : pcMaps,
+      platformMaps: {
+        ...base.platformMaps,
+        pc: gameDataPlatform === 'pc' ? targetMaps : pcMaps,
+        mobile: gameDataPlatform === 'mobile' ? targetMaps : mobileMaps,
+      },
+      updatedAt: now,
+    }
+  } else {
+    const base = existing ?? createModeProfile(source.mode.name.trim() || '未命名模式', profileId)
+    importedProfile = {
+      ...base,
+      name: source.mode.name.trim() || base.name,
+      description: typeof source.mode.description === 'string' ? source.mode.description : base.description,
+      maps: mergeImportedMaps(base.maps, importedMaps, zonesOnly),
+      updatedAt: now,
+    }
+  }
+
+  const profiles = existing
+    ? currentStore.profiles.map((profile) => profile.id === profileId ? importedProfile : profile)
+    : [...currentStore.profiles, importedProfile]
+  return {
+    store: { ...currentStore, version: MODE_STORAGE_VERSION, profiles },
+    profileId,
+    kind: 'official',
+  }
 }
 
 export function loadModeConfigStore(): ModeConfigStore {
@@ -983,7 +1175,11 @@ export function publishModeConfigStore(store: ModeConfigStore): void {
  * 将编辑器模型转换为项目正式版直接使用的 StageConfig / MAP_PROPS / DEPLOY 数据形状。
  * uid、权限等编辑器元数据不会混入运行时配置。
  */
-export function buildOfficialModeData(profile: GameModeProfile, gameDataPlatform: GameDataPlatform = 'pc') {
+export function buildOfficialModeData(
+  profile: GameModeProfile,
+  gameDataPlatform: GameDataPlatform = 'pc',
+  mapId?: string,
+) {
   const maps: Record<string, {
     stages: StageConfig[]
     props: MapProp[]
@@ -992,7 +1188,8 @@ export function buildOfficialModeData(profile: GameModeProfile, gameDataPlatform
     vehicleRefreshRules: Omit<ModeVehicleRefreshRule, 'verification'>[]
   }> = {}
 
-  for (const map of MAPS) {
+  const targetMaps = mapId ? MAPS.filter((map) => map.id === mapId) : MAPS
+  for (const map of targetMaps) {
     const profileMaps = profile.id === 'attack-defense' ? profile.platformMaps?.[gameDataPlatform] ?? profile.maps : profile.maps
     const config = profileMaps[map.id] ?? emptyModeMapOverride(map.id)
     const baseStages = stagesForPlatform(gameDataPlatform)[map.id] ?? []
