@@ -125,9 +125,20 @@ function normalizeObjectivesForStageChange(
  * A 进图初始化 / B 模式阶段切换 / C 地图点据点 / D 点位面板 四处共用。
  */
 function buildStageTargetRoster(state: MapState): Record<Side, OperatorUnit[]> {
+  const resetForStage = (operator: OperatorUnit): OperatorUnit => ({
+    uid: operator.uid,
+    name: operator.name,
+    side: operator.side,
+    team: operator.team,
+    operatorId: operator.operatorId,
+    cls: operator.cls,
+    status: 'alive',
+    lat: null,
+    lng: null,
+  })
   return {
-    attack: operatorsBucketOf(state).attack.map((operator) => ({ ...structuredClone(operator), lat: null, lng: null })),
-    defense: operatorsBucketOf(state).defense.map((operator) => ({ ...structuredClone(operator), lat: null, lng: null })),
+    attack: operatorsBucketOf(state).attack.map(resetForStage),
+    defense: operatorsBucketOf(state).defense.map(resetForStage),
   }
 }
 
@@ -167,7 +178,7 @@ function switchClassicStage(state: MapState, stageList: Array<{ id: string; poin
  * 时按 uid 同步写回当前地图上下文的所有阶段桶；lat/lng/status 等部署状态不动。
  * 旧存档中各桶名单已分歧的不强制合并，以最后一次编辑为准随编辑自然收敛。
  */
-function propagateOperatorIdentity(map: MapState, side: Side, nextOperators: OperatorUnit[]): MapState {
+function propagateOperatorIdentity(map: MapState, side: Side, nextOperators: OperatorUnit[], changedOperatorUids: Set<string>): MapState {
   const store = map.tacticalBuckets
   if (!store) return map
   const identityByUid = new Map(nextOperators.map((operator) => [operator.uid, { name: operator.name, operatorId: operator.operatorId, cls: operator.cls }]))
@@ -185,6 +196,7 @@ function propagateOperatorIdentity(map: MapState, side: Side, nextOperators: Ope
           return identity ? { ...operator, name: identity.name, operatorId: identity.operatorId, cls: identity.cls } : operator
         }),
       },
+      skillActions: (bucket.skillActions ?? []).filter((action) => !changedOperatorUids.has(action.sourceOperatorUid)),
     }]
   }))
   return changed ? { ...map, tacticalBuckets: { ...store, buckets } } : map
@@ -580,14 +592,14 @@ export default function App() {
     setDeployTarget(null)
   }, [activeModeMap, activeModeStageId, activeOfficialModeMap, activeTacticalContextKey, modeStageKey])
 
-  const updateMap = useCallback((_id: string, fn: (s: MapState) => MapState) => {
+  const updateMap = useCallback((_id: string, fn: (s: MapState) => MapState, syncStageId?: string) => {
     setMaps((prev) => {
       const storageKey = activeTacticalContextKeyRef.current
       const before = prev[storageKey] ?? createEmptyTacticalContextState()
       const next = fn(before)
       // 每次正式状态提交都同步当前阶段/回合桶。拖动预览仍由 Leaflet
       // 直接处理，只有 dragend 等正式提交会进入这里。
-      const synced = syncActiveTacticalBucket(next, activeModeStageId ?? stages[capturedStageIndex]?.id ?? 'S1')
+      const synced = syncActiveTacticalBucket(next, syncStageId ?? activeModeStageId ?? stages[capturedStageIndex]?.id ?? 'S1')
       return { ...prev, [storageKey]: synced }
     })
   }, [activeModeStageId, capturedStageIndex, stages])
@@ -2893,6 +2905,10 @@ export default function App() {
         const previous = currentByUid.get(operator.uid)
         return Boolean(previous) && (previous!.name !== operator.name || previous!.operatorId !== operator.operatorId || previous!.cls !== operator.cls)
       })
+      const identityChangedUids = new Set(nextOperators.filter((operator) => {
+        const previous = currentByUid.get(operator.uid)
+        return Boolean(previous) && (previous!.operatorId !== operator.operatorId || previous!.cls !== operator.cls)
+      }).map((operator) => operator.uid))
       const undeployed = new Set(nextOperators.filter((operator) => operator.lat == null || operator.lng == null).map((operator) => operator.uid))
       const changedOperator = new Set(nextOperators.filter((operator) => {
         const previous = currentByUid.get(operator.uid)
@@ -2929,13 +2945,18 @@ export default function App() {
         }
         // 名单身份（name/operatorId/cls）是跨阶段共享的配置：同步写回所有阶段桶，
         // 避免切回旧阶段时名字/干员选择回退。部署状态（lat/lng/status）不动。
-        return identityChanged ? propagateOperatorIdentity(next, view, nextOperators) : next
+        return identityChanged ? propagateOperatorIdentity(next, view, nextOperators, identityChangedUids) : next
       })
       const after: MapStateSnapshot = {
         ...before,
         operators: { ...before.operators, [view]: nextOperators },
         routes: { ...before.routes, [view]: nextRoutes },
         skillActions: nextSkillActions,
+      }
+      if (identityChanged) {
+        const propagated = propagateOperatorIdentity(cur, view, nextOperators, identityChangedUids)
+        before.tacticalBuckets = cur.tacticalBuckets ? structuredClone(cur.tacticalBuckets) : undefined
+        after.tacticalBuckets = propagated.tacticalBuckets ? structuredClone(propagated.tacticalBuckets) : undefined
       }
       pushEntry(before, after)
     },
@@ -4019,7 +4040,7 @@ export default function App() {
         const idx = stages.findIndex((s) => s.id === stageId)
         if (idx >= 0) {
           if (idx !== capturedStageIndex) {
-            updateMap(mapId, (state) => switchClassicStage(state, stages, capturedStageIndex, idx))
+            updateMap(mapId, (state) => switchClassicStage(state, stages, capturedStageIndex, idx), stages[idx]?.id)
           }
           setProgress((prev) => ({ ...prev, [activeTacticalContextKey]: idx }))
         }
@@ -4051,7 +4072,7 @@ export default function App() {
     if (stageIndex < 0) return
     if (stageIndex !== capturedStageIndex) {
       // 与 C（地图点据点）一致的切桶逻辑：切桶 + 名单兜底 + 据点归属同步
-      updateMap(mapId, (state) => switchClassicStage(state, stages, capturedStageIndex, stageIndex))
+      updateMap(mapId, (state) => switchClassicStage(state, stages, capturedStageIndex, stageIndex), stages[stageIndex]?.id)
     }
     setProgress((current) => ({ ...current, [activeTacticalContextKey]: stageIndex }))
     setSelectedPoint(null)
