@@ -72,12 +72,22 @@ export default function ModeAssetPalette({ collapsed, selectedAsset, onSelectAss
   const propAssets = PROPS.filter((item) => matches(item.name))
   const isSelected = (asset: ModePaletteAsset) => selectedAsset != null && modePaletteAssetKey(selectedAsset) === modePaletteAssetKey(asset)
 
+  if (collapsed) {
+    return (
+      <button
+        className="collapse-float left mode-config-panel-float"
+        type="button"
+        onClick={onToggleCollapsed}
+        title="展开左侧工具栏"
+        aria-label="展开左侧工具栏"
+      >
+        <i className="fa-solid fa-chevron-right" aria-hidden="true" />
+      </button>
+    )
+  }
+
   return (
-    <>
-    {collapsed ? <button className="collapse-float left mode-config-panel-float" type="button" onClick={onToggleCollapsed} title="展开左侧工具栏" aria-label="展开左侧工具栏">
-      <i className="fa-solid fa-chevron-right" aria-hidden="true" />
-    </button> : null}
-    <aside className={`mode-asset-palette${collapsed ? ' collapsed' : ''}`} aria-label="地图元素工具栏">
+    <aside className="mode-asset-palette" aria-label="地图元素工具栏">
       <header>
         <i className="fa-solid fa-shapes" />
         <strong>添加元素</strong>
@@ -85,11 +95,11 @@ export default function ModeAssetPalette({ collapsed, selectedAsset, onSelectAss
           className="mode-panel-collapse"
           type="button"
           onClick={onToggleCollapsed}
-          title={collapsed ? '展开左侧工具栏' : '收起左侧工具栏'}
-          aria-label={collapsed ? '展开左侧工具栏' : '收起左侧工具栏'}
-          aria-expanded={!collapsed}
+          title="收起左侧工具栏"
+          aria-label="收起左侧工具栏"
+          aria-expanded="true"
         >
-          <i className={`fa-solid ${collapsed ? 'fa-chevron-right' : 'fa-chevron-left'}`} />
+          <i className="fa-solid fa-chevron-left" />
         </button>
         <span>选择元素，点击地图放置</span>
       </header>
@@ -149,6 +159,5 @@ export default function ModeAssetPalette({ collapsed, selectedAsset, onSelectAss
         <i className="fa-solid fa-truck-fast" /><span><strong>胜者为王载具刷新</strong><small>导入规则并标注刷新位置</small></span><i className="fa-solid fa-chevron-right" />
       </button> : null}
     </aside>
-    </>
   )
 }

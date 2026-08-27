@@ -91,12 +91,24 @@ export interface MapProp {
 }
 
 /** 攻防阶段配置（阶段顺序即攻防推进顺序） */
+export interface StageSpawnPoint {
+  /** 复活点稳定唯一 ID；名称与数组顺序改变时保持不变。 */
+  uid: string
+  stageId: string
+  name: string
+  side: Side
+  lat: number
+  lng: number
+}
+
 export interface StageConfig {
   id: string
   label: string
   points: CapturePoint[]
   /** 防线区域（官网"区域"对象 border，虚线边框） */
   zone: ZonePolygon | null
+  /** 统一复活点数据；正式版与模式编辑器均以 uid 作为身份。 */
+  spawns: StageSpawnPoint[]
   /** 进攻方复活点（本阶段全部进攻方基地，同级无优先级，问题2） */
   attackSpawns: [number, number][]
   /** 防守方复活点（本阶段全部防守方基地，同级无优先级） */
@@ -160,13 +172,7 @@ export interface ModeZone {
   verification: ModeConfigVerification
 }
 
-export interface ModeSpawnPoint {
-  uid: string
-  stageId: string
-  name: string
-  side: Side
-  lat: number
-  lng: number
+export interface ModeSpawnPoint extends StageSpawnPoint {
   vehicleDeploy: boolean
   /** 旧版分类字段，保留用于导入兼容；新配置以 deployVehicles 为准。 */
   vehicleCategories: VehicleCategory[]
@@ -275,14 +281,14 @@ export interface GameModeProfile {
   name: string
   description: string
   maps: Record<string, ModeMapOverride>
-  /** 攻防模式按游戏数据端分别保存；其他模式继续使用 maps。 */
+  /** 支持双数据端的模式按 PC / PE（移动端游戏数据）分别保存；maps 保持为 PC 兼容别名。 */
   platformMaps?: Partial<Record<'pc' | 'mobile', Record<string, ModeMapOverride>>>
   createdAt: number
   updatedAt: number
 }
 
 export interface ModeConfigStore {
-  version: 19
+  version: 32
   activeModeId: string
   profiles: GameModeProfile[]
 }
@@ -722,10 +728,10 @@ export interface HistoryEntry {
   after: MapStateSnapshot
 }
 
-/** 历史栈键：`${mapId}:${view}` */
+/** 历史栈键：`${gameDataPlatform}:${modeId}:${mapId}:${view}` */
 export type HistoryKey = string
 
-/** 所有地图的数据（以 mapId 为键） */
+/** 所有战术上下文的数据（以“游戏数据端:模式ID:地图ID”为键） */
 export type MapsData = Record<string, MapState>
 
 /**
@@ -737,6 +743,10 @@ export interface TacticalPlan {
   /** 自定义战术名称（如 "开局强攻 A 点"） */
   name: string
   mapId: string
+  /** 《三角洲行动》游戏数据端，不表示应用运行平台。 */
+  gameDataPlatform: 'pc' | 'mobile'
+  /** 方案所属游戏模式，避免攻防/胜者/自定义模式互相覆盖。 */
+  modeId: string
   stageId: string
   view: Side
   createdAt: number
@@ -767,11 +777,15 @@ export interface LayerVisibility {
   points: boolean
   /** 据点标识（A点图标 + "据点A"字样），可与据点区域分离隐藏 */
   pointsLabels: boolean
+  /** 据点图标下方的名称文字。 */
+  pointAnnotations: boolean
   /** 据点自身的可占领区域。 */
   pointsCapture: boolean
   /** 据点当前所在阶段的防线区域。 */
   pointsFrontline: boolean
   spawns: boolean
+  /** 复活点图标下方的名称文字。 */
+  spawnAnnotations: boolean
   zones: boolean
   /** 胜者为王的条件式载具刷新位置。 */
   vehicleRefresh: boolean
@@ -786,7 +800,7 @@ export interface PersistedAppState {
   lastMapId: string
   lastView: Side
   maps: MapsData
-  /** 各地图当前激活阶段下标（点击据点直接切换，问题3） */
+  /** 各战术上下文当前激活阶段下标，键同 maps。 */
   progress: Record<string, number>
   /** 战术方案库（第二十一轮：按 地图×阶段×视角 保存的默认部署） */
   plans: TacticalPlan[]
@@ -798,6 +812,8 @@ export interface PersistedAppState {
     legendOpen: boolean
     /** 左侧栏宽度：250px 最小，默认 300px，最大 440px。 */
     leftPanelWidth: number
+    /** Android 官方地图图标视觉比例；触控热区不随之缩放。 */
+    mapMarkerScale: number
     layers: LayerVisibility
     propVis: PropVisibility
     /** 画笔工具设置（问题4：颜色/线宽/线型） */

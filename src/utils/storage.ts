@@ -6,6 +6,25 @@ import { emptyGeoJson } from './geo'
 
 /** 正式应用数据的本地存储键。 */
 export const APP_STORAGE_KEY = 'deltaforce-tactical-map-v1'
+export const APP_STORAGE_VERSION = 17 as const
+
+/** 战术状态的完整外层身份：游戏数据端 × 模式 × 地图。 */
+export function tacticalContextKey(gameDataPlatform: 'pc' | 'mobile', modeId: string, mapId: string): string {
+  return `${gameDataPlatform}:${encodeURIComponent(modeId)}:${mapId}`
+}
+
+function legacyStorageContext(): { gameDataPlatform: 'pc' | 'mobile'; modeId: string } {
+  const gameDataPlatform = localStorage.getItem('deltaforce-game-data-platform') === 'mobile' ? 'mobile' : 'pc'
+  try {
+    const modeStore = JSON.parse(localStorage.getItem('deltaforce-mode-configs-v1') ?? '{}') as { activeModeId?: unknown }
+    return {
+      gameDataPlatform,
+      modeId: typeof modeStore.activeModeId === 'string' && modeStore.activeModeId ? modeStore.activeModeId : 'attack-defense',
+    }
+  } catch {
+    return { gameDataPlatform, modeId: 'attack-defense' }
+  }
+}
 /** 数据版本：v8 = 载具按攻/守方分桶存储（切换视角只显示当前视角，与画笔绘制对称）。
  *  v9 = 新增兵棋推演（干员 operators / 联线 connections / 推演状态 wargame）。
  *  v10 = 新增战术方案库（plans：各阶段默认战术部署）。
@@ -13,7 +32,8 @@ export const APP_STORAGE_KEY = 'deltaforce-tactical-map-v1'
  *  v12 = 载具增加 team，新增队伍进攻路线 routes。
  *  v13 = 路线升级为行动指令 V2（类型/状态/样式/吸附/分支）。
  *  v14 = 支持干员独立任务路线与路线成员绑定。
- *  loadState 兼容 v7-v14，并统一迁移为当前分桶形状。 */
+ *  v17 = 战术状态按“游戏数据端 × 模式 × 地图”建立独立上下文。
+ *  loadState 兼容 v7-v17，并统一迁移为当前分桶形状。 */
 
 /** 默认推演状态 */
 export function emptyWargameState(): WargameState {
@@ -179,7 +199,7 @@ export function loadState(): PersistedAppState | null {
     const parsed = JSON.parse(raw) as PersistedAppState
     // 兼容 v7（载具平铺数组）/ v8（载具分桶）：统一迁移为分桶形状，避免用户数据丢失
     const v = parsed?.version
-    if (parsed && typeof parsed === 'object' && parsed.maps && typeof v === 'number' && v >= 7 && v <= 16) {
+    if (parsed && typeof parsed === 'object' && parsed.maps && typeof v === 'number' && v >= 7 && v <= APP_STORAGE_VERSION) {
       for (const id of Object.keys(parsed.maps)) {
         const m = parsed.maps[id]
         if (m) {
@@ -208,11 +228,25 @@ export function loadState(): PersistedAppState | null {
       }
       // v9→v10：战术方案库缺省为空数组（不丢历史数据）
       if (!Array.isArray(parsed.plans)) parsed.plans = []
+      const legacyContext = legacyStorageContext()
       parsed.plans = parsed.plans.map((plan) => ({
         ...plan,
+        gameDataPlatform: plan.gameDataPlatform === 'mobile' ? 'mobile' : plan.gameDataPlatform === 'pc' ? 'pc' : legacyContext.gameDataPlatform,
+        modeId: typeof plan.modeId === 'string' && plan.modeId ? plan.modeId : legacyContext.modeId,
         routes: Array.isArray(plan.routes) ? plan.routes.map(normalizeTacticalRoute) : [],
         usedVehicleRefreshRuleIds: Array.isArray(plan.usedVehicleRefreshRuleIds) ? plan.usedVehicleRefreshRuleIds : [],
       }))
+      if (v < APP_STORAGE_VERSION) {
+        parsed.maps = Object.fromEntries(Object.entries(parsed.maps).map(([mapId, map]) => [
+          tacticalContextKey(legacyContext.gameDataPlatform, legacyContext.modeId, mapId),
+          map,
+        ]))
+        parsed.progress = Object.fromEntries(Object.entries(parsed.progress ?? {}).map(([mapId, value]) => [
+          tacticalContextKey(legacyContext.gameDataPlatform, legacyContext.modeId, mapId),
+          value,
+        ]))
+        parsed.version = APP_STORAGE_VERSION
+      }
       return parsed
     }
     return null
@@ -328,11 +362,13 @@ export function normalizeTacticalBucket(raw: unknown): TacticalBucket | null {
  * Callers should invoke this after tactical content changes, rather than
  * waiting for a stage/round switch or an export to take a snapshot.
  */
-export function syncActiveTacticalBucket(map: MapState, fallbackStageId = 'S1'): MapState {
+export function syncActiveTacticalBucket(map: MapState, currentStageId = 'S1'): MapState {
   const store = map.tacticalBuckets ?? { activeKey: '', buckets: {} }
-  const active = store.activeKey ? store.buckets[store.activeKey] : undefined
-  const stageId = active?.stageId ?? fallbackStageId
-  const round = active?.round ?? wargameOf(map).round
+  // 界面当前阶段与回合是实时战术投影的唯一归属。不能优先信任旧
+  // activeKey：进入地图时会回到 S1，而持久化的 activeKey 可能仍在 S2，
+  // 继续沿用它会把 S1 的编辑实时写入错误阶段。
+  const stageId = currentStageId || 'S1'
+  const round = Math.max(1, Math.floor(wargameOf(map).round || 1))
   // App mutations replace the affected arrays/objects, so retaining these
   // references keeps prior buckets isolated without deep-cloning on every
   // pointer-move event.

@@ -3,6 +3,7 @@ import type { OperatorUnit, Side, TacticalOrderType, TacticalRoute, TacticalRout
 import { ORDER_STATUS_OPTIONS, ORDER_TYPE_OPTIONS, ROUTE_LINE_OPTIONS, orderTypeOf } from '../config/routes'
 import { teamOf } from '../config/operators'
 import { platform } from '../platform'
+import { rangeProgressStyle } from '../utils/rangeStyle'
 
 interface RouteEditorPanelProps {
   route: TacticalRoute
@@ -211,6 +212,7 @@ export default function RouteEditorPanel({ route, view, availableOperators, bran
               min={20}
               max={100}
               value={opacity}
+              style={rangeProgressStyle(opacity, 20, 100)}
               onChange={(e) => setOpacity(Number(e.target.value))}
               onPointerUp={() => onPatch({ opacity: opacity / 100 })}
               onKeyUp={() => onPatch({ opacity: opacity / 100 })}
@@ -231,6 +233,7 @@ export default function RouteEditorPanel({ route, view, availableOperators, bran
               max={10}
               step={0.5}
               value={strokeWidth}
+              style={rangeProgressStyle(strokeWidth, 1, 10)}
               onChange={(e) => {
                 const next = Number(e.target.value)
                 setStrokeWidth(next)

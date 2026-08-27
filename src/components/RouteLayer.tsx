@@ -54,6 +54,31 @@ const waypointIconCache = new Map<string, L.DivIcon>()
 const passiveWaypointIconCache = new Map<string, L.DivIcon>()
 const routeMoveIconCache = new Map<string, L.DivIcon>()
 
+const DESKTOP_ROUTE_DOUBLE_CLICK_MS = 420
+const DESKTOP_ROUTE_CLICK_MOVE_TOLERANCE = 4
+const DESKTOP_ROUTE_DOUBLE_CLICK_POSITION_TOLERANCE = 14
+const DESKTOP_ROUTE_HIT_TOLERANCE = 14
+
+const DESKTOP_ROUTE_HARD_CONTROL_SELECTOR = [
+  '.route-editor-trigger-wrap',
+  '.route-editor-panel',
+  '.route-mobile-actions',
+  '.leaflet-control',
+  'button',
+  'input',
+  'select',
+  'textarea',
+].join(',')
+
+const DESKTOP_ROUTE_HANDLE_SELECTOR = [
+  '.route-waypoint-wrap',
+  '.route-passive-node-wrap',
+  '.route-move-wrap',
+  '.route-order-label-wrap',
+  '.route-label-toggle-marker-wrap',
+  '.leaflet-marker-icon',
+].join(',')
+
 function routeLabelToggleIcon(visible: boolean): L.DivIcon {
   return L.divIcon({
     className: 'route-label-toggle-marker-wrap',
@@ -254,6 +279,17 @@ function nearestSegmentIndex(map: L.Map, points: [number, number][], click: L.La
     }
   }
   return bestIndex
+}
+
+function pointToSegmentDistanceSq(point: L.Point, start: L.Point, end: L.Point): number {
+  const dx = end.x - start.x
+  const dy = end.y - start.y
+  const lengthSq = dx * dx + dy * dy
+  if (lengthSq === 0) return (point.x - start.x) ** 2 + (point.y - start.y) ** 2
+  const ratio = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSq))
+  const x = start.x + ratio * dx
+  const y = start.y + ratio * dy
+  return (point.x - x) ** 2 + (point.y - y) ** 2
 }
 
 function RouteInput({ active, onPoint, onFinish, onCancel, onClearSelection, onHover }: {
@@ -671,6 +707,213 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, b
     return { point, side: parent.side, team: parent.team, teamMarkerUid: parent.teamMarkerUid, name: `${parent.name} · 分支`, parent }
   }, [draftSource, teams, operators, vehicles, buildings, routes])
 
+  const desktopRouteClickRef = useRef<{ routeUid: string; at: number; point: L.Point } | null>(null)
+  const desktopPointerDownRef = useRef<{
+    pointerId: number
+    point: L.Point
+    hardControl: boolean
+    routeHandle: boolean
+  } | null>(null)
+  const desktopRouteSuppressRef = useRef<{
+    until: number
+    point: L.Point
+    clickPending: boolean
+    doubleClickPending: boolean
+  } | null>(null)
+  const desktopRouteInteractionRef = useRef({
+    routes,
+    selectedUid,
+    passiveDragPreview,
+    interactive,
+    branchPicking,
+    draftActive: Boolean(draftContext),
+    previewWaypoints,
+    onPatch,
+    onSelect,
+  })
+  desktopRouteInteractionRef.current = {
+    routes,
+    selectedUid,
+    passiveDragPreview,
+    interactive,
+    branchPicking,
+    draftActive: Boolean(draftContext),
+    previewWaypoints,
+    onPatch,
+    onSelect,
+  }
+
+  // PC 端不再依赖同一个 SVG path 连续收到两次点击。路线选中后即使新挂载的
+  // 顶点/移动手柄接住第二次点击，也可通过地图坐标命中同一路线并插入途经点。
+  useEffect(() => {
+    if (platform.kind === 'android') return
+    const container = map.getContainer()
+
+    const clearPendingClick = () => {
+      desktopPointerDownRef.current = null
+      desktopRouteClickRef.current = null
+    }
+
+    const eventPoint = (event: MouseEvent | PointerEvent) => map.mouseEventToContainerPoint(event as MouseEvent)
+
+    const routeDistanceSq = (route: TacticalRoute, point: L.Point) => {
+      const state = desktopRouteInteractionRef.current
+      const rawPoints = state.passiveDragPreview?.uid === route.uid
+        ? state.passiveDragPreview.waypoints
+        : state.previewWaypoints(route)
+      const renderedPoints = routeRenderPoints(route, rawPoints)
+      if (renderedPoints.length < 2) return Number.POSITIVE_INFINITY
+      let bestDistance = Number.POSITIVE_INFINITY
+      let previous = map.latLngToContainerPoint(renderedPoints[0])
+      for (let index = 1; index < renderedPoints.length; index += 1) {
+        const next = map.latLngToContainerPoint(renderedPoints[index])
+        bestDistance = Math.min(bestDistance, pointToSegmentDistanceSq(point, previous, next))
+        previous = next
+      }
+      return bestDistance
+    }
+
+    const hitRoute = (point: L.Point, preferredUid?: string) => {
+      const state = desktopRouteInteractionRef.current
+      const thresholdSq = DESKTOP_ROUTE_HIT_TOLERANCE ** 2
+      if (preferredUid) {
+        const preferred = state.routes.find((route) => route.uid === preferredUid)
+        if (preferred && routeDistanceSq(preferred, point) <= thresholdSq) return preferred
+      }
+
+      let bestRoute: TacticalRoute | null = null
+      let bestDistance = Number.POSITIVE_INFINITY
+      let selectedRoute: TacticalRoute | null = null
+      let selectedDistance = Number.POSITIVE_INFINITY
+      for (const route of state.routes) {
+        const distance = routeDistanceSq(route, point)
+        if (route.uid === state.selectedUid) {
+          selectedRoute = route
+          selectedDistance = distance
+        }
+        if (distance < bestDistance) {
+          bestDistance = distance
+          bestRoute = route
+        }
+      }
+      if (selectedRoute && selectedDistance <= thresholdSq && selectedDistance <= bestDistance + 4) return selectedRoute
+      return bestRoute && bestDistance <= thresholdSq ? bestRoute : null
+    }
+
+    const suppressEvent = (event: MouseEvent) => {
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+    }
+
+    const onPointerDownCapture = (event: PointerEvent) => {
+      if (event.button !== 0 || !event.isPrimary) {
+        desktopPointerDownRef.current = null
+        return
+      }
+      const target = event.target instanceof Element ? event.target : null
+      desktopPointerDownRef.current = {
+        pointerId: event.pointerId,
+        point: eventPoint(event),
+        hardControl: Boolean(target?.closest(DESKTOP_ROUTE_HARD_CONTROL_SELECTOR)),
+        routeHandle: Boolean(target?.closest(DESKTOP_ROUTE_HANDLE_SELECTOR)),
+      }
+    }
+
+    const onPointerUpCapture = (event: PointerEvent) => {
+      const down = desktopPointerDownRef.current
+      desktopPointerDownRef.current = null
+      if (!down || event.pointerId !== down.pointerId || event.button !== 0 || !event.isPrimary) return
+
+      const state = desktopRouteInteractionRef.current
+      if (!state.interactive || state.branchPicking || state.draftActive || state.passiveDragPreview) {
+        desktopRouteClickRef.current = null
+        return
+      }
+      const point = eventPoint(event)
+      if (down.point.distanceTo(point) > DESKTOP_ROUTE_CLICK_MOVE_TOLERANCE || down.hardControl) {
+        desktopRouteClickRef.current = null
+        return
+      }
+
+      const now = performance.now()
+      const pending = desktopRouteClickRef.current
+      // 已经存在第一次路线点击时，允许第二次落在选中后才出现的路线手柄上。
+      if (!pending && down.routeHandle) return
+      const route = hitRoute(point, pending?.routeUid)
+      if (!route) {
+        desktopRouteClickRef.current = null
+        return
+      }
+
+      if (
+        pending
+        && pending.routeUid === route.uid
+        && now - pending.at <= DESKTOP_ROUTE_DOUBLE_CLICK_MS
+        && pending.point.distanceTo(point) <= DESKTOP_ROUTE_DOUBLE_CLICK_POSITION_TOLERANCE
+      ) {
+        desktopRouteClickRef.current = null
+        const latlng = map.containerPointToLatLng(point)
+        const index = nearestSegmentIndex(map, route.waypoints, latlng)
+        const waypoints = [...route.waypoints]
+        waypoints.splice(index + 1, 0, [latlng.lat, latlng.lng])
+        desktopRouteSuppressRef.current = {
+          until: now + 500,
+          point,
+          clickPending: true,
+          doubleClickPending: true,
+        }
+        state.onPatch(route.uid, { waypoints })
+        state.onSelect(route.uid)
+        return
+      }
+
+      desktopRouteClickRef.current = { routeUid: route.uid, at: now, point }
+    }
+
+    const onClickCapture = (event: MouseEvent) => {
+      const suppress = desktopRouteSuppressRef.current
+      if (!suppress || performance.now() > suppress.until) {
+        desktopRouteSuppressRef.current = null
+        return
+      }
+      if (suppress.clickPending && suppress.point.distanceTo(eventPoint(event)) <= DESKTOP_ROUTE_DOUBLE_CLICK_POSITION_TOLERANCE + 4) {
+        suppress.clickPending = false
+        suppressEvent(event)
+      }
+    }
+
+    const onDoubleClickCapture = (event: MouseEvent) => {
+      const suppress = desktopRouteSuppressRef.current
+      if (!suppress || performance.now() > suppress.until) {
+        desktopRouteSuppressRef.current = null
+        return
+      }
+      if (suppress.doubleClickPending && suppress.point.distanceTo(eventPoint(event)) <= DESKTOP_ROUTE_DOUBLE_CLICK_POSITION_TOLERANCE + 4) {
+        suppress.doubleClickPending = false
+        suppressEvent(event)
+        desktopRouteSuppressRef.current = null
+      }
+    }
+
+    container.addEventListener('pointerdown', onPointerDownCapture, true)
+    container.addEventListener('pointerup', onPointerUpCapture, true)
+    container.addEventListener('pointercancel', clearPendingClick, true)
+    container.addEventListener('click', onClickCapture, true)
+    container.addEventListener('dblclick', onDoubleClickCapture, true)
+    window.addEventListener('blur', clearPendingClick)
+    map.on('dragstart zoomstart rotatestart', clearPendingClick)
+    return () => {
+      container.removeEventListener('pointerdown', onPointerDownCapture, true)
+      container.removeEventListener('pointerup', onPointerUpCapture, true)
+      container.removeEventListener('pointercancel', clearPendingClick, true)
+      container.removeEventListener('click', onClickCapture, true)
+      container.removeEventListener('dblclick', onDoubleClickCapture, true)
+      window.removeEventListener('blur', clearPendingClick)
+      map.off('dragstart zoomstart rotatestart', clearPendingClick)
+    }
+  }, [map])
+
   useEffect(() => {
     if (!draftContext) {
       draftPointsRef.current = []
@@ -823,13 +1066,9 @@ export default function RouteLayer({ routes, view, teams, operators, vehicles, b
                   onSelect(route.uid)
                 },
                 dblclick: (e: L.LeafletMouseEvent) => {
-                  L.DomEvent.stop(e.originalEvent)
-                  if (platform.kind === 'android') return
-                  const index = nearestSegmentIndex(map, route.waypoints, e.latlng)
-                  const waypoints = [...route.waypoints]
-                  waypoints.splice(index + 1, 0, [e.latlng.lat, e.latlng.lng])
-                  onPatch(route.uid, { waypoints })
-                  onSelect(route.uid)
+                  // Android 保留原有的双击隔离；PC 由地图容器的坐标级识别器处理，
+                  // 避免路线选中后 DOM 命中目标变化造成原生 dblclick 丢失。
+                  if (platform.kind === 'android') L.DomEvent.stop(e.originalEvent)
                 },
               } as unknown as L.LeafletEventHandlerFnMap}
             >

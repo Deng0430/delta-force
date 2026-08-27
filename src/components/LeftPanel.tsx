@@ -1,17 +1,20 @@
-import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import type { BuildingUnit, BuildingUnitKind, FieldSupportDefinition, FieldSupportInstance, LayerVisibility, ModeVehicleRefreshRule, OperatorConnection, OperatorTeam, OperatorUnit, PropVisibility, Side, TeamMarker, VehicleItem, WargameState } from '../types'
 import type { CustomVehicleTemplate } from '../config/customVehicles'
 import { Checkbox, IconChevronLeft, IconChevronRight } from './icons'
 import WargamePanel from './WargamePanel'
+import { rangeProgressStyle } from '../utils/rangeStyle'
 
 const LAYER_ITEMS: { key: keyof LayerVisibility; label: string; parent?: keyof LayerVisibility }[] = [
   { key: 'spawns', label: '复活点' },
+  { key: 'spawnAnnotations', label: '复活点文字注释', parent: 'spawns' },
   { key: 'zones', label: '活动区域' },
   { key: 'vehicleRefresh', label: '载具刷新' },
 ]
 
 const POINT_LAYER_ITEMS: { key: keyof LayerVisibility; label: string }[] = [
   { key: 'pointsLabels', label: '据点标识' },
+  { key: 'pointAnnotations', label: '据点文字注释' },
   { key: 'pointsCapture', label: '据点占领区域' },
   { key: 'pointsFrontline', label: '据点所在防线' },
 ]
@@ -43,6 +46,9 @@ interface LeftPanelProps {
   /** 道具按类型显示开关（问题2） */
   propVis: PropVisibility
   onPropVisChange: (name: string, value: boolean) => void
+  /** Android 官方地图图标视觉比例；触控热区始终保持原尺寸。 */
+  mapMarkerScale: number
+  onMapMarkerScaleChange: (scale: number) => void
   /** 折叠区块展开状态（由 App 持久化） */
   sections: {
     layers: boolean
@@ -123,6 +129,8 @@ export default function LeftPanel({
   vehicleRefreshAvailable,
   propVis,
   onPropVisChange,
+  mapMarkerScale,
+  onMapMarkerScaleChange,
   sections,
   onSectionChange,
   customOwn,
@@ -165,12 +173,27 @@ export default function LeftPanel({
 }: LeftPanelProps) {
   const [liveWidth, setLiveWidth] = useState(() => clampLeftPanelWidth(width))
   const [resizing, setResizing] = useState(false)
+  const [liveMarkerScale, setLiveMarkerScale] = useState(mapMarkerScale)
   const propFlags = PROP_TYPES.map((name) => propVis[name] ?? true)
   const propsAllVisible = layers.props && propFlags.every(Boolean)
   const propsPartiallyVisible = layers.props && propFlags.some(Boolean) && !propsAllVisible
   const pointFlags = POINT_LAYER_ITEMS.map((item) => layers[item.key])
   const pointsAllVisible = layers.points && pointFlags.every(Boolean)
   const pointsPartiallyVisible = layers.points && pointFlags.some(Boolean) && !pointsAllVisible
+
+  useEffect(() => setLiveMarkerScale(mapMarkerScale), [mapMarkerScale])
+
+  const previewMarkerScale = (scale: number, element: HTMLElement) => {
+    const next = Math.max(0.65, Math.min(1.1, scale))
+    setLiveMarkerScale(next)
+    const app = element.closest('.app') as HTMLElement | null
+    app?.style.setProperty('--mobile-map-marker-scale', String(next))
+    app?.style.setProperty('--mobile-spawn-link-left', `${54.6 * next}px`)
+    app?.style.setProperty('--mobile-spawn-connector-left', `${22 + 21 * next}px`)
+    app?.style.setProperty('--mobile-spawn-connector-width', `${17.64 * next}px`)
+  }
+
+  const commitMarkerScale = () => onMapMarkerScaleChange(liveMarkerScale)
   const resizeSession = useRef<{
     pointerId: number
     startX: number
@@ -357,6 +380,43 @@ export default function LeftPanel({
                 className={it.parent ? 'indent' : ''}
               />
             ))}
+            <div
+              className="mobile-marker-scale-control"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="mobile-marker-scale-head">
+                <span>地图图标大小</span>
+                <output>{Math.round(liveMarkerScale * 100)}%</output>
+              </div>
+              <div className="mobile-marker-scale-row">
+                <input
+                  type="range"
+                  min="65"
+                  max="110"
+                  step="5"
+                  value={Math.round(liveMarkerScale * 100)}
+                  style={rangeProgressStyle(Math.round(liveMarkerScale * 100), 65, 110)}
+                  aria-label="调整地图图标视觉大小"
+                  onInput={(event) => previewMarkerScale(Number(event.currentTarget.value) / 100, event.currentTarget)}
+                  onPointerUp={commitMarkerScale}
+                  onPointerCancel={commitMarkerScale}
+                  onKeyUp={commitMarkerScale}
+                  onBlur={commitMarkerScale}
+                />
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    previewMarkerScale(0.9, event.currentTarget)
+                    onMapMarkerScaleChange(0.9)
+                  }}
+                  title="恢复推荐大小"
+                >
+                  重置
+                </button>
+              </div>
+              <small>仅调整显示，点击范围保持不变</small>
+            </div>
           </div>
         </details>
 

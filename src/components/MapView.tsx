@@ -49,6 +49,7 @@ import type { LayerVisibility, PropVisibility } from '../types'
 import { platform } from '../platform'
 import VehicleRefreshLayer, { type RuntimeVehicleRefreshPoint, type RuntimeVehicleRefreshRule } from './VehicleRefreshLayer'
 import type { StageDeploy } from '../config/deployVehicles'
+import { rangeProgressStyle } from '../utils/rangeStyle'
 
 interface OfficialModeMapData {
   stages: StageConfig[]
@@ -138,12 +139,13 @@ function InteractiveLayerPanGuard() {
   return null
 }
 
-function MapRotationControl() {
+function MapRotationControl({ initiallyCollapsed = false }: { initiallyCollapsed?: boolean }) {
   const map = useMap()
   useEffect(() => {
     const control = new L.Control({ position: 'topleft' })
     control.onAdd = () => {
-      const container = L.DomUtil.create('div', `leaflet-control leaflet-bar map-rotation-control${platform.kind === 'android' ? ' collapsed' : ''}`)
+      const startsCollapsed = platform.kind === 'android' || initiallyCollapsed
+      const container = L.DomUtil.create('div', `leaflet-control leaflet-bar map-rotation-control${startsCollapsed ? ' collapsed' : ''}`)
       L.DomEvent.disableClickPropagation(container)
       L.DomEvent.disableScrollPropagation(container)
       const makeButton = (label: string, title: string, onClick: () => void, parent: HTMLElement = container) => {
@@ -188,10 +190,10 @@ function MapRotationControl() {
         collapse.title = collapsed ? '展开地图旋转控件' : '收起地图旋转控件'
       })
       collapse.className = 'map-rotation-collapse'
-      collapse.innerHTML = platform.kind === 'android'
+      collapse.innerHTML = startsCollapsed
         ? '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="m6 3 5 5-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
         : '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="m10 3-5 5 5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
-      collapse.title = platform.kind === 'android' ? '展开地图旋转控件' : '收起地图旋转控件'
+      collapse.title = startsCollapsed ? '展开地图旋转控件' : '收起地图旋转控件'
 
       let dragging = false
       const setBearingFromPointer = (event: PointerEvent) => {
@@ -251,7 +253,7 @@ function MapRotationControl() {
     return () => {
       control.remove()
     }
-  }, [map])
+  }, [initiallyCollapsed, map])
   return null
 }
 
@@ -308,7 +310,7 @@ interface MapViewProps {
   onObjectiveStateChange: (pointName: string, state: TacticalObjectiveState) => void
   onCloseDetail: () => void
   /** 点击出生点（弹出底部载具部署栏） */
-  onSpawnSelect: (spawn: { stageId: string; side: Side; pos: [number, number]; baseName: string | null }) => void
+  onSpawnSelect: (spawn: { uid: string; stageId: string; side: Side; pos: [number, number]; baseName: string | null }) => void
   /** 工具切换回调（右键自动切回查看工具） */
   onTool: (t: ToolMode) => void
   // ---- 套索支持载具（第十四轮） ----
@@ -380,6 +382,7 @@ interface MapViewProps {
   onDeleteRoute: (uid: string) => void
   cinematicInitialView?: { center: [number, number]; zoom: number } | null
   cinematicBattleCompare?: string | null
+  cinematicCompassCollapsed?: boolean
 }
 
 function CinematicBattleHighlights({ stage }: { stage: string }) {
@@ -654,11 +657,12 @@ export default function MapView({
   onDeleteRoute,
   cinematicInitialView,
   cinematicBattleCompare,
+  cinematicCompassCollapsed = false,
 }: MapViewProps) {
   const bounds = useMemo(() => mapBounds(config), [config])
-  // A phone viewport needs one extra zoom level to show roughly twice as much
-  // of the map. Keep desktop map tuning and explicit cinematic views unchanged.
-  const minZoom = mobileLayout ? Math.max(1, config.minZoom - 1) : config.minZoom
+  // 桌面端允许继续缩小到 0.5，便于在窄窗口或总览场景中查看完整地图。
+  // Android 仍保留各地图现有的移动端缩放规则，避免改变触控端的既有视野与手势体验。
+  const minZoom = mobileLayout ? Math.max(1, config.minZoom - 1) : 0.5
   const defaultZoom = mobileLayout ? Math.max(minZoom, config.initZoom - 1) : config.initZoom
   const runtimeStages = modeData?.stages ?? stages
   const selectedModeStageIndex = modeData
@@ -963,12 +967,15 @@ export default function MapView({
         style={{ width: '100%', height: '100%' }}
       >
         <InteractiveLayerPanGuard />
-        <MapRotationControl />
+        <MapRotationControl initiallyCollapsed={cinematicCompassCollapsed} />
         <SkillActionPlacement active={skillActionDraft != null && (skillActionDraft.skill?.placementMode ?? skillActionDraft.tacticalMode?.placementMode) !== 'target-unit' && (skillActionDraft.skill?.placementMode ?? skillActionDraft.tacticalMode?.placementMode) !== 'ally-unit'} onPlace={onPlaceSkillAction} onCancel={onCancelSkillAction} />
         <TileLayer
           url={config.tileUrl}
           bounds={bounds}
           minZoom={minZoom}
+          // CDN 没有 0.5 等低层级瓦片；缩到原生下限以下时继续复用并缩放
+          // 现有最低层瓦片，避免 Leaflet 请求不存在的 z0/z1 资源而显示空白。
+          minNativeZoom={Math.ceil(config.minZoom)}
           maxZoom={config.maxZoom}
           maxNativeZoom={config.maxNativeZoom}
           tileSize={256}
@@ -996,6 +1003,7 @@ export default function MapView({
           selectedName={selectedPoint?.point.name ?? null}
           visible={layers.points}
           labelsVisible={layers.pointsLabels}
+          annotationsVisible={layers.pointAnnotations}
           captureVisible={layers.pointsCapture}
           frontlineVisible={layers.pointsFrontline}
           interactive={interactive}
@@ -1007,6 +1015,7 @@ export default function MapView({
           capturedStageIndex={runtimeStageIndex}
           view={view}
           visible={layers.spawns}
+          annotationsVisible={layers.spawnAnnotations}
           interactive={interactive}
           deployByStage={modeData?.deploy}
           onSelect={onSpawnSelect}
@@ -1354,7 +1363,7 @@ export default function MapView({
             </button>}
             {selectedObjectiveState.capturingSide ? <label className="objective-progress-control">
               <span>占领进度 <b>{Math.round(selectedObjectiveState.progress)}%</b></span>
-              <input type="range" min="0" max="100" step="1" value={selectedObjectiveState.progress} onChange={(event) => onObjectiveStateChange(selectedPoint.point.name, { ...selectedObjectiveState, progress: Number(event.target.value) })} />
+              <input type="range" min="0" max="100" step="1" value={selectedObjectiveState.progress} style={rangeProgressStyle(selectedObjectiveState.progress, 0, 100, selectedObjectiveProgressColor)} onChange={(event) => onObjectiveStateChange(selectedPoint.point.name, { ...selectedObjectiveState, progress: Number(event.target.value) })} />
             </label> : null}
           </div> : null}
           {selectedPoint.point.note && (

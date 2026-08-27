@@ -70,6 +70,88 @@ body {
   height: 100vh;
 }
 
+.app.cinematic-compass-demo .map-rotation-control {
+  position:fixed !important;
+  z-index:99980 !important;
+  left:50% !important;
+  right:auto !important;
+  top:50% !important;
+  bottom:auto !important;
+  margin:0 !important;
+  transform:translate(-50%,-50%) scale(1.35);
+  transform-origin:center;
+  box-shadow:0 0 0 8px rgba(1,255,132,.055),0 24px 70px rgba(0,0,0,.68);
+  animation:cinematic-compass-control-in .5s cubic-bezier(.18,.82,.28,1) both;
+}
+@keyframes cinematic-compass-control-in {
+  from { opacity:0; transform:translate(-50%,-50%) scale(1.12); filter:blur(4px); }
+  to { opacity:1; transform:translate(-50%,-50%) scale(1.35); filter:none; }
+}
+
+/* 0.1.0 Demo：真实左侧“对局状态”区域的聚焦样式，仅由专用 URL 参数启用。 */
+.app.cinematic-refresh-sidebar .toolbar,
+.app.cinematic-refresh-sidebar .point-panel,
+.app.cinematic-refresh-sidebar .collapse-float,
+.app.cinematic-refresh-sidebar .zone-legend,
+.app.cinematic-refresh-sidebar .deploy-bar {
+  display: none !important;
+}
+
+.app.cinematic-refresh-sidebar .main {
+  height: 100vh;
+}
+
+/* 部署与路线镜头继续使用同一常驻实例，但切换为纯地图操作取景。 */
+.app.cinematic-refresh-deploy .left-panel,
+.app.cinematic-refresh-route .left-panel {
+  display: none !important;
+}
+
+.app.cinematic-refresh-sidebar .wg-battle-context {
+  position: relative;
+  border: 1px solid rgba(1, 255, 132, .45);
+  background: rgba(1, 255, 132, .035);
+}
+
+.app.cinematic-refresh-sidebar.cinematic-refresh-locked .wg-battle-context,
+.app.cinematic-refresh-sidebar.cinematic-refresh-ready .wg-battle-context {
+  animation: cinematic-refresh-context-pulse 1.05s ease-in-out infinite alternate;
+}
+
+.app.cinematic-refresh-sidebar.cinematic-refresh-locked .wg-battle-fields,
+.app.cinematic-refresh-sidebar.cinematic-refresh-ready .wg-battle-fields {
+  position: relative;
+  padding: 8px;
+  border: 1px solid rgba(1, 255, 132, .5);
+  background: rgba(1, 255, 132, .045);
+  box-shadow: inset 0 0 18px rgba(1, 255, 132, .06), 0 0 18px rgba(1, 255, 132, .12);
+}
+
+.app.cinematic-refresh-sidebar.cinematic-refresh-locked .wg-battle-context input[type="number"] {
+  border-color: #f0c96a;
+  box-shadow: 0 0 0 2px rgba(240, 201, 106, .18), 0 0 18px rgba(240, 201, 106, .22);
+}
+
+.app.cinematic-refresh-sidebar.cinematic-refresh-locked .wg-battle-fields input {
+  border-color: #f0c96a;
+  box-shadow: 0 0 0 2px rgba(240, 201, 106, .15), 0 0 14px rgba(240, 201, 106, .18);
+}
+
+.app.cinematic-refresh-sidebar.cinematic-refresh-ready .wg-battle-context input[type="number"] {
+  border-color: #01ff84;
+  box-shadow: 0 0 0 2px rgba(1, 255, 132, .2), 0 0 20px rgba(1, 255, 132, .28);
+}
+
+.app.cinematic-refresh-sidebar.cinematic-refresh-ready .wg-battle-fields input {
+  border-color: #01ff84;
+  box-shadow: 0 0 0 2px rgba(1, 255, 132, .17), 0 0 16px rgba(1, 255, 132, .22);
+}
+
+@keyframes cinematic-refresh-context-pulse {
+  from { box-shadow: 0 0 0 1px rgba(1, 255, 132, .1), 0 0 10px rgba(1, 255, 132, .08); }
+  to { box-shadow: 0 0 0 2px rgba(1, 255, 132, .46), 0 0 28px rgba(1, 255, 132, .24); }
+}
+
 .cinematic-stage-indicator {
   position: absolute;
   z-index: 1500;
@@ -1609,13 +1691,151 @@ body {
   font-weight: 600;
 }
 
+/* 全局滑条：统一为战术面板的深色轨道、刻度中线与高对比滑块。 */
+input[type='range'] {
+  --range-accent: var(--gold);
+  --range-progress: 50%;
+  appearance: none;
+  -webkit-appearance: none;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  border: 1px solid var(--line-1);
+  border-radius: 1px;
+  background:
+    linear-gradient(90deg, var(--range-accent) 0 var(--range-progress), transparent var(--range-progress) 100%),
+    linear-gradient(180deg, #111719, #20282b);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .72);
+}
+
+input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 13px;
+  height: 16px;
+  margin-top: -6px;
+  border: 1px solid color-mix(in srgb, var(--range-accent) 75%, #fff);
+  border-radius: 2px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--range-accent) 72%, #fff), var(--range-accent));
+  box-shadow: 0 0 0 2px #111719, 0 2px 5px rgba(0, 0, 0, .65);
+}
+
+input[type='range']:hover::-webkit-slider-thumb,
+input[type='range']:focus-visible::-webkit-slider-thumb {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px #111719, 0 0 8px color-mix(in srgb, var(--range-accent) 55%, transparent);
+}
+
+input[type='range']::-moz-range-track {
+  height: 4px;
+  border: 1px solid var(--line-1);
+  border-radius: 1px;
+  background: linear-gradient(180deg, #111719, #20282b);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .72);
+}
+
+input[type='range']::-moz-range-progress {
+  height: 4px;
+  background: var(--range-accent);
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 13px;
+  height: 16px;
+  border: 1px solid color-mix(in srgb, var(--range-accent) 75%, #fff);
+  border-radius: 2px;
+  background: var(--range-accent);
+  box-shadow: 0 0 0 2px #111719, 0 2px 5px rgba(0, 0, 0, .65);
+}
+
+input[type='range']:focus-visible {
+  outline: none;
+}
+
 /* 画笔粗细滑动条（问题：按钮档位改为滑杆 1-12px） */
 .toolbar-settings-popover .ds-range {
   flex: 1;
   min-width: 0;
-  height: 4px;
-  accent-color: var(--gold);
+}
+
+/* 图形填充复用“地图分层”的 SVG 复选框视觉。 */
+.fill-checkbox.layer-item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 66px;
+  min-height: 25px;
+  padding: 3px 6px;
+  border-radius: 2px;
+  color: var(--tx-2);
+  font-size: 11px;
   cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+
+.fill-checkbox.layer-item:hover {
+  background: var(--bg-hover);
+  color: var(--tx-1);
+}
+
+.fill-checkbox .cb-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.fill-checkbox .cb-box {
+  width: 15px;
+  height: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border: 1px solid var(--line-2);
+  border-radius: 1px;
+  background: var(--bg-0);
+  color: var(--on-accent);
+  transition: background .12s ease, border-color .12s ease;
+}
+
+.fill-checkbox:hover .cb-box {
+  border-color: var(--tx-3);
+}
+
+.fill-checkbox .cb-box.checked {
+  border-color: var(--gold);
+  background: var(--gold);
+}
+
+.fill-checkbox .cb-box svg {
+  opacity: 0;
+  transform: scale(.5);
+  transition: opacity .12s ease, transform .12s ease;
+}
+
+.fill-checkbox .cb-box.checked svg {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.fill-checkbox .cb-native:focus-visible + .cb-box {
+  outline: 2px solid var(--gold);
+  outline-offset: 1px;
+}
+
+.toolbar-settings-popover .ds-color.inactive,
+.text-style-panel input[type='color'].inactive {
+  opacity: .38;
+  filter: grayscale(.75);
 }
 
 .toolbar-settings-popover .ds-range-val {
@@ -3635,6 +3855,61 @@ body {
 .field-support-marker img { position: relative; z-index: 1; width: 27px; height: 27px; object-fit: contain; filter: drop-shadow(0 1px 2px #000); pointer-events: none; }
 .field-support-marker.vehicle-airdrop img { width: 32px; height: 32px; }
 .field-support-glow { position: absolute; inset: 3px; border-radius: 50%; background: color-mix(in srgb, var(--support-color) 26%, transparent); }
+.app.cinematic-focus-support-entry .wg-support-entry,
+.app.cinematic-focus-smoke .wg-support-list .support-smoke-cover { border-color: var(--green); box-shadow: 0 0 0 1px rgba(1,255,132,.6), 0 0 18px rgba(1,255,132,.34); animation: cinematic-action-focus .75s ease-in-out infinite alternate; }
+.app.cinematic-focus-deployed .field-support-marker { box-shadow: 0 0 0 4px rgba(1,255,132,.2), 0 0 24px var(--green); animation: cinematic-action-focus .75s ease-in-out infinite alternate; }
+.app.cinematic-focus-deployed .field-support-marker::after { content: "烟幕覆盖 · 已部署"; position: absolute; left: 44px; top: 50%; translate: 0 -50%; width: max-content; padding: 8px 12px; border-left: 3px solid var(--green); background: rgba(5,18,16,.94); color: #dffff4; font-size: 13px; font-weight: 750; line-height: 1.25; letter-spacing: .03em; box-shadow: 0 10px 26px rgba(0,0,0,.52); animation: cinematic-callout-in .36s ease-out both; transform-origin: left center; }
+.app.cinematic-focus-skill-deployed .operator-skill-action-icon.cinematic-data-knife > span,
+.app.cinematic-focus-tools-deployed .operator-skill-action-icon.cinematic-data-knife > span,
+.app.cinematic-focus-tools-deployed .operator-skill-action-icon.cinematic-recon-beacon > span { box-shadow: 0 0 0 4px rgba(1,255,132,.2), 0 0 24px var(--green); animation: cinematic-action-focus .75s ease-in-out infinite alternate; }
+.app.cinematic-focus-skill-deployed .operator-skill-action-icon.cinematic-data-knife::after,
+.app.cinematic-focus-tools-deployed .operator-skill-action-icon.cinematic-data-knife::after,
+.app.cinematic-focus-tools-deployed .operator-skill-action-icon.cinematic-recon-beacon::after { position: absolute; left: 32px; top: 50%; translate: 0 -50%; width: max-content; padding: 8px 12px; border-left: 3px solid var(--green); background: rgba(5,18,16,.94); color: #dffff4; font-size: 13px; font-weight: 750; line-height: 1.25; letter-spacing: .03em; box-shadow: 0 10px 26px rgba(0,0,0,.52); pointer-events: none; animation: cinematic-callout-in .36s ease-out both; transform-origin: left center; }
+.app.cinematic-focus-skill-deployed .operator-skill-action-icon.cinematic-data-knife::after,
+.app.cinematic-focus-tools-deployed .operator-skill-action-icon.cinematic-data-knife::after { content: "数据飞刀 · 已部署"; }
+.app.cinematic-focus-tools-deployed .operator-skill-action-icon.cinematic-recon-beacon::after { content: "侦察信标 · 放置完成"; }
+.app.cinematic-focus-fireline-button .op-marker .op-fireline { display: inline-flex; color: #07110c; background: var(--green); border-color: #b9ffdc; box-shadow: 0 0 0 3px rgba(1,255,132,.24), 0 0 16px rgba(1,255,132,.75); animation: cinematic-action-focus .7s ease-in-out infinite alternate; }
+.app.cinematic-focus-fireline-active .unit-fire-line-path { stroke-width: 3.5; filter: drop-shadow(0 0 5px rgba(1,255,132,.86)); animation: cinematic-action-focus .7s ease-in-out infinite alternate; }
+.app.cinematic-focus-fireline-active .unit-fire-line-arrow-icon::after { content: "枪线已开启 · 兵棋上滚轮调整方向 · 枪线按钮上滚轮调整长短"; position: absolute; left: 24px; top: -12px; width: max-content; padding: 9px 13px; border-left: 3px solid var(--green); background: rgba(5,18,16,.95); color: #dffff4; font-size: 13px; font-weight: 750; line-height: 1.3; letter-spacing: .025em; box-shadow: 0 10px 26px rgba(0,0,0,.52); pointer-events: none; animation: cinematic-callout-in .36s ease-out both; }
+@keyframes cinematic-callout-in {
+  from { opacity: 0; transform: translate3d(-20px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+.app.cinematic-action-sequence .cinematic-demo-target,
+.app.cinematic-round-copy-demo .cinematic-demo-target { position: relative; z-index: 20; border-color: var(--green) !important; outline: 2px solid rgba(1,255,132,.72); outline-offset: 2px; box-shadow: 0 0 20px rgba(1,255,132,.44) !important; animation: cinematic-action-focus .68s ease-in-out infinite alternate; }
+.app.cinematic-round-copy-copy [aria-label="复制当前回合"],
+.app.cinematic-round-copy-result .wg-round:last-of-type select { border-color:#01ff84 !important; color:#01ff84 !important; box-shadow:0 0 0 3px rgba(1,255,132,.22),0 0 18px rgba(1,255,132,.72) !important; }
+.app.cinematic-round-copy-demo .wg-controls.cinematic-round-magnifier {
+  position:fixed !important;
+  z-index:99990 !important;
+  left:50% !important;
+  top:50% !important;
+  width:max-content !important;
+  min-width:420px;
+  margin:0 !important;
+  padding:28px 34px !important;
+  justify-content:center;
+  border:1px solid rgba(1,255,132,.68) !important;
+  border-radius:28px !important;
+  background:rgba(5,18,19,.96) !important;
+  box-shadow:0 0 0 10px rgba(1,255,132,.06),0 30px 100px rgba(0,0,0,.78),inset 0 0 42px rgba(1,255,132,.055) !important;
+  transform:translate(-50%,-50%) scale(1.55);
+  transform-origin:center;
+  animation:cinematic-round-magnifier-in .48s cubic-bezier(.18,.82,.28,1) both;
+}
+@keyframes cinematic-round-magnifier-in {
+  from { opacity:0; transform:translate(-50%,-50%) scale(1.28); filter:blur(5px); }
+  to { opacity:1; transform:translate(-50%,-50%) scale(1.55); filter:none; }
+}
+.cinematic-action-cursor { position: fixed; z-index: 99999; width: 24px; height: 24px; translate: -50% -50%; border: 3px solid #fff; border-radius: 50%; background: rgba(1,255,132,.2); box-shadow: 0 0 0 8px rgba(1,255,132,.14), 0 0 18px var(--green); pointer-events: none; transition: left .65s ease, top .65s ease; }
+@keyframes cinematic-action-focus { from { filter: brightness(1); } to { filter: brightness(1.35); } }
+.app.cinematic-complete-support .field-support-marker { outline: 3px solid #01ff84; outline-offset: 4px; box-shadow: 0 0 0 7px rgba(1,255,132,.24), 0 0 20px #01ff84, 0 0 42px rgba(1,255,132,.82) !important; }
+.app.cinematic-complete-route .route-hit-area + path,
+.app.cinematic-complete-route .route-arrow-wrap { filter: drop-shadow(0 0 3px #01ff84) drop-shadow(0 0 10px #01ff84) drop-shadow(0 0 18px rgba(1,255,132,.9)); }
+.app.cinematic-complete-operator .op-marker,
+.app.cinematic-complete-operator .operator-skill-action-icon > span { outline: 3px solid #01ff84; outline-offset: 3px; box-shadow: 0 0 0 6px rgba(1,255,132,.22), 0 0 20px #01ff84, 0 0 38px rgba(1,255,132,.78) !important; }
+.app.cinematic-complete-fire .unit-fire-line-path { stroke:#01ff84 !important; stroke-width:4.5; filter:drop-shadow(0 0 4px #01ff84) drop-shadow(0 0 11px #01ff84); }
+.app.cinematic-complete-fire .unit-fire-line-arrow-icon { filter:drop-shadow(0 0 4px #01ff84) drop-shadow(0 0 12px #01ff84); }
 .tactical-map.placing-field-support { cursor: crosshair; }
 
 /* 干员悬浮级联菜单 */
@@ -6891,6 +7166,8 @@ body {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
   overflow: hidden;
 }
+.app.cinematic-round-copy-demo .tb-modal.cinematic-html-export-target { border-color:rgba(1,255,132,.82); outline:2px solid rgba(1,255,132,.42); outline-offset:4px; box-shadow:0 0 0 9px rgba(1,255,132,.055),0 0 36px rgba(1,255,132,.32),0 18px 70px rgba(0,0,0,.76); }
+.app.cinematic-round-copy-demo .tb-seg-btn.cinematic-html-export-target { position:relative; z-index:2; outline:2px solid #01ff84; outline-offset:3px; box-shadow:none; }
 
 .tb-head {
   display: flex;
@@ -7416,7 +7693,11 @@ body {
 .objective-progress-control { display: grid; gap: 5px; color: var(--tx-3); font-size: 10px; }
 .objective-progress-control > span { display: flex; justify-content: space-between; }
 .objective-progress-control b { color: var(--objective-progress-color); }
-.objective-progress-control input { width: 100%; accent-color: var(--objective-progress-color); }
+.objective-progress-control input { --range-accent: var(--objective-progress-color); width: 100%; accent-color: var(--objective-progress-color); }
+.app.cinematic-objective-states .objective-state-editor { box-shadow: 0 0 0 2px color-mix(in srgb, var(--objective-state-color) 72%, transparent), 0 0 28px color-mix(in srgb, var(--objective-state-color) 42%, transparent); animation: cinematic-objective-editor-focus .9s ease-in-out infinite alternate; }
+.app.cinematic-objective-states .objective-progress-control { padding: 7px; border: 1px solid var(--objective-progress-color); background: color-mix(in srgb, var(--objective-progress-color) 9%, transparent); }
+.app.cinematic-objective-states .objective-progress-control input { filter: drop-shadow(0 0 5px var(--objective-progress-color)); }
+@keyframes cinematic-objective-editor-focus { from { outline: 1px solid transparent; } to { outline: 1px solid var(--objective-state-color); } }
 
 .point-detail-row {
   display: flex;
@@ -7957,6 +8238,8 @@ body {
 .wg-notes-tabs button { cursor: pointer; }
 .wg-notes-preview { min-height: 76px; padding: 8px; overflow: auto; background: rgba(0,0,0,.18); }
 .wg-notes-dock { position: fixed; right: 14px; bottom: 14px; z-index: 1180; width: min(500px, calc(100vw - 28px)); border: 1px solid var(--line-0); border-radius: 5px; background: rgba(10, 16, 18, .96); box-shadow: 0 8px 28px rgba(0,0,0,.48); color: var(--tx-1); }
+.app.cinematic-round-copy-demo .wg-notes-dock.cinematic-note-magnifier { z-index:99990; border-color:rgba(1,255,132,.9); outline:2px solid rgba(1,255,132,.62); outline-offset:4px; box-shadow:0 0 0 9px rgba(1,255,132,.075),0 0 34px rgba(1,255,132,.42),0 30px 100px rgba(0,0,0,.78); animation:cinematic-note-highlight .68s ease-in-out infinite alternate; }
+@keyframes cinematic-note-highlight { from { filter:brightness(1); } to { filter:brightness(1.16); } }
 .wg-notes-dock > header { height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 7px 0 10px; border-bottom: 1px solid var(--line-0); }
 .wg-notes-dock.collapsed > header { border-bottom: 0; }
 .wg-notes-dock.collapsed { width: 126px; }

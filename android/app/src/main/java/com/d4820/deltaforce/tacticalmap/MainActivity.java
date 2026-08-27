@@ -4,43 +4,70 @@ import android.os.Bundle;
 import android.os.Build;
 import android.graphics.Color;
 import android.view.View;
+import android.view.ViewParent;
 import android.view.WindowManager;
+import android.webkit.WebView;
 
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.graphics.Insets;
+import androidx.core.splashscreen.SplashScreen;
 
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.WebViewListener;
 
 public class MainActivity extends BridgeActivity {
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        enableDisplayCutoutLayout();
-        applyWindowBackgrounds();
-        installSafeAreaBridge();
-        enableImmersiveMode();
-    }
+    private int safeAreaTop = -1;
+    private int safeAreaRight = -1;
+    private int safeAreaBottom = -1;
+    private int safeAreaLeft = -1;
+    private int pushedSafeAreaTop = Integer.MIN_VALUE;
+    private int pushedSafeAreaRight = Integer.MIN_VALUE;
+    private int pushedSafeAreaBottom = Integer.MIN_VALUE;
+    private int pushedSafeAreaLeft = Integer.MIN_VALUE;
+    private boolean webContentReady = false;
+    private boolean immersiveAppliedForCurrentFocus = false;
 
     @Override
-    public void onResume() {
-        super.onResume();
-        enableImmersiveMode();
+    protected void onCreate(Bundle savedInstanceState) {
+        // Resolve the launch theme before touching the Window. Otherwise the splash theme's
+        // ActionBar decor can be created and survive into the Capacitor content view.
+        SplashScreen.installSplashScreen(this);
+        // Configure the Activity window before Capacitor creates and attaches the WebView.
+        // This avoids changing cutout/edge-to-edge geometry during the first WebView frame.
+        configureWindowBeforeContent();
+        super.onCreate(savedInstanceState);
+        applyWebViewBackground();
+        installWebContentLifecycleBridge();
+        installSafeAreaBridge();
     }
 
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (hasFocus) {
-            enableImmersiveMode();
+        if (!hasFocus) {
+            immersiveAppliedForCurrentFocus = false;
+            return;
+        }
+        if (!immersiveAppliedForCurrentFocus) {
+            immersiveAppliedForCurrentFocus = true;
+            hideSystemBars();
         }
     }
 
-    private void enableImmersiveMode() {
+    private void configureWindowBeforeContent() {
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        enableDisplayCutoutLayout();
 
+        int appBackground = Color.rgb(2, 11, 16);
+        getWindow().setStatusBarColor(Color.TRANSPARENT);
+        getWindow().setNavigationBarColor(Color.TRANSPARENT);
+        getWindow().getDecorView().setBackgroundColor(appBackground);
+    }
+
+    private void hideSystemBars() {
         View decorView = getWindow().getDecorView();
         WindowInsetsControllerCompat controller =
             WindowCompat.getInsetsController(getWindow(), decorView);
@@ -64,36 +91,81 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
-    private void applyWindowBackgrounds() {
+    private void applyWebViewBackground() {
         int appBackground = Color.rgb(2, 11, 16);
-        getWindow().setStatusBarColor(Color.TRANSPARENT);
-        getWindow().setNavigationBarColor(Color.TRANSPARENT);
-        getWindow().getDecorView().setBackgroundColor(appBackground);
         if (getBridge() != null && getBridge().getWebView() != null) {
             getBridge().getWebView().setBackgroundColor(appBackground);
         }
     }
 
+    private void installWebContentLifecycleBridge() {
+        if (getBridge() == null) return;
+        getBridge().addWebViewListener(new WebViewListener() {
+            @Override
+            public void onPageStarted(WebView webView) {
+                webContentReady = false;
+                resetPushedSafeArea();
+            }
+
+            @Override
+            public void onPageLoaded(WebView webView) {
+                webContentReady = true;
+                pushSafeAreaIfChanged();
+            }
+        });
+    }
+
     private void installSafeAreaBridge() {
         if (getBridge() == null || getBridge().getWebView() == null) return;
-        View webViewParent = (View) getBridge().getWebView().getParent();
+        ViewParent parent = getBridge().getWebView().getParent();
+        if (!(parent instanceof View)) return;
+        View webViewParent = (View) parent;
+        webViewParent.setPadding(0, 0, 0, 0);
         ViewCompat.setOnApplyWindowInsetsListener(webViewParent, (view, windowInsets) -> {
             Insets safeArea = windowInsets.getInsets(
                 WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout()
             );
-            view.setPadding(0, 0, 0, 0);
             float density = getResources().getDisplayMetrics().density;
-            int top = Math.round(safeArea.top / density);
-            int right = Math.round(safeArea.right / density);
-            int bottom = Math.round(safeArea.bottom / density);
-            int left = Math.round(safeArea.left / density);
-            String script = "document.documentElement.style.setProperty('--safe-area-inset-top','" + top + "px');" +
-                "document.documentElement.style.setProperty('--safe-area-inset-right','" + right + "px');" +
-                "document.documentElement.style.setProperty('--safe-area-inset-bottom','" + bottom + "px');" +
-                "document.documentElement.style.setProperty('--safe-area-inset-left','" + left + "px');";
-            getBridge().getWebView().evaluateJavascript(script, null);
+            int nextTop = Math.round(safeArea.top / density);
+            int nextRight = Math.round(safeArea.right / density);
+            int nextBottom = Math.round(safeArea.bottom / density);
+            int nextLeft = Math.round(safeArea.left / density);
+            if (nextTop != safeAreaTop || nextRight != safeAreaRight ||
+                nextBottom != safeAreaBottom || nextLeft != safeAreaLeft) {
+                safeAreaTop = nextTop;
+                safeAreaRight = nextRight;
+                safeAreaBottom = nextBottom;
+                safeAreaLeft = nextLeft;
+                pushSafeAreaIfChanged();
+            }
             return windowInsets;
         });
         ViewCompat.requestApplyInsets(webViewParent);
+    }
+
+    private void pushSafeAreaIfChanged() {
+        if (!webContentReady || safeAreaTop < 0 || getBridge() == null || getBridge().getWebView() == null) return;
+        if (safeAreaTop == pushedSafeAreaTop && safeAreaRight == pushedSafeAreaRight &&
+            safeAreaBottom == pushedSafeAreaBottom && safeAreaLeft == pushedSafeAreaLeft) return;
+
+        final String script = "(function(){" +
+            "var root=document.documentElement;if(!root)return false;" +
+            "root.style.setProperty('--safe-area-inset-top','" + safeAreaTop + "px');" +
+            "root.style.setProperty('--safe-area-inset-right','" + safeAreaRight + "px');" +
+            "root.style.setProperty('--safe-area-inset-bottom','" + safeAreaBottom + "px');" +
+            "root.style.setProperty('--safe-area-inset-left','" + safeAreaLeft + "px');" +
+            "return true;})()";
+        pushedSafeAreaTop = safeAreaTop;
+        pushedSafeAreaRight = safeAreaRight;
+        pushedSafeAreaBottom = safeAreaBottom;
+        pushedSafeAreaLeft = safeAreaLeft;
+        getBridge().getWebView().evaluateJavascript(script, null);
+    }
+
+    private void resetPushedSafeArea() {
+        pushedSafeAreaTop = Integer.MIN_VALUE;
+        pushedSafeAreaRight = Integer.MIN_VALUE;
+        pushedSafeAreaBottom = Integer.MIN_VALUE;
+        pushedSafeAreaLeft = Integer.MIN_VALUE;
     }
 }

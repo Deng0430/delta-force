@@ -25,8 +25,11 @@ import {
   createModeProfile,
   buildOfficialModeData,
   emptyModeMapOverride,
+  importModeConfigData,
   loadModeConfigStore,
   normalizeModeConfigStore,
+  modeMapsForPlatform,
+  modeUsesPlatformMaps,
   publishModeConfigStore,
   saveModeConfigStore,
   syncModeMapFromAttackDefense,
@@ -288,7 +291,7 @@ export default function ModeConfigWorkbench() {
   const config = MAP_BY_ID[mapId] ?? MAPS[0]
   const attackStages = stagesForPlatform(editorDataPlatform)[mapId] ?? []
   const profile = store.profiles.find((item) => item.id === session.profileId) ?? store.profiles[0]
-  const profileMaps = profile?.id === 'attack-defense' ? profile.platformMaps?.[editorDataPlatform] ?? profile.maps : profile?.maps
+  const profileMaps = profile ? modeMapsForPlatform(profile, editorDataPlatform) : undefined
   const mapConfig = profileMaps?.[mapId] ?? emptyModeMapOverride(mapId)
   const firstModeStageId = mapConfig.stages[0]?.id ?? 'S1'
 
@@ -412,13 +415,13 @@ export default function ModeConfigWorkbench() {
       ...current,
       profiles: current.profiles.map((item) => {
         if (item.id !== session.profileId) return item
-        const editingPlatformMaps = item.id === 'attack-defense'
-          ? item.platformMaps?.[editorDataPlatform] ?? item.maps
+        const editingPlatformMaps = modeUsesPlatformMaps(item)
+          ? modeMapsForPlatform(item, editorDataPlatform)
           : item.maps
         const previous = editingPlatformMaps[mapId] ?? emptyModeMapOverride(mapId)
         const next = typeof update === 'function' ? update(previous) : update
         const now = Date.now()
-        if (item.id === 'attack-defense') {
+        if (modeUsesPlatformMaps(item)) {
           const nextPlatformMaps = { ...editingPlatformMaps, [mapId]: { ...next, mapId, updatedAt: now } }
           return {
             ...item,
@@ -600,7 +603,7 @@ export default function ModeConfigWorkbench() {
           const source = clipboard.source.props.find((entry) => entry.uid === item.uid)
           if (!source) continue
           const uid = genUid('mode_prop')
-          props.push({ ...source, uid, stageId: source.stageId === '*' ? '*' : session.stageId, lat: source.lat, lng: source.lng, verification: 'draft' })
+          props.push({ ...source, uid, stageId: '*', lat: source.lat, lng: source.lng, verification: 'draft' })
           created.push({ kind: 'prop', uid })
         } else {
           const source = clipboard.source.vehicleRefreshPoints.find((entry) => entry.uid === item.uid)
@@ -793,7 +796,7 @@ export default function ModeConfigWorkbench() {
     const uid = genUid('mode_prop')
     const prop: ModeMapProp = {
       uid,
-      stageId: session.stageId,
+      stageId: '*',
       name: template?.name ?? '固定弹药箱',
       icon: template?.icon ?? 'q_gddyx',
       lat: point[0],
@@ -803,7 +806,7 @@ export default function ModeConfigWorkbench() {
     updateMapConfig((current) => ({ ...current, props: [...current.props, prop] }))
     setSession((current) => ({ ...current, tool: 'select', selected: { kind: 'prop', uid }, selectedItems: [{ kind: 'prop', uid }] }))
     setActivePaletteAsset(null)
-  }, [session.stageId, updateMapConfig])
+  }, [updateMapConfig])
 
   const addPresetZone = useCallback((point: [number, number], role: ModeZoneRole) => {
     const meta = {
@@ -944,7 +947,7 @@ export default function ModeConfigWorkbench() {
     const parsed = parseVehicleRefreshTable(text)
     const targetProfile = store.profiles.find((item) => item.id === session.profileId)
     if (!targetProfile) return { imported: 0, ignored: 0, errors: ['当前模式不存在。'] }
-    const maps = { ...targetProfile.maps }
+    const maps = { ...modeMapsForPlatform(targetProfile, editorDataPlatform) }
     let imported = 0
     let ignored = 0
     for (const record of parsed.records) {
@@ -966,11 +969,20 @@ export default function ModeConfigWorkbench() {
       const now = Date.now()
       setStore({
         ...store,
-        profiles: store.profiles.map((item) => item.id === targetProfile.id ? { ...item, maps, updatedAt: now } : item),
+        profiles: store.profiles.map((item) => {
+          if (item.id !== targetProfile.id) return item
+          if (!modeUsesPlatformMaps(item)) return { ...item, maps, updatedAt: now }
+          return {
+            ...item,
+            maps: editorDataPlatform === 'pc' ? maps : item.maps,
+            platformMaps: { ...item.platformMaps, [editorDataPlatform]: maps },
+            updatedAt: now,
+          }
+        }),
       })
     }
     return { imported, ignored, errors: parsed.errors }
-  }, [session.profileId, setStore, store])
+  }, [editorDataPlatform, session.profileId, setStore, store])
 
   const moveZone = useCallback((uid: string, points: [number, number][]) => {
     updateMapConfig((current) => ({
@@ -1053,12 +1065,10 @@ export default function ModeConfigWorkbench() {
       style={{ '--mode-palette-width': `${panelWidths.left}px`, '--mode-editor-width': `${panelWidths.right}px` } as CSSProperties}
     >
       {toolbarCollapsed ? (
-        <header className="mode-workbench-toolbar collapsed">
-          <button className="mode-workbench-toolbar-expand" type="button" onClick={() => setToolbarVisibility(false)} title="展开顶部栏" aria-label="展开顶部栏">
-            <i className="fa-solid fa-chevron-down" aria-hidden="true" />
-            <span>展开工具栏</span>
-          </button>
-        </header>
+        <button className="mode-workbench-toolbar-expand" type="button" onClick={() => setToolbarVisibility(false)} title="展开顶部栏" aria-label="展开顶部栏">
+          <i className="fa-solid fa-chevron-down" aria-hidden="true" />
+          <span>展开工具栏</span>
+        </button>
       ) : <header className="mode-workbench-toolbar">
         <div className="mode-workbench-brand">
           <img src="/nav_title.png" alt="三角洲行动" draggable={false} />
@@ -1102,9 +1112,9 @@ export default function ModeConfigWorkbench() {
           <div>
             <strong>保存与发布</strong>
             <button className="primary" onClick={syncToOfficial}><i className="fa-solid fa-cloud-arrow-up" /><span>同步到正式版</span></button>
-            <button onClick={() => downloadText(`deltaforce-${profile.id}-${editorDataPlatform}-official-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(buildOfficialModeData(profile, editorDataPlatform), null, 2))}><i className="fa-solid fa-code" /><span>导出正式数据</span></button>
+            <button onClick={() => downloadText(`deltaforce-${profile.id}-${mapId}-${editorDataPlatform}-official-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(buildOfficialModeData(profile, editorDataPlatform, mapId), null, 2))}><i className="fa-solid fa-code" /><span>导出当前地图</span></button>
             <button onClick={() => downloadText(`deltaforce-mode-configs-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(store, null, 2))}><i className="fa-solid fa-box-archive" /><span>备份编辑配置</span></button>
-            <button onClick={() => importConfigRef.current?.click()}><i className="fa-solid fa-file-import" /><span>导入配置 JSON</span></button>
+            <button title="支持编辑配置备份与正式数据" onClick={() => importConfigRef.current?.click()}><i className="fa-solid fa-file-import" /><span>导入数据 JSON</span></button>
             <input
               ref={importConfigRef}
               type="file"
@@ -1115,11 +1125,14 @@ export default function ModeConfigWorkbench() {
                 event.currentTarget.value = ''
                 if (!file) return
                 void file.text().then((text) => {
-                  const normalized = normalizeModeConfigStore(JSON.parse(text))
-                  if (!normalized) return showAlert('导入失败', '配置文件格式无效。')
-                  setStore(normalized)
-                  setSession((current) => ({ ...current, profileId: normalized.profiles[0]?.id ?? null, selected: null, selectedItems: [], zoneDraft: [] }))
-                }).catch(() => showAlert('导入失败', '无法读取该配置文件。'))
+                  const imported = importModeConfigData(store, JSON.parse(text), editorDataPlatform)
+                  if (!imported) return showAlert('导入失败', '无法识别该 JSON。请选择“备份编辑配置”或“导出正式数据”生成的文件。')
+                  setStore(imported.store)
+                  setSession((current) => ({ ...current, profileId: imported.profileId, selected: null, selectedItems: [], zoneDraft: [] }))
+                  setSyncStatus(imported.kind === 'official'
+                    ? `已导入正式数据${imported.profileId === 'attack-defense' || imported.profileId === 'winner-takes-all' ? ` · ${editorDataPlatform === 'pc' ? 'PC端' : 'PE端'}` : ''}`
+                    : '已恢复编辑配置备份')
+                }).catch(() => showAlert('导入失败', '文件不是有效的 JSON，或内容无法读取。'))
               }}
             />
           </div>
@@ -1162,9 +1175,9 @@ export default function ModeConfigWorkbench() {
             <strong className="mode-mobile-more-title">数据</strong>
             <div className="mode-mobile-more-grid data">
               <button type="button" className="primary" onClick={syncToOfficial}><i className="fa-solid fa-cloud-arrow-up" /><span>同步正式版</span></button>
-              <button type="button" onClick={() => downloadText(`deltaforce-${profile.id}-${editorDataPlatform}-official-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(buildOfficialModeData(profile, editorDataPlatform), null, 2))}><i className="fa-solid fa-code" /><span>导出正式数据</span></button>
+              <button type="button" onClick={() => downloadText(`deltaforce-${profile.id}-${mapId}-${editorDataPlatform}-official-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(buildOfficialModeData(profile, editorDataPlatform, mapId), null, 2))}><i className="fa-solid fa-code" /><span>导出当前地图</span></button>
               <button type="button" onClick={() => downloadText(`deltaforce-mode-configs-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(store, null, 2))}><i className="fa-solid fa-box-archive" /><span>备份配置</span></button>
-              <button type="button" onClick={() => { setMobileMoreOpen(false); importConfigRef.current?.click() }}><i className="fa-solid fa-file-import" /><span>导入配置</span></button>
+              <button type="button" title="支持编辑配置备份与正式数据" onClick={() => { setMobileMoreOpen(false); importConfigRef.current?.click() }}><i className="fa-solid fa-file-import" /><span>导入数据</span></button>
             </div>
           </section>
         </div>

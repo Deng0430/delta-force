@@ -102,7 +102,7 @@ function UnitFireLineGraphic({ unit, color }: { unit: FireLineUnit; color: strin
 
   return <>
     <Marker position={[displayUnit.lat, displayUnit.lng]} icon={arrowIcon} interactive={false} keyboard={false} />
-    <Polyline positions={[tip, pointAt(displayUnit, displayUnit.fireLineLength ?? FIRE_LINE_LENGTH)]} pathOptions={{ color, opacity: .92, weight: 2, dashArray: '7 6', interactive: false }} />
+    <Polyline positions={[tip, pointAt(displayUnit, displayUnit.fireLineLength ?? FIRE_LINE_LENGTH)]} pathOptions={{ color, opacity: .92, weight: 2, dashArray: '7 6', interactive: false, className: 'unit-fire-line-path' }} />
   </>
 }
 

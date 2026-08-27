@@ -20593,8 +20593,8 @@
           ],
           "defenseBaseZone": [
             [
-              -101.875,
-              121.125
+              -101.93752751215935,
+              121.21875613060297
             ],
             [
               -101.878,
@@ -21470,7 +21470,14 @@
           "icon": "q_gdjq",
           "lat": -111.251,
           "lng": 128.61,
-          "stage": "S3"
+          "stage": ""
+        },
+        {
+          "name": "载具补给站",
+          "icon": "q_zjbjz",
+          "lat": -117.21855741488457,
+          "lng": 142.3124141715584,
+          "stage": ""
         }
       ],
       "deploy": {
@@ -21508,11 +21515,11 @@
           ],
           "defense": [
             {
-              "name": "GTQ-35轻型坦克",
-              "icon": "qxtk",
-              "iconUrl": "/icons/vehicles/legend/轻型坦克.png",
-              "badge": "轻",
-              "category": "tank",
+              "name": "LAV G1步战车",
+              "icon": "g1bzc",
+              "iconUrl": "/icons/vehicles/legend/步战车.png",
+              "badge": "步",
+              "category": "ifv",
               "cd": 90,
               "num": 1,
               "allowTeammate": false,
@@ -21564,30 +21571,6 @@
           "note": ""
         },
         {
-          "uid": "vehicle_refresh_rule_mstr2ka9_q",
-          "objective": "A",
-          "side": "attack",
-          "action": "refresh",
-          "trigger": {
-            "type": "tickets",
-            "value": 100
-          },
-          "vehicle": {
-            "name": "两栖装甲运输车",
-            "icon": "sxzjc",
-            "iconUrl": "/icons/vehicles/legend/两栖车.png",
-            "legendKey": "nav_sxzjc",
-            "badge": "载",
-            "category": "apc",
-            "cd": 90,
-            "num": 1,
-            "allowTeammate": false
-          },
-          "quantity": 1,
-          "refreshPointUid": "vehicle_refresh_point_msu28emv_1",
-          "note": ""
-        },
-        {
           "uid": "vehicle_refresh_rule_mstr2ka9_r",
           "objective": "B",
           "side": "attack",
@@ -21606,6 +21589,29 @@
             "cd": 60,
             "num": 1,
             "allowTeammate": true
+          },
+          "quantity": 1,
+          "refreshPointUid": "vehicle_refresh_point_msu28emv_1",
+          "note": ""
+        },
+        {
+          "uid": "vehicle_refresh_rule_mtbaufw6_1",
+          "objective": "A",
+          "side": "attack",
+          "action": "refresh",
+          "trigger": {
+            "type": "tickets",
+            "value": 100
+          },
+          "vehicle": {
+            "name": "M1A4主战坦克",
+            "icon": "m1a4zztk",
+            "iconUrl": "/icons/vehicles/legend/主战坦克.png",
+            "badge": "坦",
+            "category": "tank",
+            "cd": 120,
+            "num": 1,
+            "allowTeammate": false
           },
           "quantity": 1,
           "refreshPointUid": "vehicle_refresh_point_msu28emv_1",

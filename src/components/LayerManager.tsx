@@ -6,6 +6,8 @@ import type { Feature, FeatureCollection, Point } from 'geojson'
 import type { ActiveTextEdit, ArrowHeadStyle, DashType, DrawSettings, OperatorUnit, Side, TeamMarker, TextStyleProps, ToolMode, VehicleItem } from '../types'
 import { DEFAULT_TEXT_STYLE, ellipsePoints, genUid, textIcon, textStyleFromProps, textStyleToProps } from '../utils/geo'
 import { platform } from '../platform'
+import { rangeProgressStyle } from '../utils/rangeStyle'
+import { Checkbox } from './icons'
 
 export const SIDE_COLORS: Record<Side, string> = {
   attack: '#2f6fed',
@@ -599,6 +601,8 @@ export default function LayerManager({
   const androidSelectionDragMoveRef = useRef<(event: L.LeafletMouseEvent) => void>(() => {})
   const androidSelectionDragEndRef = useRef<() => void>(() => {})
   const androidPinchSessionRef = useRef<AndroidPinchScaleSession | null>(null)
+  const androidPinchFrameRef = useRef<number | null>(null)
+  const androidPinchPointsRef = useRef<{ a: L.Point; b: L.Point } | null>(null)
   // 拖拽位移标记（第十二轮：区分"点击"与"拖动"。拖动结束后 Leaflet 仍会派发 click，
   // 若位移超过阈值则视为拖动，抑制 click 取消选中逻辑）
   const dragMovedRef = useRef(false)
@@ -737,7 +741,11 @@ export default function LayerManager({
     let lastValidPointerEvent: PointerEvent | null = null
     let mapGestureState: { dragging: boolean; touchZoom: boolean } | null = null
     const activePointers = new Map<number, PointerEvent>()
+    // Leaflet 原生地图会话不进入 activePointers，但必须记录整组 pointerId。
+    // 第一指一旦属于地图，随后落到图形上的第二指也不能中途抢走所有权。
+    const nativeMapPointers = new Set<number>()
     const suppressedPointers = new Set<number>()
+    let blockLeafletTouchSequence = false
     const bridgedMouseEvents = new WeakSet<MouseEvent>()
     const DOUBLE_TAP_MS = 360
     const DOUBLE_TAP_DISTANCE_PX = 28
@@ -885,6 +893,11 @@ export default function LayerManager({
       const target = event.target as HTMLElement | null
       if (target?.closest('.leaflet-control-container')) return
 
+      if (nativeMapPointers.size > 0) {
+        nativeMapPointers.add(event.pointerId)
+        return
+      }
+
       if (gesture.kind !== 'idle') {
         if (gesture.kind === 'selection-pending' && activePointers.size === 1) {
           activePointers.set(event.pointerId, event)
@@ -933,7 +946,10 @@ export default function LayerManager({
       const handleKind = handle?.dataset.editHandleKind ?? ''
       const hit = target?.closest<HTMLElement>('[data-draw-hit-key]')
       const hitKey = hit?.dataset.drawHitKey ?? ''
-      const selectedHit = !!hitKey && isKeySelectedRef.current(hitKey)
+      const source = target?.closest<HTMLElement>('[data-draw-source-key]')
+      const sourceKey = source?.dataset.drawSourceKey ?? ''
+      const selectedHit = (!!hitKey && isKeySelectedRef.current(hitKey))
+        || (!!sourceKey && isKeySelectedRef.current(sourceKey))
       const insideSelection = selectedRef.current.size > 0
         && (selectedHit || !!target?.closest('.edit-selection-box'))
         && !target?.closest('.edit-style-trigger, .edit-delete-trigger, .edit-lock-trigger, .edit-unlock-trigger, .edit-handle-wrap')
@@ -973,6 +989,7 @@ export default function LayerManager({
       // Empty-map gestures in pan mode are 100% native Leaflet gestures. The arbiter does not
       // capture, prevent or synthesize any event, so ordinary map pinch remains fully native.
       if (tool === 'pan' && !onDrawLayer && event.isTrusted) {
+        nativeMapPointers.add(event.pointerId)
         lastTouchPointerAt = Number.NEGATIVE_INFINITY
         return
       }
@@ -1042,6 +1059,7 @@ export default function LayerManager({
     }
 
     const onArbitratedPointerUp = (event: PointerEvent) => {
+      if (nativeMapPointers.delete(event.pointerId)) return
       if (suppressedPointers.delete(event.pointerId)) {
         releasePointer(event.pointerId)
         ownEvent(event)
@@ -1091,6 +1109,7 @@ export default function LayerManager({
     }
 
     const onArbitratedPointerCancel = (event: PointerEvent) => {
+      if (nativeMapPointers.delete(event.pointerId)) return
       if (suppressedPointers.delete(event.pointerId)) {
         releasePointer(event.pointerId)
         ownEvent(event)
@@ -1119,6 +1138,24 @@ export default function LayerManager({
       resetGesture()
     }
 
+    // Leaflet TouchZoom 使用原生 TouchEvent；仅拦截已经归图形/UI/绘制器所有的
+    // 触摸序列。这里不 preventDefault，避免 Chromium 因默认行为被取消而向
+    // PointerEvent 状态机发送 pointercancel。
+    const onNativeTouchStart = (event: TouchEvent) => {
+      if (!blockLeafletTouchSequence && nativeMapPointers.size === 0 && gesture.kind !== 'idle') {
+        blockLeafletTouchSequence = true
+      }
+      if (blockLeafletTouchSequence) event.stopImmediatePropagation()
+    }
+    const onNativeTouchMove = (event: TouchEvent) => {
+      if (blockLeafletTouchSequence) event.stopImmediatePropagation()
+    }
+    const onNativeTouchEnd = (event: TouchEvent) => {
+      if (!blockLeafletTouchSequence) return
+      event.stopImmediatePropagation()
+      if (event.touches.length === 0) blockLeafletTouchSequence = false
+    }
+
     // Chromium 会在触控 PointerEvent 之后补发 mousedown/mousemove/mouseup/click。
     // 绘制器已由上面的桥接收到完整事件，必须在捕获阶段拦截这组兼容事件，
     // 否则一次手势会被提交两次，第二次坐标会令图形跳到错误位置。
@@ -1135,6 +1172,10 @@ export default function LayerManager({
     container.addEventListener('pointermove', onArbitratedPointerMove, { passive: false, capture: true })
     container.addEventListener('pointerup', onArbitratedPointerUp, { passive: false, capture: true })
     container.addEventListener('pointercancel', onArbitratedPointerCancel, { passive: false, capture: true })
+    container.addEventListener('touchstart', onNativeTouchStart, { passive: true, capture: true })
+    container.addEventListener('touchmove', onNativeTouchMove, { passive: true, capture: true })
+    container.addEventListener('touchend', onNativeTouchEnd, { passive: true, capture: true })
+    container.addEventListener('touchcancel', onNativeTouchEnd, { passive: true, capture: true })
     container.addEventListener('mousedown', suppressCompatibilityMouse, true)
     container.addEventListener('mousemove', suppressCompatibilityMouse, true)
     container.addEventListener('mouseup', suppressCompatibilityMouse, true)
@@ -1144,6 +1185,10 @@ export default function LayerManager({
       container.removeEventListener('pointermove', onArbitratedPointerMove, true)
       container.removeEventListener('pointerup', onArbitratedPointerUp, true)
       container.removeEventListener('pointercancel', onArbitratedPointerCancel, true)
+      container.removeEventListener('touchstart', onNativeTouchStart, true)
+      container.removeEventListener('touchmove', onNativeTouchMove, true)
+      container.removeEventListener('touchend', onNativeTouchEnd, true)
+      container.removeEventListener('touchcancel', onNativeTouchEnd, true)
       container.removeEventListener('mousedown', suppressCompatibilityMouse, true)
       container.removeEventListener('mousemove', suppressCompatibilityMouse, true)
       container.removeEventListener('mouseup', suppressCompatibilityMouse, true)
@@ -3461,6 +3506,10 @@ export default function LayerManager({
         const p = (any.feature?.properties ?? {}) as Record<string, unknown>
         return String(p.group ?? p.uid ?? '')
       }
+      const sourceElement = typeof (layer as L.Path).getElement === 'function'
+        ? (layer as L.Path).getElement()
+        : null
+      sourceElement?.setAttribute('data-draw-source-key', keyOf())
       hl.on('mouseover', () => {
         const k = keyOf()
         const previous = hoverUidRef.current
@@ -4239,6 +4288,11 @@ export default function LayerManager({
     if (layers.length === 0) return false
     const startDistance = a.distanceTo(b)
     if (startDistance < 8) return false
+    if (androidPinchFrameRef.current != null) {
+      window.cancelAnimationFrame(androidPinchFrameRef.current)
+      androidPinchFrameRef.current = null
+    }
+    androidPinchPointsRef.current = null
     const center = unionBounds(layers).getCenter()
     androidPinchSessionRef.current = {
       before: snapshotNow(),
@@ -4266,7 +4320,7 @@ export default function LayerManager({
     return true
   }, [layersOfKeys, map, selectedKeys, snapshotNow])
 
-  const moveAndroidPinch = useCallback((a: L.Point, b: L.Point) => {
+  const applyAndroidPinchFrame = useCallback((a: L.Point, b: L.Point) => {
     const session = androidPinchSessionRef.current
     if (!session) return
     const factor = Math.min(12, Math.max(0.08, a.distanceTo(b) / session.startDistance))
@@ -4308,12 +4362,29 @@ export default function LayerManager({
       }
     }
     dragMovedRef.current = true
-    // Geometry and the eight edit handles must update in the same animation frame. Rebuilding
-    // synchronously for every raw pointer sample both wastes work and can use pre-layout bounds.
-    scheduleGizmoRefreshRef.current()
+    // 图形几何和选中框/八个手柄使用同一份双指采样，并在同一动画帧更新。
+    buildGizmoRef.current()
   }, [])
 
+  const moveAndroidPinch = useCallback((a: L.Point, b: L.Point) => {
+    androidPinchPointsRef.current = { a, b }
+    if (androidPinchFrameRef.current != null) return
+    androidPinchFrameRef.current = window.requestAnimationFrame(() => {
+      androidPinchFrameRef.current = null
+      const points = androidPinchPointsRef.current
+      androidPinchPointsRef.current = null
+      if (points) applyAndroidPinchFrame(points.a, points.b)
+    })
+  }, [applyAndroidPinchFrame])
+
   const endAndroidPinch = useCallback(() => {
+    if (androidPinchFrameRef.current != null) {
+      window.cancelAnimationFrame(androidPinchFrameRef.current)
+      androidPinchFrameRef.current = null
+    }
+    const pendingPoints = androidPinchPointsRef.current
+    androidPinchPointsRef.current = null
+    if (pendingPoints) applyAndroidPinchFrame(pendingPoints.a, pendingPoints.b)
     const session = androidPinchSessionRef.current
     androidPinchSessionRef.current = null
     if (session && snapshotNow() !== session.before) commitDraw(session.before)
@@ -4324,7 +4395,7 @@ export default function LayerManager({
       if (toolRef.current === 'pan') map.dragging.enable()
     }
     buildGizmoRef.current()
-  }, [commitDraw, map, snapshotNow])
+  }, [applyAndroidPinchFrame, commitDraw, map, snapshotNow])
 
   androidPinchStartRef.current = startAndroidPinch
   androidPinchMoveRef.current = moveAndroidPinch
@@ -4758,6 +4829,7 @@ export default function LayerManager({
                 max={72}
                 step={1}
                 value={selPanel.style.fontSize ?? 13}
+                style={rangeProgressStyle(selPanel.style.fontSize ?? 13, 8, 72)}
                 onChange={(e) => {
                   const next = { ...selPanel.style, fontSize: Number(e.target.value) }
                   setSelPanel({ ...selPanel, style: next })
@@ -4823,6 +4895,7 @@ export default function LayerManager({
                 max={6}
                 step={1}
                 value={selPanel.style.borderWidth ?? 0}
+                style={rangeProgressStyle(selPanel.style.borderWidth ?? 0, 0, 6)}
                 onChange={(e) => {
                   const bw = Number(e.target.value)
                   const next = { ...selPanel.style, borderWidth: bw, borderStyle: bw > 0 ? selPanel.style.borderStyle ?? 'solid' : 'none' }
@@ -4947,6 +5020,7 @@ export default function LayerManager({
                 <label>填充</label>
                 <input
                   type="color"
+                  className={!selPanel.fillEnabled ? 'inactive' : ''}
                   value={selPanel.fillColor ?? selPanel.color}
                   onChange={(e) => {
                     const next = { ...selPanel, fillColor: e.target.value, fillEnabled: true }
@@ -4954,18 +5028,11 @@ export default function LayerManager({
                     commitStyleRef.current(selPanel.uid, 'shape', next)
                   }}
                 />
-                <label className="tsp-check">
-                  <input
-                    type="checkbox"
-                    checked={!selPanel.fillEnabled}
-                    onChange={(e) => {
-                      const next = { ...selPanel, fillEnabled: !e.target.checked }
-                      setSelPanel(next)
-                      commitStyleRef.current(selPanel.uid, 'shape', next)
-                    }}
-                  />
-                  无填充
-                </label>
+                <Checkbox className="fill-checkbox" checked={Boolean(selPanel.fillEnabled)} onChange={(value) => {
+                    const next = { ...selPanel, fillEnabled: value }
+                    setSelPanel(next)
+                    commitStyleRef.current(selPanel.uid, 'shape', next)
+                  }} label="填充" />
               </div>
             )}
             {selPanel.shapeType !== 'defense' ? (
@@ -4978,6 +5045,7 @@ export default function LayerManager({
                     max={12}
                     step={1}
                     value={selPanel.weight}
+                    style={rangeProgressStyle(selPanel.weight, 1, 12)}
                     onChange={(e) => {
                       const weight = Number(e.target.value)
                       selWeightDraftRef.current = weight

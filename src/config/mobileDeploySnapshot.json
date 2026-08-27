@@ -1,0 +1,1587 @@
+{
+  "format": "deltaforce-mobile-deploy-snapshot",
+  "source": "local-pc-config-matching-official-mobile-deploy",
+  "maps": {
+    "ascent": {
+      "S1": {
+        "attack": [
+          {
+            "name": "M1A4主战坦克",
+            "icon": "m1a4zztk",
+            "cd": 120,
+            "num": 1,
+            "note": "北边滩头",
+            "allowTeammate": false,
+            "badge": "坦",
+            "category": "tank"
+          },
+          {
+            "name": "轻型战术车",
+            "icon": "losvjpc",
+            "cd": 45,
+            "num": 1,
+            "note": "北边滩头",
+            "allowTeammate": true,
+            "badge": "轻",
+            "category": "recon"
+          },
+          {
+            "name": "冲锋舟",
+            "icon": "cfz",
+            "legendKey": "nav_cfz",
+            "cd": 30,
+            "num": 2,
+            "note": "海上基地",
+            "allowTeammate": false,
+            "badge": "舟",
+            "category": "supply"
+          },
+          {
+            "name": "突击直升机",
+            "icon": "tjzsj",
+            "legendKey": "nav_tjzsj",
+            "cd": 150,
+            "num": 1,
+            "note": "海上基地",
+            "allowTeammate": false,
+            "badge": "突",
+            "category": "helo"
+          },
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 1,
+            "note": "北边滩头",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          }
+        ],
+        "defense": [
+          {
+            "name": "轻型战术车",
+            "icon": "losvjpc",
+            "cd": 45,
+            "num": 1,
+            "note": "临时营地",
+            "allowTeammate": true,
+            "badge": "轻",
+            "category": "recon"
+          },
+          {
+            "name": "LAV AA防空车",
+            "icon": "aakfc",
+            "legendKey": "nav_fkc",
+            "cd": 90,
+            "num": 1,
+            "note": "临时营地",
+            "allowTeammate": false,
+            "badge": "防",
+            "category": "ifv"
+          }
+        ]
+      },
+      "S2": {
+        "attack": [
+          {
+            "name": "M1A4主战坦克",
+            "icon": "m1a4zztk",
+            "cd": 120,
+            "num": 1,
+            "note": "北边废墟",
+            "allowTeammate": false,
+            "badge": "坦",
+            "category": "tank"
+          },
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 1,
+            "note": "北边废墟",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          },
+          {
+            "name": "FSV轮式突击炮",
+            "icon": "lstjp",
+            "legendKey": "nav_lstjp",
+            "cd": 90,
+            "num": 1,
+            "note": "北边废墟",
+            "allowTeammate": false,
+            "badge": "炮",
+            "category": "ifv"
+          },
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 1,
+            "note": "南边高坡",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          }
+        ],
+        "defense": [
+          {
+            "name": "轻型战术车",
+            "icon": "losvjpc",
+            "cd": 45,
+            "num": 1,
+            "note": "隧道入口",
+            "allowTeammate": false,
+            "badge": "轻",
+            "category": "recon"
+          },
+          {
+            "name": "M1A4主战坦克",
+            "icon": "m1a4zztk",
+            "cd": 120,
+            "num": 1,
+            "note": "隧道入口",
+            "allowTeammate": false,
+            "badge": "坦",
+            "category": "tank"
+          },
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 1,
+            "note": "隧道入口",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          }
+        ]
+      },
+      "S3": {
+        "attack": [
+          {
+            "name": "LAV G1步战车",
+            "icon": "g1bzc",
+            "cd": 120,
+            "num": 1,
+            "note": "隧道平台入口",
+            "allowTeammate": false,
+            "badge": "步",
+            "category": "ifv"
+          }
+        ],
+        "defense": []
+      },
+      "S4": {
+        "attack": [
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 2,
+            "note": "洞穴出口",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          }
+        ],
+        "defense": []
+      }
+    },
+    "flashpoint": {
+      "S1": {
+        "attack": [
+          {
+            "name": "侦察直升机",
+            "icon": "xnzsj",
+            "legendKey": "nav_zczsj",
+            "cd": 150,
+            "num": 1,
+            "note": "公园",
+            "allowTeammate": true,
+            "badge": "侦",
+            "category": "helo"
+          },
+          {
+            "name": "FSV轮式突击炮",
+            "icon": "lstjp",
+            "legendKey": "nav_lstjp",
+            "cd": 90,
+            "num": 1,
+            "note": "公园",
+            "allowTeammate": false,
+            "badge": "炮",
+            "category": "ifv"
+          },
+          {
+            "name": "突击车",
+            "icon": "orvtjc",
+            "legendKey": "nav_orvtjc",
+            "cd": 75,
+            "num": 1,
+            "note": "公园",
+            "allowTeammate": true,
+            "badge": "突",
+            "category": "recon"
+          },
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 2,
+            "note": "公园",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          }
+        ],
+        "defense": [
+          {
+            "name": "LAV AA防空车",
+            "icon": "aakfc",
+            "legendKey": "nav_fkc",
+            "cd": 90,
+            "num": 1,
+            "note": "检查站",
+            "allowTeammate": false,
+            "badge": "防",
+            "category": "ifv"
+          },
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 1,
+            "note": "检查站",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          }
+        ]
+      },
+      "S2": {
+        "attack": [
+          {
+            "name": "FSV轮式突击炮",
+            "icon": "lstjp",
+            "legendKey": "nav_lstjp",
+            "cd": 90,
+            "num": 1,
+            "note": "天桥",
+            "allowTeammate": false,
+            "badge": "炮",
+            "category": "ifv"
+          },
+          {
+            "name": "突击车",
+            "icon": "orvtjc",
+            "legendKey": "nav_orvtjc",
+            "cd": 75,
+            "num": 1,
+            "note": "天桥",
+            "allowTeammate": true,
+            "badge": "突",
+            "category": "recon"
+          },
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 2,
+            "note": "天桥",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          }
+        ],
+        "defense": [
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 2,
+            "note": "卸货场",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          }
+        ]
+      },
+      "S3": {
+        "attack": [
+          {
+            "name": "FSV轮式突击炮",
+            "icon": "lstjp",
+            "legendKey": "nav_lstjp",
+            "cd": 90,
+            "num": 1,
+            "note": "海墙",
+            "allowTeammate": false,
+            "badge": "炮",
+            "category": "ifv"
+          },
+          {
+            "name": "突击车",
+            "icon": "orvtjc",
+            "legendKey": "nav_orvtjc",
+            "cd": 75,
+            "num": 1,
+            "note": "海墙",
+            "allowTeammate": true,
+            "badge": "突",
+            "category": "recon"
+          },
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 2,
+            "note": "海墙",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          }
+        ],
+        "defense": [
+          {
+            "name": "FSV轮式突击炮",
+            "icon": "lstjp",
+            "legendKey": "nav_lstjp",
+            "cd": 90,
+            "num": 1,
+            "note": "集散区",
+            "allowTeammate": false,
+            "badge": "炮",
+            "category": "ifv"
+          },
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 2,
+            "note": "集散区",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          }
+        ]
+      }
+    },
+    "fault": {
+      "S1": {
+        "attack": [
+          {
+            "name": "F-45A战斗机",
+            "icon": "f45azdj",
+            "cd": 150,
+            "num": 2,
+            "note": "GTI3号阵地",
+            "allowTeammate": false,
+            "badge": "机",
+            "category": "helo"
+          },
+          {
+            "name": "LAV G1步战车",
+            "icon": "g1bzc",
+            "cd": 90,
+            "num": 1,
+            "note": "GTI2号阵地",
+            "allowTeammate": false,
+            "badge": "步",
+            "category": "ifv"
+          },
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 3,
+            "note": "GTI2号阵地",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          }
+        ],
+        "defense": [
+          {
+            "name": "F-45A战斗机",
+            "icon": "f45azdj",
+            "cd": 150,
+            "num": 2,
+            "note": "GTI1号阵地",
+            "allowTeammate": false,
+            "badge": "机",
+            "category": "helo"
+          },
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 3,
+            "note": "GTI1号阵地",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          }
+        ]
+      },
+      "S2": {
+        "attack": [
+          {
+            "name": "突击直升机",
+            "icon": "tjzsj",
+            "legendKey": "nav_tjzsj",
+            "cd": 150,
+            "num": 1,
+            "note": "GTI4号阵地",
+            "allowTeammate": false,
+            "badge": "突",
+            "category": "helo"
+          },
+          {
+            "name": "FSV轮式突击炮",
+            "icon": "lstjp",
+            "legendKey": "nav_lstjp",
+            "cd": 90,
+            "num": 1,
+            "note": "GTI4号阵地",
+            "allowTeammate": false,
+            "badge": "炮",
+            "category": "ifv"
+          },
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 3,
+            "note": "GTI4号阵地",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          }
+        ],
+        "defense": [
+          {
+            "name": "FSV轮式突击炮",
+            "icon": "lstjp",
+            "legendKey": "nav_lstjp",
+            "cd": 90,
+            "num": 1,
+            "note": "哈夫克3号阵地",
+            "allowTeammate": false,
+            "badge": "炮",
+            "category": "ifv"
+          },
+          {
+            "name": "LAV AA防空车",
+            "icon": "aakfc",
+            "legendKey": "nav_fkc",
+            "cd": 90,
+            "num": 1,
+            "note": "哈夫克3号阵地",
+            "allowTeammate": false,
+            "badge": "防",
+            "category": "ifv"
+          },
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 3,
+            "note": "哈夫克3号阵地",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          }
+        ]
+      },
+      "S3": {
+        "attack": [
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 3,
+            "note": "GTI7号阵地",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          }
+        ],
+        "defense": [
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 3,
+            "note": "哈夫克4号阵地",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          }
+        ]
+      }
+    },
+    "brokentrack": {
+      "S1": {
+        "attack": [
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 3,
+            "note": "运输要道",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          },
+          {
+            "name": "轻型战术车",
+            "icon": "losvjpc",
+            "cd": 15,
+            "num": 1,
+            "note": "运输要道",
+            "allowTeammate": false,
+            "badge": "轻",
+            "category": "recon"
+          },
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 2,
+            "note": "山间小路",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          },
+          {
+            "name": "轻型战术车",
+            "icon": "losvjpc",
+            "cd": 15,
+            "num": 1,
+            "note": "山间小路",
+            "allowTeammate": false,
+            "badge": "轻",
+            "category": "recon"
+          }
+        ],
+        "defense": []
+      },
+      "S2": {
+        "attack": [
+          {
+            "name": "FSV轮式突击炮",
+            "icon": "lstjp",
+            "legendKey": "nav_lstjp",
+            "cd": 90,
+            "num": 1,
+            "note": "进攻方矿场入口",
+            "allowTeammate": false,
+            "badge": "炮",
+            "category": "ifv"
+          },
+          {
+            "name": "FSV轮式突击炮",
+            "icon": "lstjp",
+            "legendKey": "nav_lstjp",
+            "cd": 90,
+            "num": 1,
+            "note": "进攻方二号二号矿场入口",
+            "allowTeammate": false,
+            "badge": "炮",
+            "category": "ifv"
+          }
+        ],
+        "defense": []
+      },
+      "S3": {
+        "attack": [
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 2,
+            "note": "进攻方工人宿舍",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          },
+          {
+            "name": "FSV轮式突击炮",
+            "icon": "lstjp",
+            "legendKey": "nav_lstjp",
+            "cd": 90,
+            "num": 1,
+            "note": "进攻方工人宿舍",
+            "allowTeammate": false,
+            "badge": "炮",
+            "category": "ifv"
+          },
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 3,
+            "note": "进攻方矿山山头",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          },
+          {
+            "name": "M1A4主战坦克",
+            "icon": "m1a4zztk",
+            "cd": 120,
+            "num": 1,
+            "note": "进攻方矿山山头",
+            "allowTeammate": false,
+            "badge": "坦",
+            "category": "tank"
+          }
+        ],
+        "defense": [
+          {
+            "name": "FSV轮式突击炮",
+            "icon": "lstjp",
+            "legendKey": "nav_lstjp",
+            "cd": 90,
+            "num": 1,
+            "note": "园区出口",
+            "allowTeammate": false,
+            "badge": "炮",
+            "category": "ifv"
+          },
+          {
+            "name": "M1A4主战坦克",
+            "icon": "m1a4zztk",
+            "cd": 120,
+            "num": 1,
+            "note": "铁道岔路口",
+            "allowTeammate": false,
+            "badge": "坦",
+            "category": "tank"
+          }
+        ]
+      },
+      "S4": {
+        "attack": [
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 3,
+            "note": "进攻方铁轨岔路口",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          },
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 2,
+            "note": "进攻方园区出口",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          }
+        ],
+        "defense": []
+      }
+    },
+    "colosseum": {
+      "S1": {
+        "attack": [
+          {
+            "name": "两栖装甲运输车",
+            "icon": "sxzjc",
+            "legendKey": "nav_sxzjc",
+            "cd": 0,
+            "num": 1,
+            "note": "GTI1号阵地",
+            "allowTeammate": false,
+            "badge": "载",
+            "category": "apc"
+          }
+        ],
+        "defense": []
+      },
+      "S2": {
+        "attack": [
+          {
+            "name": "鱼鹰直升机",
+            "icon": "ymfg",
+            "cd": 90,
+            "num": 1,
+            "note": "GTI4号阵地",
+            "allowTeammate": false,
+            "badge": "运",
+            "category": "helo"
+          },
+          {
+            "name": "轻型坦克",
+            "icon": "qxtk",
+            "cd": 90,
+            "num": 1,
+            "note": "GTI4号阵地",
+            "allowTeammate": false,
+            "badge": "轻",
+            "category": "tank"
+          }
+        ],
+        "defense": [
+          {
+            "name": "LAV AA防空车",
+            "icon": "aakfc",
+            "legendKey": "nav_fkc",
+            "cd": 90,
+            "num": 1,
+            "note": "哈夫克3号阵地",
+            "allowTeammate": false,
+            "badge": "防",
+            "category": "ifv"
+          }
+        ]
+      },
+      "S4": {
+        "attack": [
+          {
+            "name": "F-45A战斗机",
+            "icon": "f45azdj",
+            "cd": 100,
+            "num": 1,
+            "note": "GTI10号阵地",
+            "allowTeammate": false,
+            "badge": "机",
+            "category": "helo"
+          },
+          {
+            "name": "M1A4主战坦克",
+            "icon": "m1a4zztk",
+            "cd": 120,
+            "num": 1,
+            "note": "GTI10号阵地",
+            "allowTeammate": false,
+            "badge": "坦",
+            "category": "tank"
+          }
+        ],
+        "defense": [
+          {
+            "name": "F-45A战斗机",
+            "icon": "f45azdj",
+            "cd": 100,
+            "num": 1,
+            "note": "哈夫克7号阵地",
+            "allowTeammate": false,
+            "badge": "机",
+            "category": "helo"
+          },
+          {
+            "name": "LAV AA防空车",
+            "icon": "aakfc",
+            "legendKey": "nav_fkc",
+            "cd": 90,
+            "num": 1,
+            "note": "哈夫克7号阵地",
+            "allowTeammate": false,
+            "badge": "防",
+            "category": "ifv"
+          },
+          {
+            "name": "两栖装甲运输车",
+            "icon": "sxzjc",
+            "legendKey": "nav_sxzjc",
+            "cd": 90,
+            "num": 1,
+            "note": "哈夫克7号阵地",
+            "allowTeammate": false,
+            "badge": "载",
+            "category": "apc"
+          }
+        ]
+      }
+    },
+    "stormeye": {
+      "S1": {
+        "attack": [
+          {
+            "name": "摩托艇",
+            "icon": "mtt",
+            "cd": 5,
+            "num": 2,
+            "note": "进攻方1号阵地",
+            "allowTeammate": false,
+            "badge": "艇",
+            "category": "water"
+          },
+          {
+            "name": "冲锋舟",
+            "icon": "cfz",
+            "legendKey": "nav_cfz",
+            "cd": 90,
+            "num": 1,
+            "note": "进攻方1号阵地",
+            "allowTeammate": true,
+            "badge": "舟",
+            "category": "supply"
+          },
+          {
+            "name": "侦察直升机",
+            "icon": "xnzsj",
+            "legendKey": "nav_zczsj",
+            "cd": 150,
+            "num": 1,
+            "note": "进攻方1号阵地",
+            "allowTeammate": false,
+            "badge": "侦",
+            "category": "helo"
+          }
+        ],
+        "defense": [
+          {
+            "name": "摩托艇",
+            "icon": "mtt",
+            "cd": 5,
+            "num": 2,
+            "note": "防守方1号阵地",
+            "allowTeammate": false,
+            "badge": "艇",
+            "category": "water"
+          },
+          {
+            "name": "冲锋舟",
+            "icon": "cfz",
+            "legendKey": "nav_cfz",
+            "cd": 90,
+            "num": 1,
+            "note": "防守方1号阵地",
+            "allowTeammate": true,
+            "badge": "舟",
+            "category": "supply"
+          },
+          {
+            "name": "LAV AA防空车",
+            "icon": "aakfc",
+            "legendKey": "nav_fkc",
+            "cd": 90,
+            "num": 1,
+            "note": "防守方1号阵地",
+            "allowTeammate": false,
+            "badge": "防",
+            "category": "ifv"
+          }
+        ]
+      },
+      "S2": {
+        "attack": [
+          {
+            "name": "摩托艇",
+            "icon": "mtt",
+            "cd": 5,
+            "num": 2,
+            "note": "进攻方1号阵地",
+            "allowTeammate": false,
+            "badge": "艇",
+            "category": "water"
+          },
+          {
+            "name": "GTQ-35轻型坦克",
+            "icon": "qxtk",
+            "cd": 90,
+            "num": 1,
+            "note": "进攻方3号阵地",
+            "allowTeammate": false,
+            "badge": "轻",
+            "category": "tank"
+          },
+          {
+            "name": "冲锋舟",
+            "icon": "cfz",
+            "legendKey": "nav_cfz",
+            "cd": 90,
+            "num": 1,
+            "note": "进攻方4号阵地",
+            "allowTeammate": true,
+            "badge": "舟",
+            "category": "supply"
+          }
+        ],
+        "defense": [
+          {
+            "name": "摩托艇",
+            "icon": "mtt",
+            "cd": 5,
+            "num": 2,
+            "note": "防守方1号阵地",
+            "allowTeammate": false,
+            "badge": "艇",
+            "category": "water"
+          },
+          {
+            "name": "冲锋舟",
+            "icon": "cfz",
+            "legendKey": "nav_cfz",
+            "cd": 90,
+            "num": 1,
+            "note": "防守方4号阵地",
+            "allowTeammate": true,
+            "badge": "舟",
+            "category": "supply"
+          },
+          {
+            "name": "GTQ-35轻型坦克",
+            "icon": "qxtk",
+            "cd": 90,
+            "num": 1,
+            "note": "防守方3号阵地",
+            "allowTeammate": false,
+            "badge": "轻",
+            "category": "tank"
+          }
+        ]
+      },
+      "S3": {
+        "attack": [
+          {
+            "name": "摩托艇",
+            "icon": "mtt",
+            "cd": 5,
+            "num": 2,
+            "note": "进攻方1号阵地",
+            "allowTeammate": false,
+            "badge": "艇",
+            "category": "water"
+          },
+          {
+            "name": "冲锋舟",
+            "icon": "cfz",
+            "legendKey": "nav_cfz",
+            "cd": 90,
+            "num": 1,
+            "note": "进攻方7号阵地",
+            "allowTeammate": true,
+            "badge": "舟",
+            "category": "supply"
+          },
+          {
+            "name": "GTQ-35轻型坦克",
+            "icon": "qxtk",
+            "cd": 90,
+            "num": 1,
+            "note": "进攻方6号阵地",
+            "allowTeammate": false,
+            "badge": "轻",
+            "category": "tank"
+          }
+        ],
+        "defense": [
+          {
+            "name": "摩托艇",
+            "icon": "mtt",
+            "cd": 5,
+            "num": 2,
+            "note": "防守方1号阵地",
+            "allowTeammate": false,
+            "badge": "艇",
+            "category": "water"
+          },
+          {
+            "name": "冲锋舟",
+            "icon": "cfz",
+            "legendKey": "nav_cfz",
+            "cd": 90,
+            "num": 1,
+            "note": "防守方6号阵地",
+            "allowTeammate": true,
+            "badge": "舟",
+            "category": "supply"
+          },
+          {
+            "name": "FSV轮式突击炮",
+            "icon": "lstjp",
+            "legendKey": "nav_lstjp",
+            "cd": 90,
+            "num": 1,
+            "note": "防守方7号阵地",
+            "allowTeammate": false,
+            "badge": "炮",
+            "category": "ifv"
+          }
+        ]
+      },
+      "S4": {
+        "attack": [
+          {
+            "name": "摩托艇",
+            "icon": "mtt",
+            "cd": 5,
+            "num": 2,
+            "note": "进攻方8号阵地",
+            "allowTeammate": false,
+            "badge": "艇",
+            "category": "water"
+          },
+          {
+            "name": "冲锋舟",
+            "icon": "cfz",
+            "legendKey": "nav_cfz",
+            "cd": 90,
+            "num": 1,
+            "note": "进攻方9号阵地",
+            "allowTeammate": true,
+            "badge": "舟",
+            "category": "supply"
+          }
+        ],
+        "defense": [
+          {
+            "name": "摩托艇",
+            "icon": "mtt",
+            "cd": 5,
+            "num": 2,
+            "note": "防守方8号阵地",
+            "allowTeammate": false,
+            "badge": "艇",
+            "category": "water"
+          },
+          {
+            "name": "冲锋舟",
+            "icon": "cfz",
+            "legendKey": "nav_cfz",
+            "cd": 90,
+            "num": 1,
+            "note": "防守方10号阵地",
+            "allowTeammate": true,
+            "badge": "舟",
+            "category": "supply"
+          }
+        ]
+      },
+      "S5": {
+        "attack": [
+          {
+            "name": "摩托艇",
+            "icon": "mtt",
+            "cd": 5,
+            "num": 2,
+            "note": "进攻方13号阵地",
+            "allowTeammate": false,
+            "badge": "艇",
+            "category": "water"
+          },
+          {
+            "name": "冲锋舟",
+            "icon": "cfz",
+            "legendKey": "nav_cfz",
+            "cd": 90,
+            "num": 1,
+            "note": "进攻方13号阵地",
+            "allowTeammate": true,
+            "badge": "舟",
+            "category": "supply"
+          },
+          {
+            "name": "GTQ-35轻型坦克",
+            "icon": "qxtk",
+            "cd": 90,
+            "num": 1,
+            "note": "进攻方13号阵地",
+            "allowTeammate": false,
+            "badge": "轻",
+            "category": "tank"
+          }
+        ],
+        "defense": [
+          {
+            "name": "摩托艇",
+            "icon": "mtt",
+            "cd": 5,
+            "num": 2,
+            "note": "防守方12号阵地",
+            "allowTeammate": false,
+            "badge": "艇",
+            "category": "water"
+          },
+          {
+            "name": "冲锋舟",
+            "icon": "cfz",
+            "legendKey": "nav_cfz",
+            "cd": 90,
+            "num": 1,
+            "note": "防守方12号阵地",
+            "allowTeammate": true,
+            "badge": "舟",
+            "category": "supply"
+          },
+          {
+            "name": "FSV轮式突击炮",
+            "icon": "lstjp",
+            "legendKey": "nav_lstjp",
+            "cd": 90,
+            "num": 1,
+            "note": "防守方12号阵地",
+            "allowTeammate": false,
+            "badge": "炮",
+            "category": "ifv"
+          }
+        ]
+      }
+    },
+    "pyramid": {
+      "S1": {
+        "attack": [
+          {
+            "name": "M1A4主战坦克",
+            "icon": "m1a4zztk",
+            "cd": 120,
+            "num": 1,
+            "note": "GTI1号阵地",
+            "allowTeammate": false,
+            "badge": "坦",
+            "category": "tank"
+          },
+          {
+            "name": "侦察直升机",
+            "icon": "xnzsj",
+            "legendKey": "nav_zczsj",
+            "cd": 120,
+            "num": 1,
+            "note": "GTI2号阵地",
+            "allowTeammate": true,
+            "badge": "侦",
+            "category": "helo"
+          },
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 1,
+            "note": "GTI2号阵地",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          }
+        ],
+        "defense": [
+          {
+            "name": "LAV AA防空车",
+            "icon": "aakfc",
+            "legendKey": "nav_fkc",
+            "cd": 90,
+            "num": 1,
+            "note": "哈夫克1号阵地",
+            "allowTeammate": false,
+            "badge": "防",
+            "category": "ifv"
+          }
+        ]
+      },
+      "S2": {
+        "attack": [
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 1,
+            "note": "GTI3号阵地",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          }
+        ],
+        "defense": []
+      },
+      "S3": {
+        "attack": [
+          {
+            "name": "GTQ-35轻型坦克",
+            "icon": "qxtk",
+            "cd": 90,
+            "num": 1,
+            "note": "GTI4号阵地",
+            "allowTeammate": false,
+            "badge": "轻",
+            "category": "tank"
+          },
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 2,
+            "note": "GTI4号阵地",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          }
+        ],
+        "defense": [
+          {
+            "name": "FSV轮式突击炮",
+            "icon": "lstjp",
+            "legendKey": "nav_lstjp",
+            "cd": 90,
+            "num": 1,
+            "note": "哈夫克5号阵地",
+            "allowTeammate": false,
+            "badge": "炮",
+            "category": "ifv"
+          }
+        ]
+      }
+    },
+    "trench": {
+      "S1": {
+        "attack": [
+          {
+            "name": "M1A4主战坦克",
+            "icon": "m1a4zztk",
+            "cd": 120,
+            "num": 1,
+            "note": "进攻方2号阵地",
+            "allowTeammate": false,
+            "badge": "坦",
+            "category": "tank"
+          }
+        ],
+        "defense": []
+      },
+      "S2": {
+        "attack": [
+          {
+            "name": "M1A4主战坦克",
+            "icon": "m1a4zztk",
+            "cd": 120,
+            "num": 1,
+            "note": "进攻方3号阵地",
+            "allowTeammate": false,
+            "badge": "坦",
+            "category": "tank"
+          }
+        ],
+        "defense": []
+      },
+      "S3": {
+        "attack": [],
+        "defense": [
+          {
+            "name": "突击车",
+            "icon": "orvtjc",
+            "legendKey": "nav_orvtjc",
+            "cd": 60,
+            "num": 1,
+            "note": "防守方4号阵地",
+            "allowTeammate": true,
+            "badge": "突",
+            "category": "recon"
+          }
+        ]
+      },
+      "S4": {
+        "attack": [
+          {
+            "name": "FSV轮式突击炮",
+            "icon": "lstjp",
+            "legendKey": "nav_lstjp",
+            "cd": 90,
+            "num": 1,
+            "note": "进攻方8号阵地",
+            "allowTeammate": false,
+            "badge": "炮",
+            "category": "ifv"
+          }
+        ],
+        "defense": []
+      },
+      "S5": {
+        "attack": [
+          {
+            "name": "M1A4主战坦克",
+            "icon": "m1a4zztk",
+            "cd": 120,
+            "num": 1,
+            "note": "进攻方9号阵地",
+            "allowTeammate": false,
+            "badge": "坦",
+            "category": "tank"
+          },
+          {
+            "name": "ATV全地形车",
+            "icon": "atvqdxc",
+            "cd": 15,
+            "num": 2,
+            "note": "进攻方9号阵地",
+            "allowTeammate": false,
+            "badge": "全",
+            "category": "recon"
+          }
+        ],
+        "defense": [
+          {
+            "name": "M1A4主战坦克",
+            "icon": "m1a4zztk",
+            "cd": 120,
+            "num": 1,
+            "note": "防守方8号阵地",
+            "allowTeammate": false,
+            "badge": "坦",
+            "category": "tank"
+          }
+        ]
+      }
+    },
+    "umuscanal": {
+      "S1": {
+        "attack": [
+          {
+            "name": "M1A4主战坦克",
+            "icon": "m1a4zztk",
+            "cd": 120,
+            "num": 1,
+            "note": "GTI1号阵地",
+            "allowTeammate": false,
+            "badge": "坦",
+            "category": "tank"
+          },
+          {
+            "name": "两栖装甲运输车",
+            "icon": "sxzjc",
+            "legendKey": "nav_sxzjc",
+            "cd": 90,
+            "num": 1,
+            "note": "GTI2号阵地",
+            "allowTeammate": false,
+            "badge": "载",
+            "category": "apc"
+          }
+        ],
+        "defense": []
+      },
+      "S2": {
+        "attack": [
+          {
+            "name": "轮式突击炮",
+            "icon": "lstjp",
+            "legendKey": "nav_lstjp",
+            "cd": 90,
+            "num": 1,
+            "note": "GTI4号阵地",
+            "allowTeammate": false,
+            "badge": "炮",
+            "category": "ifv"
+          }
+        ],
+        "defense": [
+          {
+            "name": "轮式突击炮",
+            "icon": "lstjp",
+            "legendKey": "nav_lstjp",
+            "cd": 90,
+            "num": 1,
+            "note": "哈夫克2号阵地",
+            "allowTeammate": false,
+            "badge": "炮",
+            "category": "ifv"
+          }
+        ]
+      },
+      "S3": {
+        "attack": [
+          {
+            "name": "两栖装甲运输车",
+            "icon": "sxzjc",
+            "legendKey": "nav_sxzjc",
+            "cd": 90,
+            "num": 1,
+            "note": "GTI8号阵地",
+            "allowTeammate": false,
+            "badge": "载",
+            "category": "apc"
+          },
+          {
+            "name": "F-45A战斗机",
+            "icon": "f45azdj",
+            "cd": 100,
+            "num": 2,
+            "note": "GTI8号阵地",
+            "allowTeammate": false,
+            "badge": "机",
+            "category": "helo"
+          },
+          {
+            "name": "LAV AA防空车",
+            "icon": "aakfc",
+            "legendKey": "nav_fkc",
+            "cd": 90,
+            "num": 1,
+            "note": "GTI8号阵地",
+            "allowTeammate": false,
+            "badge": "防",
+            "category": "ifv"
+          }
+        ],
+        "defense": [
+          {
+            "name": "F-45A战斗机",
+            "icon": "f45azdj",
+            "cd": 100,
+            "num": 2,
+            "note": "哈夫克5号阵地",
+            "allowTeammate": false,
+            "badge": "机",
+            "category": "helo"
+          },
+          {
+            "name": "轮式突击炮",
+            "icon": "lstjp",
+            "legendKey": "nav_lstjp",
+            "cd": 90,
+            "num": 1,
+            "note": "哈夫克5号阵地",
+            "allowTeammate": false,
+            "badge": "炮",
+            "category": "ifv"
+          }
+        ]
+      },
+      "S4": {
+        "attack": [
+          {
+            "name": "LAV AA防空车",
+            "icon": "aakfc",
+            "legendKey": "nav_fkc",
+            "cd": 90,
+            "num": 1,
+            "note": "GTI11号阵地",
+            "allowTeammate": false,
+            "badge": "防",
+            "category": "ifv"
+          },
+          {
+            "name": "侦察直升机",
+            "icon": "xnzsj",
+            "legendKey": "nav_zczsj",
+            "cd": 100,
+            "num": 1,
+            "note": "GTI11号阵地",
+            "allowTeammate": false,
+            "badge": "侦",
+            "category": "helo"
+          }
+        ],
+        "defense": [
+          {
+            "name": "F-45A战斗机",
+            "icon": "f45azdj",
+            "cd": 100,
+            "num": 1,
+            "note": "哈夫克7号阵地",
+            "allowTeammate": false,
+            "badge": "机",
+            "category": "helo"
+          }
+        ]
+      }
+    },
+    "aftershock": {
+      "S1": {
+        "attack": [
+          {
+            "name": "M1A4主战坦克",
+            "icon": "m1a4zztk",
+            "cd": 120,
+            "num": 1,
+            "note": "GTI1号阵地",
+            "allowTeammate": false,
+            "badge": "坦",
+            "category": "tank"
+          },
+          {
+            "name": "两栖装甲运输车",
+            "icon": "sxzjc",
+            "legendKey": "nav_sxzjc",
+            "cd": 90,
+            "num": 1,
+            "note": "GTI2号阵地",
+            "allowTeammate": false,
+            "badge": "载",
+            "category": "apc"
+          }
+        ],
+        "defense": [
+          {
+            "name": "M1A4主战坦克",
+            "icon": "m1a4zztk",
+            "cd": 120,
+            "num": 1,
+            "note": "哈夫克1号阵地",
+            "allowTeammate": false,
+            "badge": "坦",
+            "category": "tank"
+          }
+        ]
+      },
+      "S2": {
+        "attack": [
+          {
+            "name": "FSV轮式突击炮",
+            "icon": "lstjp",
+            "legendKey": "nav_lstjp",
+            "cd": 90,
+            "num": 1,
+            "note": "GTI3号阵地",
+            "allowTeammate": false,
+            "badge": "炮",
+            "category": "ifv"
+          }
+        ],
+        "defense": [
+          {
+            "name": "FSV轮式突击炮",
+            "icon": "lstjp",
+            "legendKey": "nav_lstjp",
+            "cd": 90,
+            "num": 1,
+            "note": "哈夫克2号阵地",
+            "allowTeammate": false,
+            "badge": "炮",
+            "category": "ifv"
+          }
+        ]
+      },
+      "S3": {
+        "attack": [],
+        "defense": [
+          {
+            "name": "突击车",
+            "icon": "orvtjc",
+            "legendKey": "nav_orvtjc",
+            "cd": 60,
+            "num": 1,
+            "note": "防守方4号阵地",
+            "allowTeammate": true,
+            "badge": "突",
+            "category": "recon"
+          }
+        ]
+      },
+      "S4": {
+        "attack": [
+          {
+            "name": "FSV轮式突击炮",
+            "icon": "lstjp",
+            "legendKey": "nav_lstjp",
+            "cd": 90,
+            "num": 1,
+            "note": "进攻方8号阵地",
+            "allowTeammate": false,
+            "badge": "炮",
+            "category": "ifv"
+          }
+        ],
+        "defense": []
+      }
+    }
+  }
+}

@@ -4,6 +4,7 @@ import * as L from 'leaflet'
 import type { MapProp, PropVisibility } from '../types'
 import { MAP_PROPS } from '../config/pointsStages'
 import { POINT_ICON_BASE } from '../config/points'
+import { platform } from '../platform'
 
 /** 道具类型视觉配色 + 显示尺寸（问题4：24-28px，随缩放级别自适应） */
 const PROP_THEME: Record<string, { color: string; size: number }> = {
@@ -19,15 +20,16 @@ const PROP_THEME: Record<string, { color: string; size: number }> = {
 
 function propIcon(name: string, icon: string): L.DivIcon {
   const t = PROP_THEME[name] ?? { color: '#8b98ab', size: 26 }
+  const touchSize = platform.kind === 'android' ? 44 : t.size
   return L.divIcon({
     className: 'prop-marker-wrap',
     html: `
-      <div class="prop-marker" style="--pc:${t.color}">
+      <div class="prop-marker" style="--pc:${t.color};--prop-visual-size:${t.size}px">
         <span class="prop-bg"></span>
         <img src="${POINT_ICON_BASE}/${icon}.png" draggable="false" />
       </div>`,
-    iconSize: [t.size, t.size],
-    iconAnchor: [t.size / 2, t.size / 2],
+    iconSize: [touchSize, touchSize],
+    iconAnchor: [touchSize / 2, touchSize / 2],
   })
 }
 

@@ -27,6 +27,7 @@
   --mc-control-xs: 26px;
   --mc-control-sm: 30px;
   --mc-control-md: 34px;
+  position: relative;
   color-scheme: dark;
   font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
 }
@@ -82,17 +83,12 @@
   padding: 0;
 }
 
-.mode-workbench-toolbar.collapsed {
-  position: relative;
-  z-index: 1500;
-  min-height: 22px;
-  height: 22px;
-  justify-content: center;
-  padding: 0;
-  border-bottom-color: var(--line-1);
-}
-
 .mode-workbench-toolbar-expand {
+  position: absolute;
+  z-index: 2300;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
   height: 20px;
   display: inline-flex;
   align-items: center;
@@ -539,18 +535,20 @@
 .mode-asset-refresh-entry.active { border-color: var(--mc-accent); border-left-color: var(--mc-accent); background: var(--mc-accent-soft); color: var(--mc-accent); }
 .mode-asset-empty { min-height: 72px; display: flex; align-items: center; justify-content: center; gap: 7px; margin: 8px 10px; border: 1px dashed var(--line-0); color: var(--mc-text-muted); font-size: 9px; }
 
-.mode-asset-palette.collapsed { width: 40px; max-height: none; padding: 0; overflow: hidden; border-radius: 0; }
-.mode-asset-palette.collapsed header { min-height: 40px; display: flex; justify-content: center; padding: 5px; border-bottom: 0; }
-.mode-asset-palette.collapsed header > i,
-.mode-asset-palette.collapsed header > strong,
-.mode-asset-palette.collapsed header > span,
-.mode-asset-palette.collapsed .mode-asset-search,
-.mode-asset-palette.collapsed > details,
-.mode-asset-palette.collapsed .mode-asset-refresh-entry,
-.mode-asset-palette.collapsed .mode-asset-empty { display: none; }
-
 .mode-workbench .leaflet-top.leaflet-left { top: 8px; left: calc(var(--mode-palette-width) + 8px); }
-.mode-workbench.left-palette-collapsed .leaflet-top.leaflet-left { left: 48px; }
+.mode-workbench.left-palette-collapsed .leaflet-top.leaflet-left { left: 4px; }
+
+.mode-workbench .mode-config-panel-float {
+  position: absolute;
+  z-index: 2200;
+  top: 8px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: 10px;
+}
+.mode-workbench .mode-config-panel-float.left { left: 56px; }
+.mode-workbench .mode-config-panel-float.right { right: 8px; }
 
 .mode-workbench-resizer {
   position: absolute;
@@ -833,13 +831,6 @@
 .mode-vehicle-refresh-empty { min-height: 64px; display: flex; align-items: center; justify-content: center; gap: 7px; margin: 0 0 8px; border: 1px dashed var(--line-0); color: var(--mc-text-muted); font-size: 8px; }
 .mode-config-workflow-step.compact { padding-bottom: 8px; }
 .mode-config-workflow-step.compact .mode-config-secondary-action { width: 100%; margin: 0; }
-
-/* 收起与桌面窄屏 */
-.mode-workbench .mode-config-editor.collapsed { top: 0; right: 0; bottom: auto; width: 40px; height: 40px; padding: 0; border: 0; border-left: 1px solid var(--line-0); border-bottom: 1px solid var(--line-0); border-radius: 0; }
-.mode-config-editor.collapsed > :not(.mode-config-editor-head),
-.mode-config-editor.collapsed .mode-config-editor-head > div:first-child,
-.mode-config-editor.collapsed .mode-config-editor-close { display: none; }
-.mode-config-editor.collapsed .mode-config-editor-head { min-height: 40px; justify-content: center; padding: 5px; border: 0; }
 
 /* ---------- 控件与排版精修 ---------- */
 
