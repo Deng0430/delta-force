@@ -1691,13 +1691,151 @@ body {
   font-weight: 600;
 }
 
+/* 全局滑条：统一为战术面板的深色轨道、刻度中线与高对比滑块。 */
+input[type='range'] {
+  --range-accent: var(--gold);
+  --range-progress: 50%;
+  appearance: none;
+  -webkit-appearance: none;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  border: 1px solid var(--line-1);
+  border-radius: 1px;
+  background:
+    linear-gradient(90deg, var(--range-accent) 0 var(--range-progress), transparent var(--range-progress) 100%),
+    linear-gradient(180deg, #111719, #20282b);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .72);
+}
+
+input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 13px;
+  height: 16px;
+  margin-top: -6px;
+  border: 1px solid color-mix(in srgb, var(--range-accent) 75%, #fff);
+  border-radius: 2px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--range-accent) 72%, #fff), var(--range-accent));
+  box-shadow: 0 0 0 2px #111719, 0 2px 5px rgba(0, 0, 0, .65);
+}
+
+input[type='range']:hover::-webkit-slider-thumb,
+input[type='range']:focus-visible::-webkit-slider-thumb {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px #111719, 0 0 8px color-mix(in srgb, var(--range-accent) 55%, transparent);
+}
+
+input[type='range']::-moz-range-track {
+  height: 4px;
+  border: 1px solid var(--line-1);
+  border-radius: 1px;
+  background: linear-gradient(180deg, #111719, #20282b);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .72);
+}
+
+input[type='range']::-moz-range-progress {
+  height: 4px;
+  background: var(--range-accent);
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 13px;
+  height: 16px;
+  border: 1px solid color-mix(in srgb, var(--range-accent) 75%, #fff);
+  border-radius: 2px;
+  background: var(--range-accent);
+  box-shadow: 0 0 0 2px #111719, 0 2px 5px rgba(0, 0, 0, .65);
+}
+
+input[type='range']:focus-visible {
+  outline: none;
+}
+
 /* 画笔粗细滑动条（问题：按钮档位改为滑杆 1-12px） */
 .toolbar-settings-popover .ds-range {
   flex: 1;
   min-width: 0;
-  height: 4px;
-  accent-color: var(--gold);
+}
+
+/* 图形填充复用“地图分层”的 SVG 复选框视觉。 */
+.fill-checkbox.layer-item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 66px;
+  min-height: 25px;
+  padding: 3px 6px;
+  border-radius: 2px;
+  color: var(--tx-2);
+  font-size: 11px;
   cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+
+.fill-checkbox.layer-item:hover {
+  background: var(--bg-hover);
+  color: var(--tx-1);
+}
+
+.fill-checkbox .cb-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.fill-checkbox .cb-box {
+  width: 15px;
+  height: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border: 1px solid var(--line-2);
+  border-radius: 1px;
+  background: var(--bg-0);
+  color: var(--on-accent);
+  transition: background .12s ease, border-color .12s ease;
+}
+
+.fill-checkbox:hover .cb-box {
+  border-color: var(--tx-3);
+}
+
+.fill-checkbox .cb-box.checked {
+  border-color: var(--gold);
+  background: var(--gold);
+}
+
+.fill-checkbox .cb-box svg {
+  opacity: 0;
+  transform: scale(.5);
+  transition: opacity .12s ease, transform .12s ease;
+}
+
+.fill-checkbox .cb-box.checked svg {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.fill-checkbox .cb-native:focus-visible + .cb-box {
+  outline: 2px solid var(--gold);
+  outline-offset: 1px;
+}
+
+.toolbar-settings-popover .ds-color.inactive,
+.text-style-panel input[type='color'].inactive {
+  opacity: .38;
+  filter: grayscale(.75);
 }
 
 .toolbar-settings-popover .ds-range-val {
@@ -7555,7 +7693,7 @@ body {
 .objective-progress-control { display: grid; gap: 5px; color: var(--tx-3); font-size: 10px; }
 .objective-progress-control > span { display: flex; justify-content: space-between; }
 .objective-progress-control b { color: var(--objective-progress-color); }
-.objective-progress-control input { width: 100%; accent-color: var(--objective-progress-color); }
+.objective-progress-control input { --range-accent: var(--objective-progress-color); width: 100%; accent-color: var(--objective-progress-color); }
 .app.cinematic-objective-states .objective-state-editor { box-shadow: 0 0 0 2px color-mix(in srgb, var(--objective-state-color) 72%, transparent), 0 0 28px color-mix(in srgb, var(--objective-state-color) 42%, transparent); animation: cinematic-objective-editor-focus .9s ease-in-out infinite alternate; }
 .app.cinematic-objective-states .objective-progress-control { padding: 7px; border: 1px solid var(--objective-progress-color); background: color-mix(in srgb, var(--objective-progress-color) 9%, transparent); }
 .app.cinematic-objective-states .objective-progress-control input { filter: drop-shadow(0 0 5px var(--objective-progress-color)); }

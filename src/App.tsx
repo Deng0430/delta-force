@@ -52,6 +52,7 @@ import {
   buildOfficialModeData,
   emptyModeMapOverride,
   loadModeConfigStore,
+  modeMapsForPlatform,
   normalizeModeConfigStore,
   saveModeConfigStore,
 } from './utils/modeConfigStorage'
@@ -349,13 +350,18 @@ export default function App() {
     panelOpen: isCinematicRefreshSidebar ? false : isCinematicObjectiveStates || isCinematicActionSequence || device.mobileLayout || isCinematicMapOnly || isCinematicMobileFrame || cinematicLayoutPreset === 'winnerA' || cinematicLayoutPreset === 'platformCompare' || cinematicLayoutPreset === 'backdrop' ? false : persisted?.ui?.panelOpen ?? true,
     legendOpen: isCinematicObjectiveStates || device.mobileLayout || isCinematicMapOnly || Boolean(cinematicDefenseDemo) || cinematicLayoutPreset === 'backdrop' ? false : persisted?.ui?.legendOpen ?? true,
     leftPanelWidth: Math.max(300, Math.min(440, persisted?.ui?.leftPanelWidth ?? 300)),
+    mapMarkerScale: typeof persisted?.ui?.mapMarkerScale === 'number'
+      ? Math.max(0.65, Math.min(1.1, persisted.ui.mapMarkerScale))
+      : 0.9,
     layers: {
       props: cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.props ?? true,
       points: isCinematicObjectiveStates || cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.points ?? true,
       pointsLabels: isCinematicObjectiveStates || cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.pointsLabels ?? true,
+      pointAnnotations: cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.pointAnnotations ?? true,
       pointsCapture: isCinematicObjectiveStates || cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.pointsCapture ?? true,
       pointsFrontline: isCinematicObjectiveStates || cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.pointsFrontline ?? true,
       spawns: cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.spawns ?? true,
+      spawnAnnotations: cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.spawnAnnotations ?? true,
       zones: cinematicLayoutPreset === 'platformCompare' ? true : cinematicLayoutPreset === 'backdrop' || isCinematicMobileFrame ? false : persisted?.ui?.layers?.zones ?? true,
       vehicleRefresh: persisted?.ui?.layers?.vehicleRefresh ?? true,
     } as LayerVisibility,
@@ -413,8 +419,7 @@ export default function App() {
   const capturedStageIndex = Math.min(progress[activeTacticalContextKey] ?? 0, Math.max(0, stages.length - 1))
   const activeModeMap = useMemo(
     () => activeModeProfile
-      ? (activeModeProfile.id === 'attack-defense' ? activeModeProfile.platformMaps?.[gameDataPlatform] : activeModeProfile.maps)?.[mapId]
-        ?? activeModeProfile.maps[mapId]
+      ? modeMapsForPlatform(activeModeProfile, gameDataPlatform)[mapId]
         ?? emptyModeMapOverride(mapId)
       : null,
     [activeModeProfile, gameDataPlatform, mapId],
@@ -1784,13 +1789,14 @@ export default function App() {
       // “据点与防线”总开关联动三个子图层。
       if (key === 'points') {
         next.layers.pointsLabels = value
+        next.layers.pointAnnotations = value
         next.layers.pointsCapture = value
         next.layers.pointsFrontline = value
       }
       // 父项关闭后仍允许直接开启任一子项；开启子项时同步恢复父图层。
       if (
         value &&
-        (key === 'pointsLabels' || key === 'pointsCapture' || key === 'pointsFrontline')
+        (key === 'pointsLabels' || key === 'pointAnnotations' || key === 'pointsCapture' || key === 'pointsFrontline')
       ) {
         next.layers.points = true
       }
@@ -3476,7 +3482,7 @@ export default function App() {
     setMapId(targetMapId)
     setView(payload.view === 'defense' ? 'defense' : 'attack')
     if (activeBucket) {
-      const targetModeMap = (targetProfile.id === 'attack-defense' ? targetProfile.platformMaps?.[targetPlatform] : targetProfile.maps)?.[targetMapId] ?? targetProfile.maps[targetMapId]
+      const targetModeMap = modeMapsForPlatform(targetProfile, targetPlatform)[targetMapId]
       setProgress((current) => ({ ...current, [targetContextKey]: Math.max(0, targetModeMap?.stages.findIndex((stage) => stage.id === activeBucket.stageId) ?? 0) }))
       setModeStageSelection((current) => ({ ...current, [targetContextKey]: activeBucket.stageId }))
     }
@@ -4004,7 +4010,14 @@ export default function App() {
   }, [activeModeMap, activeTacticalContextKey, capturedStageIndex, handleSelectModeStage, mapId, stages, updateMap])
 
   return (
-    <div className={`app platform-${device.platform} ${device.mobileLayout ? 'mobile-layout' : 'desktop-layout'} ${ui.paletteOpen ? 'left-panel-open' : 'left-panel-closed'} ${isCinematicMapOnly ? 'cinematic-map-only' : ''} ${isCinematicCompassDemo ? 'cinematic-compass-demo' : ''} ${isCinematicLayerTour ? 'cinematic-layer-tour' : ''} ${isCinematicObjectiveStates ? 'cinematic-objective-states' : ''} ${isCinematicActionSequence ? `cinematic-action-sequence cinematic-action-${cinematicActionState} cinematic-focus-${cinematicActionFocus}` : ''} ${isCinematicCompletePlan ? `cinematic-complete-plan cinematic-complete-${cinematicCompletePlanFocus}` : ''} ${isCinematicRoundCopy ? `cinematic-round-copy-demo cinematic-round-copy-${cinematicRoundCopyFocus}` : ''} ${isCinematicRefreshSidebar ? `cinematic-refresh-sidebar cinematic-refresh-${cinematicRefreshState}` : ''} ${isCinematicBattleCompare ? `cinematic-battle-${cinematicDemoStage?.toLowerCase()}` : ''} ${isCinematicC1Highlight ? `cinematic-c1-${cinematicDemoStage?.toLowerCase()}` : ''}`} style={{ '--left-panel-width': `${ui.leftPanelWidth}px` } as CSSProperties}>
+    <div className={`app platform-${device.platform} ${device.mobileLayout ? 'mobile-layout' : 'desktop-layout'} ${ui.paletteOpen ? 'left-panel-open' : 'left-panel-closed'} ${isCinematicMapOnly ? 'cinematic-map-only' : ''} ${isCinematicCompassDemo ? 'cinematic-compass-demo' : ''} ${isCinematicLayerTour ? 'cinematic-layer-tour' : ''} ${isCinematicObjectiveStates ? 'cinematic-objective-states' : ''} ${isCinematicActionSequence ? `cinematic-action-sequence cinematic-action-${cinematicActionState} cinematic-focus-${cinematicActionFocus}` : ''} ${isCinematicCompletePlan ? `cinematic-complete-plan cinematic-complete-${cinematicCompletePlanFocus}` : ''} ${isCinematicRoundCopy ? `cinematic-round-copy-demo cinematic-round-copy-${cinematicRoundCopyFocus}` : ''} ${isCinematicRefreshSidebar ? `cinematic-refresh-sidebar cinematic-refresh-${cinematicRefreshState}` : ''} ${isCinematicBattleCompare ? `cinematic-battle-${cinematicDemoStage?.toLowerCase()}` : ''} ${isCinematicC1Highlight ? `cinematic-c1-${cinematicDemoStage?.toLowerCase()}` : ''}`} style={{
+      '--left-panel-width': `${ui.leftPanelWidth}px`,
+      '--mobile-map-marker-scale': ui.mapMarkerScale,
+      // 载具部署入口沿用 PC 组图的相对几何；44px 透明热区本身不缩放。
+      '--mobile-spawn-link-left': `${54.6 * ui.mapMarkerScale}px`,
+      '--mobile-spawn-connector-left': `${22 + 21 * ui.mapMarkerScale}px`,
+      '--mobile-spawn-connector-width': `${17.64 * ui.mapMarkerScale}px`,
+    } as CSSProperties}>
       {(isCinematicActionSequence || isCinematicRoundCopy) && cinematicActionCursor ? <span className="cinematic-action-cursor" style={{ left: cinematicActionCursor.x, top: cinematicActionCursor.y }} /> : null}
       <Toolbar
         mapId={mapId}
@@ -4055,6 +4068,8 @@ export default function App() {
           vehicleRefreshAvailable={(activeOfficialModeMap?.vehicleRefreshRules.length ?? 0) > 0}
           propVis={ui.propVis}
           onPropVisChange={handlePropVisChange}
+          mapMarkerScale={ui.mapMarkerScale}
+          onMapMarkerScaleChange={(mapMarkerScale) => setUi((current) => ({ ...current, mapMarkerScale }))}
           sections={ui.sections}
           onSectionChange={(key, v, group) =>
             setUi((u) => {

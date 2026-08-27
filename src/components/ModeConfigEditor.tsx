@@ -320,9 +320,10 @@ export default function ModeConfigEditor({
 
   const toggleDeployVehicle = (entry: DeployVehicleEntry) => {
     if (!selectedSpawn) return
-    const selected = selectedSpawn.deployVehicles.some((vehicle) => vehicle.name === entry.name)
+    // 名称属于展示数据，可能因官方数据版本变化；图标键才是稳定的载具身份。
+    const selected = selectedSpawn.deployVehicles.some((vehicle) => vehicle.icon === entry.icon)
     const deployVehicles = selected
-      ? selectedSpawn.deployVehicles.filter((vehicle) => vehicle.name !== entry.name)
+      ? selectedSpawn.deployVehicles.filter((vehicle) => vehicle.icon !== entry.icon)
       : [...selectedSpawn.deployVehicles, {
           name: entry.name,
           icon: entry.icon,
@@ -521,12 +522,22 @@ export default function ModeConfigEditor({
     })
   }
 
+  if (collapsed) {
+    return (
+      <button
+        className="collapse-float right mode-config-panel-float"
+        type="button"
+        onClick={onToggleCollapsed}
+        title="展开右侧工具栏"
+        aria-label="展开右侧工具栏"
+      >
+        <i className="fa-solid fa-chevron-left" aria-hidden="true" />
+      </button>
+    )
+  }
+
   return (
-    <>
-    {collapsed ? <button className="collapse-float right mode-config-panel-float" type="button" onClick={onToggleCollapsed} title="展开右侧工具栏" aria-label="展开右侧工具栏">
-      <i className="fa-solid fa-chevron-left" aria-hidden="true" />
-    </button> : null}
-    <section className={`mode-config-editor${collapsed ? ' collapsed' : ''}`} aria-label="模式配置编辑器" onMouseDown={(event) => event.stopPropagation()}>
+    <section className="mode-config-editor" aria-label="模式配置编辑器" onMouseDown={(event) => event.stopPropagation()}>
       <header className="mode-config-editor-head">
         <div>
           <strong>编辑地图内容</strong>
@@ -536,11 +547,11 @@ export default function ModeConfigEditor({
           <button
             type="button"
             onClick={onToggleCollapsed}
-            title={collapsed ? '展开右侧工具栏' : '收起右侧工具栏'}
-            aria-label={collapsed ? '展开右侧工具栏' : '收起右侧工具栏'}
-            aria-expanded={!collapsed}
+            title="收起右侧工具栏"
+            aria-label="收起右侧工具栏"
+            aria-expanded="true"
           >
-            <i className={`fa-solid ${collapsed ? 'fa-chevron-left' : 'fa-chevron-right'}`} />
+            <i className="fa-solid fa-chevron-right" />
           </button>
         </div>
       </header>
@@ -768,7 +779,7 @@ export default function ModeConfigEditor({
             {selectedSpawn.vehicleDeploy ? (
               <>
                 <div className="mode-config-vehicle-grid detailed">
-                  {DEPLOY_VEHICLE_CATALOG.map((item) => <button key={item.name} className={selectedSpawn.deployVehicles.some((vehicle) => vehicle.name === item.name) ? 'active' : ''} onClick={() => toggleDeployVehicle(item)} title={`${item.name} · ${item.cd}s · ${item.num}辆`}><img src={item.iconUrl} alt="" /><span>{item.name}</span></button>)}
+                  {DEPLOY_VEHICLE_CATALOG.map((item) => <button key={item.icon} className={selectedSpawn.deployVehicles.some((vehicle) => vehicle.icon === item.icon) ? 'active' : ''} onClick={() => toggleDeployVehicle(item)} title={`${item.name} · ${item.cd}s · ${item.num}辆`}><img src={item.iconUrl} alt="" /><span>{item.name}</span></button>)}
                 </div>
                 <div className="mode-config-deploy-settings">
                   {selectedSpawn.deployVehicles.map((vehicle) => (
@@ -830,6 +841,5 @@ export default function ModeConfigEditor({
       ) : null}
       </div> : null}
     </section>
-    </>
   )
 }

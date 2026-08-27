@@ -49,6 +49,7 @@ import type { LayerVisibility, PropVisibility } from '../types'
 import { platform } from '../platform'
 import VehicleRefreshLayer, { type RuntimeVehicleRefreshPoint, type RuntimeVehicleRefreshRule } from './VehicleRefreshLayer'
 import type { StageDeploy } from '../config/deployVehicles'
+import { rangeProgressStyle } from '../utils/rangeStyle'
 
 interface OfficialModeMapData {
   stages: StageConfig[]
@@ -1002,6 +1003,7 @@ export default function MapView({
           selectedName={selectedPoint?.point.name ?? null}
           visible={layers.points}
           labelsVisible={layers.pointsLabels}
+          annotationsVisible={layers.pointAnnotations}
           captureVisible={layers.pointsCapture}
           frontlineVisible={layers.pointsFrontline}
           interactive={interactive}
@@ -1013,6 +1015,7 @@ export default function MapView({
           capturedStageIndex={runtimeStageIndex}
           view={view}
           visible={layers.spawns}
+          annotationsVisible={layers.spawnAnnotations}
           interactive={interactive}
           deployByStage={modeData?.deploy}
           onSelect={onSpawnSelect}
@@ -1360,7 +1363,7 @@ export default function MapView({
             </button>}
             {selectedObjectiveState.capturingSide ? <label className="objective-progress-control">
               <span>占领进度 <b>{Math.round(selectedObjectiveState.progress)}%</b></span>
-              <input type="range" min="0" max="100" step="1" value={selectedObjectiveState.progress} onChange={(event) => onObjectiveStateChange(selectedPoint.point.name, { ...selectedObjectiveState, progress: Number(event.target.value) })} />
+              <input type="range" min="0" max="100" step="1" value={selectedObjectiveState.progress} style={rangeProgressStyle(selectedObjectiveState.progress, 0, 100, selectedObjectiveProgressColor)} onChange={(event) => onObjectiveStateChange(selectedPoint.point.name, { ...selectedObjectiveState, progress: Number(event.target.value) })} />
             </label> : null}
           </div> : null}
           {selectedPoint.point.note && (

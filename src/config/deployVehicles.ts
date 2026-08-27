@@ -548,8 +548,16 @@ export const DEPLOY_VEHICLE_CATALOG: DeployVehicleEntry[] = Array.from(
       .flatMap((stages) => Object.values(stages))
       .flatMap((stage) => [...stage.attack, ...stage.defense])
       .concat(EXTRA_DEPLOY_VEHICLES)
-      // 官方旧数据曾将 qxtk 写作“轻型坦克”，新数据写作正式名称
-      // “GTQ-35轻型坦克”；两者是同一载具，编辑器目录只保留正式名称。
-      .map((entry) => [entry.icon === 'qxtk' ? 'GTQ-35轻型坦克' : entry.name, entry.icon === 'qxtk' ? { ...entry, name: 'GTQ-35轻型坦克' } : entry]),
+      // 图标键是部署载具的稳定身份。名称可能随数据版本变化（例如“轻型坦克”
+      // /“GTQ-35轻型坦克”、“轮式突击炮”/“FSV轮式突击炮”），目录按图标键
+      // 去重并统一正式名称，避免编辑器出现两个实际相同、却无法互相取消的选项。
+      .map((entry) => {
+        const name = entry.icon === 'qxtk'
+          ? 'GTQ-35轻型坦克'
+          : entry.icon === 'lstjp'
+            ? 'FSV轮式突击炮'
+            : entry.name
+        return [entry.icon, { ...entry, name }] as const
+      }),
   ).values(),
 )

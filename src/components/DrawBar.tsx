@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ArrowHeadStyle, CurveStyle, DashType, DrawSettings, ToolMode } from '../types'
 import { platform } from '../platform'
+import { rangeProgressStyle } from '../utils/rangeStyle'
+import { Checkbox } from './icons'
 
 /** 画笔工具（图标化，Font Awesome） */
 const DRAW_TOOLS: { mode: ToolMode; icon: string; label: string }[] = [
@@ -254,6 +256,7 @@ export default function DrawBar({
           max={120}
           step={2}
           value={draw.eraserSize}
+          style={rangeProgressStyle(draw.eraserSize, 8, 120)}
           onChange={(e) => onDrawChange({ ...draw, eraserSize: Number(e.target.value) })}
           title={`橡皮擦笔头：${draw.eraserSize}px`}
         />
@@ -319,6 +322,7 @@ export default function DrawBar({
           max={WEIGHT_MAX}
           step={1}
           value={draw.weight}
+          style={rangeProgressStyle(draw.weight, WEIGHT_MIN, WEIGHT_MAX)}
           onChange={(e) => onDrawChange({ ...draw, weight: Number(e.target.value) })}
           title={`画笔粗细：${draw.weight}px`}
         />
@@ -330,19 +334,12 @@ export default function DrawBar({
             <span className="ds-label">填充</span>
             <input
               type="color"
-              className="ds-color"
+              className={`ds-color ${!draw.fillEnabled ? 'inactive' : ''}`}
               value={draw.fillColor}
               onChange={(e) => onDrawChange({ ...draw, fillColor: e.target.value, fillEnabled: true })}
               title="填充颜色"
             />
-            <label className="tsp-check">
-              <input
-                type="checkbox"
-                checked={!draw.fillEnabled}
-                onChange={(e) => onDrawChange({ ...draw, fillEnabled: !e.target.checked })}
-              />
-              无填充
-            </label>
+            <Checkbox className="fill-checkbox" checked={draw.fillEnabled} onChange={(value) => onDrawChange({ ...draw, fillEnabled: value })} label="填充" />
           </div>
         </>
       )}

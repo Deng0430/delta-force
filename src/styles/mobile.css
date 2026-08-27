@@ -552,39 +552,6 @@ body:has(.platform-android.mobile-layout) .text-style-panel .tsp-head {
   width: calc(var(--safe-right) + var(--mode-mobile-right-width));
   padding-right: var(--safe-right);
 }
-.mobile-layout.mode-workbench .mode-asset-palette.collapsed,
-.mobile-layout.mode-workbench .mode-config-editor.collapsed {
-  display: block;
-  top: 6px;
-  bottom: auto;
-  width: 46px;
-  height: 46px;
-  max-height: 46px;
-  padding: 4px;
-  overflow: hidden;
-  border-color: var(--gold);
-}
-.mobile-layout.mode-workbench .mode-asset-palette.collapsed { left: max(4px, var(--safe-left)); right: auto; }
-.mobile-layout.mode-workbench .mode-config-editor.collapsed { left: auto; right: max(4px, var(--safe-right)); }
-.mobile-layout.mode-workbench .mode-asset-palette.collapsed header,
-.mobile-layout.mode-workbench .mode-config-editor.collapsed .mode-config-editor-head {
-  min-height: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-}
-.mobile-layout.mode-workbench .mode-asset-palette.collapsed header > i,
-.mobile-layout.mode-workbench .mode-config-editor.collapsed .mode-config-editor-head-actions { display: inline-flex; }
-.mobile-layout.mode-workbench .mode-asset-palette.collapsed header > strong,
-.mobile-layout.mode-workbench .mode-asset-palette.collapsed header > span,
-.mobile-layout.mode-workbench .mode-config-editor.collapsed .mode-config-editor-head > div:first-child,
-.mobile-layout.mode-workbench .mode-config-editor.collapsed .mode-config-editor-close { display: none; }
-.mobile-layout.mode-workbench .mode-config-editor.collapsed .mode-config-editor-head-actions button { display: none; }
-.mobile-layout.mode-workbench .mode-config-editor.collapsed .mode-config-editor-head-actions button:first-child { display: inline-flex; }
-.mode-config-panel-float { display: none; }
 .platform-android.mobile-layout.mode-workbench .mode-config-panel-float {
   position: absolute;
   z-index: 2200;
@@ -597,8 +564,6 @@ body:has(.platform-android.mobile-layout) .text-style-panel .tsp-head {
 }
 .platform-android.mobile-layout.mode-workbench .mode-config-panel-float.right { right: 12px; }
 .platform-android.mobile-layout.mode-workbench.toolbar-collapsed .mode-config-panel-float { top: 6px; }
-.platform-android.mobile-layout.mode-workbench .mode-asset-palette.collapsed,
-.platform-android.mobile-layout.mode-workbench .mode-config-editor.collapsed { display: none !important; }
 .mobile-layout.mode-workbench .mode-asset-palette header {
   min-height: 58px;
   grid-template-columns: 30px minmax(0, 1fr) 34px;
@@ -796,30 +761,11 @@ body:has(.platform-android.mobile-layout) .text-style-panel .tsp-head {
   .mobile-layout.mode-workbench .mode-side-switch.defense i { transform: translateX(34px); }
 }
 
-/* 模式编辑器顶栏收起后不保留黑色占位条，展开按钮固定在地图顶部。 */
-.mobile-layout.mode-workbench .mode-workbench-toolbar.collapsed {
-  position: absolute;
+/* 模式编辑器顶栏展开入口是独立浮层，不占地图布局高度。 */
+.mobile-layout.mode-workbench .mode-workbench-toolbar-expand {
   top: 0;
-  left: 0;
-  right: 0;
-  z-index: 2300;
-  height: 0;
-  min-height: 0;
-  padding: 0;
-  overflow: visible;
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-  pointer-events: none;
-}
-.mobile-layout.mode-workbench .mode-workbench-toolbar.collapsed .mode-workbench-toolbar-expand {
-  position: absolute;
-  top: 0;
-  right: 50%;
-  transform: translateX(50%);
   min-height: 30px;
   padding: 3px 12px;
-  pointer-events: auto;
 }
 
 /* 顶栏本身需要横向滚动，因此移动端下拉菜单改为固定浮层，避免被滚动容器裁切。 */
@@ -1851,6 +1797,207 @@ body:has(.platform-android.mobile-layout) .wg-notes-dock:not(.expanded):not(.col
   width: 360px !important;
   max-width: calc(100vw - 16px) !important;
   max-height: 36dvh !important;
+}
+
+/* 地图点位：视觉尺寸与触控热区分离。Leaflet 外层保持 44px 命中范围，
+   仅缩小内部图案，避免横屏地图被大图标遮挡。 */
+.platform-android.mobile-layout .cap-marker-wrap,
+.platform-android.mobile-layout .spawn-marker-wrap,
+.platform-android.mobile-layout .prop-marker-wrap,
+.platform-android.mobile-layout .vehicle-refresh-marker-wrap {
+  display: grid !important;
+  place-items: center;
+  overflow: visible !important;
+  touch-action: manipulation;
+}
+
+.platform-android.mobile-layout .cap-marker img,
+.platform-android.mobile-layout .spawn-marker img {
+  width: 27px;
+  height: 27px;
+  transform: scale(var(--mobile-map-marker-scale, .9));
+  transform-origin: center;
+}
+
+.platform-android.mobile-layout .cap-progress-frame {
+  inset: 4px;
+  width: 36px;
+  height: 36px;
+  transform: scale(var(--mobile-map-marker-scale, .9));
+  transform-origin: center;
+}
+
+/* coarse 指针可能留下 sticky :hover；移动端不因此放大点位。 */
+.platform-android.mobile-layout .cap-marker:hover,
+.platform-android.mobile-layout .spawn-marker:hover {
+  transform: none;
+}
+
+.platform-android.mobile-layout .cap-marker.selected {
+  transform: scale(1.06);
+}
+
+.platform-android.mobile-layout .cap-marker .cap-tag,
+.platform-android.mobile-layout .spawn-marker .spawn-tag {
+  font-size: 10px;
+  padding-inline: 4px;
+}
+
+.platform-android.mobile-layout .cap-marker .cap-tag {
+  bottom: -14px;
+}
+
+.platform-android.mobile-layout .spawn-marker .spawn-tag {
+  bottom: -11px;
+}
+
+/* 载具部署副入口的外层是 44px 透明热区，边框与方向盘只是较小视觉内容。 */
+.platform-android.mobile-layout .spawn-marker.vehicle-deploy::before {
+  /* 42px 框 / 27px 图标，比例与 PC 的 50px / 32px 基本一致。 */
+  inset: 1px;
+  border-width: 2px;
+  transform: scale(var(--mobile-map-marker-scale, .9));
+}
+
+.platform-android.mobile-layout .spawn-marker .spawn-vehicle-link {
+  top: 0;
+  left: var(--mobile-spawn-link-left, 49.14px);
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: transparent;
+}
+
+.platform-android.mobile-layout .spawn-marker .spawn-vehicle-link::before {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  border: 2px solid currentColor;
+  background: rgba(7, 18, 18, .12);
+  content: "";
+  transform: scale(var(--mobile-map-marker-scale, .9));
+}
+
+.platform-android.mobile-layout .spawn-marker .spawn-vehicle-link > i {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+  transform: scale(var(--mobile-map-marker-scale, .9));
+}
+
+.platform-android.mobile-layout .spawn-marker.vehicle-deploy::after {
+  left: var(--mobile-spawn-connector-left, 40.9px);
+  width: var(--mobile-spawn-connector-width, 15.876px);
+  border-top-width: 2px;
+}
+
+.platform-android.mobile-layout .spawn-marker.vehicle-deploy .spawn-tag {
+  bottom: -17px;
+}
+
+/* 道具原始 size 仅作为视觉基准；Android 外层在组件中固定为 44px。 */
+.platform-android.mobile-layout .prop-marker {
+  width: calc(var(--prop-visual-size, 26px) * .78);
+  height: calc(var(--prop-visual-size, 26px) * .78);
+  flex: none;
+  transform: scale(var(--mobile-map-marker-scale, .9));
+}
+
+.platform-android.mobile-layout .vehicle-refresh-marker {
+  width: 30px;
+  height: 30px;
+  border-width: 2px;
+  transform: scale(var(--mobile-map-marker-scale, .9));
+}
+
+/* Android 左侧栏专属视觉比例控制；滑条触控被 UI 层消费，不传给地图。 */
+.mobile-marker-scale-control { display: none; }
+.platform-android.mobile-layout .mobile-marker-scale-control {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 6px 4px 2px;
+  padding: 8px;
+  border: 1px solid var(--line-1);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, .025);
+  touch-action: none;
+}
+.platform-android.mobile-layout .mobile-marker-scale-head,
+.platform-android.mobile-layout .mobile-marker-scale-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.platform-android.mobile-layout .mobile-marker-scale-head {
+  justify-content: space-between;
+  color: var(--tx-2);
+  font-size: 11px;
+}
+.platform-android.mobile-layout .mobile-marker-scale-head output {
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+.platform-android.mobile-layout .mobile-marker-scale-row input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  margin: 0;
+  accent-color: var(--gold);
+}
+.platform-android.mobile-layout .mobile-marker-scale-row button {
+  min-width: 46px;
+  min-height: 36px;
+  padding: 0 8px;
+  border: 1px solid var(--line-1);
+  border-radius: 2px;
+  background: var(--bg-btn);
+  color: var(--tx-2);
+  font-size: 10px;
+  touch-action: manipulation;
+}
+.platform-android.mobile-layout .mobile-marker-scale-control small {
+  color: var(--tx-4);
+  font-size: 9px;
+}
+
+/* 地图分层新增文字注释开关：扩大整行触控区，并让两类子项缩进一致。 */
+.platform-android.mobile-layout .left-panel .layer-list .layer-item {
+  min-height: 36px;
+  box-sizing: border-box;
+  padding-block: 6px;
+  font-size: 11px;
+  touch-action: manipulation;
+}
+.platform-android.mobile-layout .left-panel .layer-list .cb-box {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
+.platform-android.mobile-layout .left-panel .layer-list .layer-item.indent {
+  padding-left: 30px;
+  font-size: 11px;
+}
+.platform-android.mobile-layout .left-panel .point-type-list {
+  margin-left: 12px;
+  padding-left: 12px;
+}
+.platform-android.mobile-layout .left-panel .point-type-list .layer-item {
+  min-height: 36px;
+  padding-left: 6px;
+  font-size: 11px;
+}
+
+.platform-android.mobile-layout .vehicle-refresh-marker img {
+  width: 20px;
+  height: 20px;
+}
+
+.platform-android.mobile-layout .vehicle-refresh-marker .refresh-symbol {
+  right: -5px;
+  bottom: -5px;
+  width: 14px;
+  height: 14px;
 }
 
 .platform-android.mobile-layout .wg-notes-dock > header {

@@ -68,7 +68,8 @@ function parseSide(value: string): Side | null {
 
 function parseTrigger(value: string, note: string): ModeVehicleRefreshTrigger | null {
   const raw = value.trim()
-  if (/^\d+$/.test(raw)) return { type: 'tickets', value: Number(raw) }
+  const tickets = raw.match(/^(?:兵力\s*)?(\d+)\s*(?:兵力)?$/)
+  if (tickets) return { type: 'tickets', value: Number(tickets[1]) }
   if (/^\d{1,2}:\d{2}$/.test(raw)) return { type: 'match-time', value: raw }
   if (/倒计时/i.test(raw)) {
     const seconds = Number(raw.match(/\d+/)?.[0] ?? 0)

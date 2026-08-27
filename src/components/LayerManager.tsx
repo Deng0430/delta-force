@@ -6,6 +6,8 @@ import type { Feature, FeatureCollection, Point } from 'geojson'
 import type { ActiveTextEdit, ArrowHeadStyle, DashType, DrawSettings, OperatorUnit, Side, TeamMarker, TextStyleProps, ToolMode, VehicleItem } from '../types'
 import { DEFAULT_TEXT_STYLE, ellipsePoints, genUid, textIcon, textStyleFromProps, textStyleToProps } from '../utils/geo'
 import { platform } from '../platform'
+import { rangeProgressStyle } from '../utils/rangeStyle'
+import { Checkbox } from './icons'
 
 export const SIDE_COLORS: Record<Side, string> = {
   attack: '#2f6fed',
@@ -4827,6 +4829,7 @@ export default function LayerManager({
                 max={72}
                 step={1}
                 value={selPanel.style.fontSize ?? 13}
+                style={rangeProgressStyle(selPanel.style.fontSize ?? 13, 8, 72)}
                 onChange={(e) => {
                   const next = { ...selPanel.style, fontSize: Number(e.target.value) }
                   setSelPanel({ ...selPanel, style: next })
@@ -4892,6 +4895,7 @@ export default function LayerManager({
                 max={6}
                 step={1}
                 value={selPanel.style.borderWidth ?? 0}
+                style={rangeProgressStyle(selPanel.style.borderWidth ?? 0, 0, 6)}
                 onChange={(e) => {
                   const bw = Number(e.target.value)
                   const next = { ...selPanel.style, borderWidth: bw, borderStyle: bw > 0 ? selPanel.style.borderStyle ?? 'solid' : 'none' }
@@ -5016,6 +5020,7 @@ export default function LayerManager({
                 <label>填充</label>
                 <input
                   type="color"
+                  className={!selPanel.fillEnabled ? 'inactive' : ''}
                   value={selPanel.fillColor ?? selPanel.color}
                   onChange={(e) => {
                     const next = { ...selPanel, fillColor: e.target.value, fillEnabled: true }
@@ -5023,18 +5028,11 @@ export default function LayerManager({
                     commitStyleRef.current(selPanel.uid, 'shape', next)
                   }}
                 />
-                <label className="tsp-check">
-                  <input
-                    type="checkbox"
-                    checked={!selPanel.fillEnabled}
-                    onChange={(e) => {
-                      const next = { ...selPanel, fillEnabled: !e.target.checked }
-                      setSelPanel(next)
-                      commitStyleRef.current(selPanel.uid, 'shape', next)
-                    }}
-                  />
-                  无填充
-                </label>
+                <Checkbox className="fill-checkbox" checked={Boolean(selPanel.fillEnabled)} onChange={(value) => {
+                    const next = { ...selPanel, fillEnabled: value }
+                    setSelPanel(next)
+                    commitStyleRef.current(selPanel.uid, 'shape', next)
+                  }} label="填充" />
               </div>
             )}
             {selPanel.shapeType !== 'defense' ? (
@@ -5047,6 +5045,7 @@ export default function LayerManager({
                     max={12}
                     step={1}
                     value={selPanel.weight}
+                    style={rangeProgressStyle(selPanel.weight, 1, 12)}
                     onChange={(e) => {
                       const weight = Number(e.target.value)
                       selWeightDraftRef.current = weight

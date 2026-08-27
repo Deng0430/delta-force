@@ -25,6 +25,8 @@ interface SpawnMarkersProps {
   view: Side
   /** 是否显示复活点图层 */
   visible: boolean
+  /** 是否显示复活点图标下方的名称文字。 */
+  annotationsVisible: boolean
   /** 绘制工具激活时禁用点击聚焦 */
   interactive: boolean
   /** 点击出生点（stageId + 阵营 + 坐标 + 基地名，用于底部载具部署栏） */
@@ -55,6 +57,7 @@ export default function SpawnMarkers({
   capturedStageIndex,
   view,
   visible,
+  annotationsVisible,
   interactive,
   onSelect,
   deployByStage,
@@ -112,7 +115,7 @@ export default function SpawnMarkers({
         <div class="${cls}" style="--sp-c:${theme.color}">
           <img src="${POINT_ICON_BASE}/${theme.icon}.png" draggable="false" />
           ${vehicleDeploy ? '<span class="spawn-vehicle-link" role="button" aria-label="打开载具部署" title="打开载具部署"><i aria-hidden="true"><b></b></i></span>' : ''}
-          <span class="spawn-tag">${label}</span>
+          ${annotationsVisible ? `<span class="spawn-tag">${label}</span>` : ''}
         </div>`,
       iconSize: [44, 52],
       iconAnchor: [22, 42],

@@ -24,6 +24,7 @@ import { STAGES_BY_MAP } from '../config/points'
 import { MAP_PROPS } from '../config/pointsStages'
 import { DEPLOY_BY_MAP, DEPLOY_VEHICLE_CATALOG, localDeployIconUrl, type DeployVehicleEntry, type StageDeploy } from '../config/deployVehicles'
 import winnerTakesAllOfficial from '../config/winnerTakesAllOfficial.json'
+import mobileWinnerTakesAllOfficial from '../config/mobileWinnerTakesAllOfficial.json'
 import { deployForPlatform, propsForPlatform, stagesForPlatform, type GameDataPlatform } from '../config/gameDataPlatform'
 import { makeWinnerSpawnUid } from '../config/attackDefenseSpawns'
 
@@ -31,7 +32,7 @@ import { makeWinnerSpawnUid } from '../config/attackDefenseSpawns'
 export const MODE_CONFIG_STORAGE_KEY = 'deltaforce-mode-configs-v1'
 export const MODE_CONFIG_SYNC_CHANNEL = 'deltaforce-mode-config-sync-v1'
 export const MODE_CONFIG_SYNC_MESSAGE = 'deltaforce-mode-config-sync'
-const MODE_STORAGE_VERSION = 25 as const
+const MODE_STORAGE_VERSION = 32 as const
 
 const SIDES: Side[] = ['attack', 'defense']
 const VERIFICATIONS: ModeConfigVerification[] = ['draft', 'confirmed']
@@ -76,7 +77,7 @@ function defaultStore(): ModeConfigStore {
   attackDefense.maps = pcMaps
   const winner = createModeProfile('胜者为王', 'winner-takes-all')
   winner.description = winnerTakesAllOfficial.mode.description
-  winner.maps = Object.fromEntries(
+  const winnerPcMaps = Object.fromEntries(
     MAPS.map((map) => {
       const official = (winnerTakesAllOfficial.maps as unknown as Partial<Record<string, OfficialModeMapData>>)[map.id]
       return [
@@ -87,6 +88,14 @@ function defaultStore(): ModeConfigStore {
       ]
     }),
   )
+  const winnerMobileMaps = Object.fromEntries(
+    MAPS.map((map) => {
+      const official = (mobileWinnerTakesAllOfficial.maps as unknown as Partial<Record<string, OfficialModeMapData>>)[map.id]
+      return [map.id, official ? modeMapFromOfficial(map.id, official) : structuredClone(winnerPcMaps[map.id])]
+    }),
+  )
+  winner.maps = winnerPcMaps
+  winner.platformMaps = { pc: winnerPcMaps, mobile: winnerMobileMaps }
   return {
     version: MODE_STORAGE_VERSION,
     activeModeId: 'attack-defense',
@@ -209,7 +218,7 @@ function modeMapFromOfficial(mapId: string, official: OfficialModeMapData): Mode
     objectives,
     props: official.props.map((prop, index) => ({
       uid: `builtin_wta_${mapId}_prop-${index}`,
-      stageId: prop.stage.match(/S\d+/i)?.[0].toUpperCase() ?? '*',
+      stageId: '*',
       name: prop.name,
       icon: prop.icon,
       lat: prop.lat,
@@ -237,7 +246,7 @@ export function syncModeMapFromAttackDefense(
   const spawns: ModeSpawnPoint[] = []
   const objectives: ModeObjectivePoint[] = []
 
-  const asModeVehicle = (entry: DeployVehicleEntry): ModeDeployVehicle => ({
+  const asModeVehicle = (entry: DeployVehicleEntry): ModeDeployVehicle => normalizeDeployVehicle(entry) ?? ({
     name: entry.name,
     icon: entry.icon,
     iconUrl: entry.iconUrl,
@@ -324,13 +333,12 @@ export function syncModeMapFromAttackDefense(
   const propKeys = new Set<string>()
   const props: ModeMapProp[] = []
   for (const prop of propsByMap[mapId] ?? []) {
-    const stageId = prop.stage.match(/S\d+/i)?.[0].toUpperCase() ?? '*'
-    const key = `${stageId}:${prop.name}:${prop.icon}:${prop.lat}:${prop.lng}`
+    const key = `${prop.name}:${prop.icon}:${prop.lat}:${prop.lng}`
     if (propKeys.has(key)) continue
     propKeys.add(key)
     props.push({
       uid: `sync_${mapId}_prop-${props.length}`,
-      stageId,
+      stageId: '*',
       name: prop.name,
       icon: prop.icon,
       lat: prop.lat,
@@ -425,20 +433,22 @@ function normalizeDeployVehicle(value: unknown): ModeDeployVehicle | null {
   const category = VEHICLE_CATEGORIES.includes(vehicle.category as VehicleCategory)
     ? (vehicle.category as VehicleCategory)
     : 'recon'
+  // 旧胜者数据曾把“轻型坦克”的 deploy key 误写成主战坦克。名称在这里
+  // 仅用于纠正这一已知坏数据，之后统一以稳定图标键解析载具身份。
+  const canonicalIcon = vehicle.name === '轻型坦克' ? 'qxtk' : vehicle.icon
   // 图例资源会持续更新；载入固化数据或旧存档时按 deploy key 重新解析，
   // 避免刷新规则永久保留导入当时的旧 base64 / deploy 图标。
-  // 名称优先于旧 deploy key：历史数据曾把“轻型坦克”误存为主战坦克 key。
-  const currentCatalogVehicle = DEPLOY_VEHICLE_CATALOG.find((entry) => entry.name === vehicle.name)
-    ?? DEPLOY_VEHICLE_CATALOG.find((entry) => entry.icon === vehicle.icon)
-  const storedIconUrl = typeof vehicle.iconUrl === 'string' ? vehicle.iconUrl : localDeployIconUrl(vehicle.icon)
+  const currentCatalogVehicle = DEPLOY_VEHICLE_CATALOG.find((entry) => entry.icon === canonicalIcon)
+    ?? DEPLOY_VEHICLE_CATALOG.find((entry) => entry.name === vehicle.name)
+  const storedIconUrl = typeof vehicle.iconUrl === 'string' ? vehicle.iconUrl : localDeployIconUrl(canonicalIcon)
   const iconUrl = currentCatalogVehicle?.iconUrl
     ?? (vehicle.icon === 'ucb9597' && storedIconUrl.endsWith('.png')
       ? localDeployIconUrl(vehicle.icon)
       : storedIconUrl)
   return {
     // 合并官方旧字段“轻型坦克”和正式字段 GTQ-35轻型坦克。
-    name: vehicle.icon === 'qxtk' ? 'GTQ-35轻型坦克' : vehicle.name,
-    icon: vehicle.icon,
+    name: currentCatalogVehicle?.name ?? vehicle.name,
+    icon: currentCatalogVehicle?.icon ?? canonicalIcon,
     iconUrl,
     legendKey: typeof vehicle.legendKey === 'string' ? vehicle.legendKey : undefined,
     badge: typeof vehicle.badge === 'string' && vehicle.badge ? vehicle.badge : vehicle.name.slice(0, 1),
@@ -478,7 +488,7 @@ function normalizeProp(value: unknown): ModeMapProp | null {
   if (typeof prop.uid !== 'string' || !Number.isFinite(lat) || !Number.isFinite(lng)) return null
   return {
     uid: prop.uid,
-    stageId: typeof prop.stageId === 'string' && prop.stageId ? prop.stageId : '*',
+    stageId: '*',
     name: typeof prop.name === 'string' && prop.name.trim() ? prop.name : '未命名道具',
     icon: typeof prop.icon === 'string' && prop.icon ? prop.icon : 'q_gddyx',
     lat,
@@ -510,12 +520,19 @@ function normalizeVehicleRefreshRule(value: unknown): ModeVehicleRefreshRule | n
   if (!value || typeof value !== 'object') return null
   const rule = value as Partial<ModeVehicleRefreshRule>
   const trigger = rule.trigger && typeof rule.trigger === 'object' ? rule.trigger : null
-  const triggerType = trigger && VEHICLE_REFRESH_TRIGGER_TYPES.includes(trigger.type as ModeVehicleRefreshTriggerType)
+  let triggerType = trigger && VEHICLE_REFRESH_TRIGGER_TYPES.includes(trigger.type as ModeVehicleRefreshTriggerType)
     ? (trigger.type as ModeVehicleRefreshTriggerType)
     : null
   const vehicle = normalizeDeployVehicle(rule.vehicle)
   if (typeof rule.uid !== 'string' || !rule.uid || !trigger || !triggerType || !vehicle) return null
-  const triggerValue = trigger.type === 'tickets' || trigger.type === 'objective-countdown'
+  // 兼容编辑器旧版本把“100兵力”误判成 map-event 的数据。
+  const legacyTickets = triggerType === 'map-event'
+    ? String(trigger.value ?? '').trim().match(/^(?:兵力\s*)?(\d+)\s*兵力$/)
+    : null
+  if (legacyTickets) triggerType = 'tickets'
+  const triggerValue = legacyTickets
+    ? Number(legacyTickets[1])
+    : triggerType === 'tickets' || triggerType === 'objective-countdown'
     ? Number(trigger.value)
     : String(trigger.value ?? '')
   if ((typeof triggerValue === 'number' && !Number.isFinite(triggerValue)) || triggerValue === '') return null
@@ -544,6 +561,15 @@ function normalizeMapOverride(mapId: string, value: unknown): ModeMapOverride {
   const objectives = Array.isArray(map.objectives)
     ? map.objectives.map(normalizeObjective).filter((point): point is ModeObjectivePoint => point != null)
     : []
+  const propKeys = new Set<string>()
+  const props = (Array.isArray(map.props)
+    ? map.props.map(normalizeProp).filter((prop): prop is ModeMapProp => prop != null)
+    : []).filter((prop) => {
+      const key = `${prop.name}:${prop.icon}:${prop.lat}:${prop.lng}`
+      if (propKeys.has(key)) return false
+      propKeys.add(key)
+      return true
+    })
   const fallbackStages = (STAGES_BY_MAP[mapId] ?? []).map((stage) => ({ id: stage.id, label: stage.label }))
   const stageIds = new Set<string>()
   const stages: ModeStageDefinition[] = Array.isArray(map.stages)
@@ -574,9 +600,7 @@ function normalizeMapOverride(mapId: string, value: unknown): ModeMapOverride {
       ? map.spawns.map(normalizeSpawn).filter((spawn): spawn is ModeSpawnPoint => spawn != null)
       : [],
     objectives,
-    props: Array.isArray(map.props)
-      ? map.props.map(normalizeProp).filter((prop): prop is ModeMapProp => prop != null)
-      : [],
+    props,
     vehicleRefreshPoints: Array.isArray(map.vehicleRefreshPoints)
       ? map.vehicleRefreshPoints.map(normalizeVehicleRefreshPoint).filter((point): point is ModeVehicleRefreshPoint => point != null)
       : [],
@@ -632,6 +656,49 @@ export function normalizeModeConfigStore(value: unknown): ModeConfigStore | null
     const mobileMaps = attackDefense.platformMaps?.mobile ?? Object.fromEntries(MAPS.map((map) => [map.id, syncModeMapFromAttackDefense(map.id, stagesForPlatform('mobile')[map.id] ?? [], propsForPlatform('mobile'), deployForPlatform('mobile'))]))
     attackDefense.platformMaps = { pc: pcMaps, mobile: mobileMaps }
     attackDefense.maps = pcMaps
+  }
+  // v26 固化 2026-08-27“烬区 / 堑壕战·攻防·PC端”完整单图数据。
+  // 仅更新 PC 数据端，移动端继续使用其独立快照与官方手游数据。
+  if (sourceVersion < 26) {
+    const pcMaps = attackDefense.platformMaps!.pc!
+    for (const mapId of ['ember', 'trench']) {
+      pcMaps[mapId] = syncModeMapFromAttackDefense(
+        mapId,
+        stagesForPlatform('pc')[mapId] ?? [],
+        propsForPlatform('pc'),
+        deployForPlatform('pc'),
+      )
+    }
+    attackDefense.maps = pcMaps
+  }
+  // v30 将“烬区·胜者为王·PE端”的地图内容同步到“烬区·攻防·PE端”。
+  // 胜者专属刷新载具不属于攻防数据；移动端攻防固化源已显式清空
+  // vehicleRefreshPoints / vehicleRefreshRules，因此此处完整替换不会误带刷新规则。
+  if (sourceVersion < 30) {
+    const mobileMaps = attackDefense.platformMaps!.mobile!
+    mobileMaps.ember = syncModeMapFromAttackDefense(
+      'ember',
+      stagesForPlatform('mobile').ember ?? [],
+      propsForPlatform('mobile'),
+      deployForPlatform('mobile'),
+    )
+    attackDefense.platformMaps = { ...attackDefense.platformMaps, mobile: mobileMaps }
+    attackDefense.maps = attackDefense.platformMaps.pc!
+    attackDefense.updatedAt = Date.now()
+  }
+  // v32 固化 2026-08-27“烬区·攻防·PE端”独立官方数据。
+  // 完整替换该单图，确保不会混入胜者为王专属的刷新载具与规则。
+  if (sourceVersion < 32) {
+    const mobileMaps = attackDefense.platformMaps!.mobile!
+    mobileMaps.ember = syncModeMapFromAttackDefense(
+      'ember',
+      stagesForPlatform('mobile').ember ?? [],
+      propsForPlatform('mobile'),
+      deployForPlatform('mobile'),
+    )
+    attackDefense.platformMaps = { ...attackDefense.platformMaps, mobile: mobileMaps }
+    attackDefense.maps = attackDefense.platformMaps.pc!
+    attackDefense.updatedAt = Date.now()
   }
   // v18 从腾讯官方 map_dg.js 的 init 数据补回断轨 S4 守方活动区。
   // 两个游戏数据端的官方边界一致；仅替换该区域，保留其他已有编辑。
@@ -995,8 +1062,78 @@ export function normalizeModeConfigStore(value: unknown): ModeConfigStore | null
         updatedAt: Date.now(),
       }
     }
+    // v26 固化 2026-08-27“烬区 / 堑壕战·胜者为王·PC端”完整单图数据。
+    if (sourceVersion < 26) {
+      for (const mapId of ['ember', 'trench'] as const) {
+        const official = winnerTakesAllOfficial.maps[mapId] as unknown as OfficialModeMapData
+        winner.maps[mapId] = modeMapFromOfficial(mapId, official)
+      }
+    }
+    // v27 将胜者为王从单份 maps 深复制为 PC / PE 两套完全独立的数据。
+    // 初次迁移两端内容相同；后续编辑、导入与固化均只改变所选数据端。
+    if (sourceVersion < 27 || !winner.platformMaps?.pc || !winner.platformMaps?.mobile) {
+      const pcSource = winner.platformMaps?.pc ?? winner.maps
+      const mobileSource = winner.platformMaps?.mobile ?? pcSource
+      const pcMaps = structuredClone(pcSource)
+      const mobileMaps = structuredClone(mobileSource)
+      winner.platformMaps = { ...winner.platformMaps, pc: pcMaps, mobile: mobileMaps }
+      winner.maps = pcMaps
+      winner.updatedAt = Date.now()
+    } else {
+      // maps 始终保持为 PC 兼容别名，避免旧调用误读 PE 数据。
+      winner.maps = winner.platformMaps.pc
+    }
+    // v28 固化 2026-08-27“烬区·胜者为王·PE端”更新。
+    // 只替换移动端烬区，PC 数据端以及移动端其他地图保持不变。
+    if (sourceVersion < 28) {
+      const official = mobileWinnerTakesAllOfficial.maps.ember as unknown as OfficialModeMapData
+      const mobileMaps = winner.platformMaps?.mobile ?? structuredClone(winner.maps)
+      mobileMaps.ember = modeMapFromOfficial('ember', official)
+      winner.platformMaps = { ...winner.platformMaps, mobile: mobileMaps }
+      winner.maps = winner.platformMaps.pc ?? winner.maps
+      winner.updatedAt = Date.now()
+    }
+    // v29 仅更新“烬区·胜者为王·PE端”的 A 点刷新载具规则，
+    // 保留用户在该地图上的其他编辑内容。
+    if (sourceVersion < 29) {
+      const official = mobileWinnerTakesAllOfficial.maps.ember as unknown as OfficialModeMapData
+      const builtin = modeMapFromOfficial('ember', official)
+      const mobileMaps = winner.platformMaps?.mobile ?? structuredClone(winner.maps)
+      const current = mobileMaps.ember ?? builtin
+      mobileMaps.ember = {
+        ...current,
+        vehicleRefreshRules: builtin.vehicleRefreshRules,
+        updatedAt: Date.now(),
+      }
+      winner.platformMaps = { ...winner.platformMaps, mobile: mobileMaps }
+      winner.maps = winner.platformMaps.pc ?? winner.maps
+      winner.updatedAt = Date.now()
+    }
+    // v32 固化 2026-08-27“烬区·胜者为王·PE端”独立官方数据。
+    // 完整替换该单图，包括胜者模式专属的载具刷新点与刷新规则。
+    if (sourceVersion < 32) {
+      const official = mobileWinnerTakesAllOfficial.maps.ember as unknown as OfficialModeMapData
+      const mobileMaps = winner.platformMaps?.mobile ?? structuredClone(winner.maps)
+      mobileMaps.ember = modeMapFromOfficial('ember', official)
+      winner.platformMaps = { ...winner.platformMaps, mobile: mobileMaps }
+      winner.maps = winner.platformMaps.pc ?? winner.maps
+      winner.updatedAt = Date.now()
+    }
   }
   return { version: MODE_STORAGE_VERSION, activeModeId, profiles }
+}
+
+/** 攻防与胜者为王均按游戏数据端隔离；自定义模式没有 platformMaps 时继续共用 maps。 */
+export function modeUsesPlatformMaps(profile: Pick<GameModeProfile, 'id' | 'platformMaps'>): boolean {
+  return profile.id === 'attack-defense' || profile.id === 'winner-takes-all' || Boolean(profile.platformMaps)
+}
+
+/** 统一获取指定游戏数据端的地图表，兼容尚未迁移的旧存储。 */
+export function modeMapsForPlatform(
+  profile: Pick<GameModeProfile, 'maps' | 'platformMaps'>,
+  gameDataPlatform: GameDataPlatform,
+): Record<string, ModeMapOverride> {
+  return profile.platformMaps?.[gameDataPlatform] ?? profile.maps
 }
 
 export interface ModeConfigImportResult {
@@ -1090,10 +1227,10 @@ export function importModeConfigData(
   const profileId = source.mode.id.trim()
   const existing = currentStore.profiles.find((profile) => profile.id === profileId)
   let importedProfile: GameModeProfile
-  if (profileId === 'attack-defense') {
+  if (profileId === 'attack-defense' || profileId === 'winner-takes-all') {
     const base = existing ?? createModeProfile(source.mode.name.trim() || '攻防模式', profileId)
     const pcMaps = base.platformMaps?.pc ?? base.maps
-    const mobileMaps = base.platformMaps?.mobile ?? {}
+    const mobileMaps = base.platformMaps?.mobile ?? structuredClone(base.maps)
     const targetMaps = mergeImportedMaps(
       gameDataPlatform === 'pc' ? pcMaps : mobileMaps,
       importedMaps,
@@ -1190,7 +1327,7 @@ export function buildOfficialModeData(
 
   const targetMaps = mapId ? MAPS.filter((map) => map.id === mapId) : MAPS
   for (const map of targetMaps) {
-    const profileMaps = profile.id === 'attack-defense' ? profile.platformMaps?.[gameDataPlatform] ?? profile.maps : profile.maps
+    const profileMaps = modeMapsForPlatform(profile, gameDataPlatform)
     const config = profileMaps[map.id] ?? emptyModeMapOverride(map.id)
     const baseStages = stagesForPlatform(gameDataPlatform)[map.id] ?? []
     const stages = config.stages.map((definition): StageConfig => {
@@ -1249,7 +1386,7 @@ export function buildOfficialModeData(
         icon: prop.icon,
         lat: prop.lat,
         lng: prop.lng,
-        stage: prop.stageId === '*' ? '' : prop.stageId,
+        stage: '',
       })),
       deploy,
       vehicleRefreshPoints: config.vehicleRefreshPoints.map(({ verification: _verification, ...point }) => point),

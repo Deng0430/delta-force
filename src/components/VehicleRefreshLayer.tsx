@@ -4,6 +4,7 @@ import * as L from 'leaflet'
 import type { ModeVehicleRefreshPoint, ModeVehicleRefreshRule, TacticalBattleContext } from '../types'
 import { refreshTriggerLabel } from '../utils/vehicleRefreshRules'
 import { evaluateVehicleRefreshRule, isVehicleRefreshRuleInStage } from '../utils/vehicleRefreshRuntime'
+import { platform } from '../platform'
 
 export type RuntimeVehicleRefreshPoint = Omit<ModeVehicleRefreshPoint, 'verification'>
 export type RuntimeVehicleRefreshRule = Omit<ModeVehicleRefreshRule, 'verification'>
@@ -44,11 +45,12 @@ function refreshPointIcon(
     ? `<img src="${escapeAttribute(first.vehicle.iconUrl)}" draggable="false" />`
     : '<i class="fa-solid fa-truck-fast" aria-hidden="true"></i>'
   const count = deployableRules.length > 1 ? `<b>${deployableRules.length}</b>` : ''
+  const touchSize = platform.kind === 'android' ? 44 : 38
   return L.divIcon({
     className: 'vehicle-refresh-marker-wrap',
     html: `<div class="vehicle-refresh-marker ${status}"><span class="vehicle-refresh-pulse"></span>${image}${count}<i class="fa-solid fa-rotate refresh-symbol" aria-hidden="true"></i></div>`,
-    iconSize: [38, 38],
-    iconAnchor: [19, 19],
+    iconSize: [touchSize, touchSize],
+    iconAnchor: [touchSize / 2, touchSize / 2],
     popupAnchor: [0, -18],
   })
 }

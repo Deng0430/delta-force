@@ -5,6 +5,7 @@ import { MOBILE_OFFICIAL_DATA } from './mobileOfficialData'
 import mobileAttackDefenseOfficial from './mobileAttackDefenseOfficial.json'
 import mobilePcParitySnapshot from './mobilePcParitySnapshot.json'
 import mobileDeploySnapshot from './mobileDeploySnapshot.json'
+import pcAttackDefenseOfficial from './pcAttackDefenseOfficial.json'
 import { DEPLOY_BY_MAP, localDeployIconUrl, type DeployVehicleEntry, type StageDeploy } from './deployVehicles'
 import { vehicleLegendAssetUrl } from './vehicleLegendAssets'
 import { normalizeAttackDefenseData } from './attackDefenseSpawns'
@@ -71,6 +72,23 @@ function buildMobileStages(): Record<string, StageConfig[]> {
 }
 
 const RAW_MOBILE_STAGES_BY_MAP = buildMobileStages()
+const PC_OFFICIAL_MAPS = pcAttackDefenseOfficial.maps as unknown as Record<string, {
+  stages: StageConfig[]
+  props: MapProp[]
+  deploy: Record<string, StageDeploy>
+}>
+const RAW_PC_STAGES_BY_MAP: Record<string, StageConfig[]> = {
+  ...STAGES_BY_MAP,
+  ...Object.fromEntries(Object.entries(PC_OFFICIAL_MAPS).map(([mapId, map]) => [mapId, structuredClone(map.stages)])),
+}
+const PC_MAP_PROPS: Record<string, MapProp[]> = {
+  ...MAP_PROPS,
+  ...Object.fromEntries(Object.entries(PC_OFFICIAL_MAPS).map(([mapId, map]) => [mapId, structuredClone(map.props)])),
+}
+const RAW_PC_DEPLOY_BY_MAP: Record<string, Record<string, StageDeploy>> = {
+  ...DEPLOY_BY_MAP,
+  ...Object.fromEntries(Object.entries(PC_OFFICIAL_MAPS).map(([mapId, map]) => [mapId, structuredClone(map.deploy)])),
+}
 export const MOBILE_MAP_PROPS: Record<string, MapProp[]> = {
   ...MAP_PROPS,
   ...(MOBILE_OFFICIAL_DATA.props as unknown as Record<string, MapProp[]>),
@@ -109,7 +127,7 @@ const MOBILE_DEPLOY_BY_MAP: Record<string, Record<string, StageDeploy>> = {
   ) as unknown as Record<string, Record<string, StageDeploy>>,
 }
 
-const PC_ATTACK_DEFENSE_DATA = normalizeAttackDefenseData('pc', STAGES_BY_MAP, DEPLOY_BY_MAP)
+const PC_ATTACK_DEFENSE_DATA = normalizeAttackDefenseData('pc', RAW_PC_STAGES_BY_MAP, RAW_PC_DEPLOY_BY_MAP)
 const MOBILE_ATTACK_DEFENSE_DATA = normalizeAttackDefenseData('mobile', RAW_MOBILE_STAGES_BY_MAP, MOBILE_DEPLOY_BY_MAP)
 
 /** 已补齐统一复活点 UID 的移动端攻防阶段。 */
@@ -120,7 +138,7 @@ export function stagesForPlatform(platform: GameDataPlatform): Record<string, St
 }
 
 export function propsForPlatform(platform: GameDataPlatform): Record<string, MapProp[]> {
-  return platform === 'mobile' ? MOBILE_MAP_PROPS : MAP_PROPS
+  return platform === 'mobile' ? MOBILE_MAP_PROPS : PC_MAP_PROPS
 }
 
 export function deployForPlatform(platform: GameDataPlatform): Record<string, Record<string, StageDeploy>> {
