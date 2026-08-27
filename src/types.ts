@@ -720,6 +720,8 @@ export interface MapStateSnapshot {
   routes: Record<Side, TacticalRoute[]>
   fieldSupports?: Record<Side, FieldSupportInstance[]>
   skillActions?: OperatorSkillAction[]
+  /** 仅跨阶段共享配置变更需要保存，用于完整撤回/恢复所有阶段桶。 */
+  tacticalBuckets?: TacticalBucketStore
 }
 
 /** 撤回/恢复历史条目 */
