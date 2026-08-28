@@ -304,6 +304,23 @@
   touch-action: none !important;
 }
 
+/* 原位文字编辑必须把触摸交给 WebView 的 contenteditable，才能点击/拖动插入光标。
+   地图事件由 LayerManager 在编辑节点上仅 stopPropagation，不取消默认行为。 */
+.platform-android .text-marker.text-marker-editing {
+  pointer-events: auto !important;
+  touch-action: auto !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  -webkit-touch-callout: default;
+}
+
+/* 编辑会话中所有透明图形命中层暂停接收事件，避免相邻/重叠图形的扩大命中区
+   覆盖在 contenteditable 上；视觉图层保持不变，完成编辑后自动恢复。 */
+.platform-android .text-editing-active .draw-text-hit-wrap,
+.platform-android .text-editing-active .draw-hit-area {
+  pointer-events: none !important;
+}
+
 /* 小图形周围的多个编辑点不能让命中区彼此覆盖。视觉圆点保持原尺寸，
    只有 Leaflet marker 外层缩小；触摸事件统一由外层接收。 */
 .platform-android .edit-handle-wrap .edit-handle-dot {

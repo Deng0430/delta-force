@@ -139,6 +139,23 @@ function InteractiveLayerPanGuard() {
   return null
 }
 
+/** 文字标注编辑期间冻结地图手势，并在结束后恢复进入编辑前的状态。 */
+function TextEditMapLock({ active }: { active: boolean }) {
+  const map = useMap()
+  useEffect(() => {
+    if (!active) return
+    const controls = [map.dragging, map.scrollWheelZoom, map.touchZoom, map.doubleClickZoom, map.boxZoom]
+    const enabled = controls.map((control) => control.enabled())
+    controls.forEach((control) => control.disable())
+    return () => {
+      controls.forEach((control, index) => {
+        if (enabled[index]) control.enable()
+      })
+    }
+  }, [active, map])
+  return null
+}
+
 function MapRotationControl({ initiallyCollapsed = false }: { initiallyCollapsed?: boolean }) {
   const map = useMap()
   useEffect(() => {
@@ -313,6 +330,8 @@ interface MapViewProps {
   onSpawnSelect: (spawn: { uid: string; stageId: string; side: Side; pos: [number, number]; baseName: string | null }) => void
   /** 工具切换回调（右键自动切回查看工具） */
   onTool: (t: ToolMode) => void
+  /** 标注编辑状态，用于锁定外部工具栏 */
+  onTextEditingChange?: (editing: boolean) => void
   // ---- 套索支持载具（第十四轮） ----
   /** 批量移动载具（套索整体移动） */
   onMoveVehicles: (updates: Record<string, [number, number]>) => void
@@ -604,6 +623,7 @@ export default function MapView({
   onCloseDetail,
   onSpawnSelect,
   onTool,
+  onTextEditingChange,
   leftOpen,
   rightOpen,
   legendOpen,
@@ -670,10 +690,10 @@ export default function MapView({
     : -1
   const runtimeStageIndex = modeData ? Math.max(0, selectedModeStageIndex) : capturedStageIndex
   const [editing, setEditing] = useState<ActiveTextEdit | null>(null)
-  const [draft, setDraft] = useState('')
+  const editingRef = useRef<ActiveTextEdit | null>(null)
+  const suppressOutsideClickRef = useRef(false)
+  const suppressOutsideClickTimerRef = useRef<number | null>(null)
   const mapWrapRef = useRef<HTMLDivElement | null>(null)
-  const textEditorRef = useRef<HTMLDivElement | null>(null)
-  const [textEditorPosition, setTextEditorPosition] = useState<{ left: number; top: number } | null>(null)
   const [routeDraftSource, setRouteDraftSource] = useState<RouteDraftSource>(null)
   const [selectedRouteUid, setSelectedRouteUid] = useState<string | null>(null)
   const [routeEditorOpen, setRouteEditorOpen] = useState(false)
@@ -714,48 +734,37 @@ export default function MapView({
     [leftOpen, leftPanelWidth, rightOpen, rightPanelWidth],
   )
 
-  const handleStartEdit = useCallback((edit: ActiveTextEdit) => {
-    setDraft(edit.initialText)
-    setTextEditorPosition(null)
-    setEditing(edit)
+  const finishTextEdit = useCallback((mode: 'commit' | 'cancel' = 'commit', expectedSessionId?: number) => {
+    const active = editingRef.current
+    if (!active) return
+    if (expectedSessionId != null && active.sessionId !== expectedSessionId) return
+    // 先释放 React 侧所有权，再调用会话动作。这样保存导致同步重渲染、
+    // 或旧事件重复到达时，都无法再次结束同一会话。
+    editingRef.current = null
+    setEditing((current) => current?.sessionId === active.sessionId ? null : current)
+    try {
+      if (mode === 'cancel') active.cancel()
+      else active.commit(active.getText?.() ?? active.initialText)
+    } finally {
+      active.dispose()
+    }
   }, [])
 
+  const handleStartEdit = useCallback((edit: ActiveTextEdit) => {
+    const active = editingRef.current
+    if (active?.sessionId === edit.sessionId) {
+      active.focus?.()
+      return
+    }
+    if (active) finishTextEdit('commit', active.sessionId)
+    editingRef.current = edit
+    setEditing(edit)
+  }, [finishTextEdit])
+
   useEffect(() => {
-    if (!editing) return
-    const placeEditor = () => {
-      const wrap = mapWrapRef.current
-      const editor = textEditorRef.current
-      if (!wrap || !editor) return
-
-      const wrapRect = wrap.getBoundingClientRect()
-      const viewport = window.visualViewport
-      const visibleLeft = Math.max(wrapRect.left, viewport?.offsetLeft ?? 0)
-      const visibleTop = Math.max(wrapRect.top, viewport?.offsetTop ?? 0)
-      const visibleRight = Math.min(wrapRect.right, (viewport?.offsetLeft ?? 0) + (viewport?.width ?? window.innerWidth))
-      const visibleBottom = Math.min(wrapRect.bottom, (viewport?.offsetTop ?? 0) + (viewport?.height ?? window.innerHeight))
-      const margin = 8
-      const anchorX = wrapRect.left + (editing.containerPoint?.x ?? wrapRect.width / 2)
-      const anchorY = wrapRect.top + (editing.containerPoint?.y ?? 0) + 10
-      const maxLeft = Math.max(visibleLeft + margin, visibleRight - editor.offsetWidth - margin)
-      const maxTop = Math.max(visibleTop + margin, visibleBottom - editor.offsetHeight - margin)
-
-      setTextEditorPosition({
-        left: Math.min(Math.max(anchorX + 12, visibleLeft + margin), maxLeft) - wrapRect.left,
-        top: Math.min(Math.max(anchorY, visibleTop + margin), maxTop) - wrapRect.top,
-      })
-    }
-
-    const frame = window.requestAnimationFrame(placeEditor)
-    window.addEventListener('resize', placeEditor)
-    window.visualViewport?.addEventListener('resize', placeEditor)
-    window.visualViewport?.addEventListener('scroll', placeEditor)
-    return () => {
-      window.cancelAnimationFrame(frame)
-      window.removeEventListener('resize', placeEditor)
-      window.visualViewport?.removeEventListener('resize', placeEditor)
-      window.visualViewport?.removeEventListener('scroll', placeEditor)
-    }
-  }, [editing])
+    onTextEditingChange?.(editing != null)
+    return () => onTextEditingChange?.(false)
+  }, [editing, onTextEditingChange])
 
   // ---- 干员悬浮级联菜单（点击干员 → 悬浮入口 → 选择最终操作） ----
   const [opBubble, setOpBubble] = useState<{ uid: string; x: number; y: number } | null>(null)
@@ -779,14 +788,75 @@ export default function MapView({
   }, [])
   const handleCloseRename = useCallback(() => setRenameOp(null), [])
 
-  const commitEdit = () => {
-    editing?.commit(draft)
-    setEditing(null)
-  }
-  const cancelEdit = () => {
-    editing?.cancel()
-    setEditing(null)
-  }
+  // 常驻文档级事件守卫：外部 pointerdown 会取消编辑，同时吞掉浏览器
+  // 随后生成的 click。监听器不能随 editing 状态卸载，否则取消后 click
+  // 仍会继续触发阶段栏、工具栏等外部控件。
+  useEffect(() => {
+    const isEditorTarget = (target: EventTarget | null) =>
+      target instanceof Element && Boolean(target.closest('.text-marker-editing, .text-marker-edit-confirm'))
+    const cancelOutside = (event: PointerEvent) => {
+      if (!editingRef.current || isEditorTarget(event.target)) return
+      event.preventDefault()
+      event.stopPropagation()
+      suppressOutsideClickRef.current = true
+      if (suppressOutsideClickTimerRef.current != null) window.clearTimeout(suppressOutsideClickTimerRef.current)
+      suppressOutsideClickTimerRef.current = window.setTimeout(() => {
+        suppressOutsideClickRef.current = false
+        suppressOutsideClickTimerRef.current = null
+      }, 500)
+      finishTextEdit('commit')
+    }
+    const swallowClick = (event: MouseEvent) => {
+      if (!suppressOutsideClickRef.current) return
+      suppressOutsideClickRef.current = false
+      if (suppressOutsideClickTimerRef.current != null) {
+        window.clearTimeout(suppressOutsideClickTimerRef.current)
+        suppressOutsideClickTimerRef.current = null
+      }
+      event.preventDefault()
+      event.stopPropagation()
+    }
+    const blockWheel = (event: WheelEvent) => {
+      if (!editingRef.current || isEditorTarget(event.target)) return
+      event.preventDefault()
+      event.stopPropagation()
+    }
+    const blockKeyboard = (event: KeyboardEvent) => {
+      if (!editingRef.current) return
+      if (isEditorTarget(event.target)) {
+        if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+          event.preventDefault()
+          event.stopPropagation()
+          finishTextEdit('commit')
+        } else if (event.key === 'Escape') {
+          event.preventDefault()
+          event.stopPropagation()
+          finishTextEdit('cancel')
+        }
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+    }
+    document.addEventListener('pointerdown', cancelOutside, true)
+    document.addEventListener('click', swallowClick, true)
+    document.addEventListener('wheel', blockWheel, { capture: true, passive: false })
+    document.addEventListener('keydown', blockKeyboard, true)
+    return () => {
+      if (suppressOutsideClickTimerRef.current != null) window.clearTimeout(suppressOutsideClickTimerRef.current)
+      document.removeEventListener('pointerdown', cancelOutside, true)
+      document.removeEventListener('click', swallowClick, true)
+      document.removeEventListener('wheel', blockWheel, true)
+      document.removeEventListener('keydown', blockKeyboard, true)
+    }
+  }, [finishTextEdit])
+
+  // 切换阶段/回合、视角时，当前标注编辑必须先结束，不能把旧会话带到新桶。
+  useEffect(() => {
+    finishTextEdit('commit')
+    // 仅监听上下文切换；编辑器自身的输入不会触发该清理。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modeStageId, capturedStageIndex, view, finishTextEdit])
 
   // 只显示当前视角的载具（与画笔绘制对称：攻/守方分桶存储，切换视角互不影响）
   const vehicles = useMemo(() => {
@@ -967,6 +1037,7 @@ export default function MapView({
         style={{ width: '100%', height: '100%' }}
       >
         <InteractiveLayerPanGuard />
+        <TextEditMapLock active={editing != null} />
         <MapRotationControl initiallyCollapsed={cinematicCompassCollapsed} />
         <SkillActionPlacement active={skillActionDraft != null && (skillActionDraft.skill?.placementMode ?? skillActionDraft.tacticalMode?.placementMode) !== 'target-unit' && (skillActionDraft.skill?.placementMode ?? skillActionDraft.tacticalMode?.placementMode) !== 'ally-unit'} onPlace={onPlaceSkillAction} onCancel={onCancelSkillAction} />
         <TileLayer
@@ -1001,6 +1072,7 @@ export default function MapView({
           capturedStageIndex={runtimeStageIndex}
           view={view}
           selectedName={selectedPoint?.point.name ?? null}
+          selectedStageId={selectedPoint?.stageId ?? null}
           visible={layers.points}
           labelsVisible={layers.pointsLabels}
           annotationsVisible={layers.pointAnnotations}
@@ -1202,6 +1274,7 @@ export default function MapView({
           onDeleteSelCount={onDeleteSelCount}
           onDrawSaved={onDrawSaved}
           onStartEdit={handleStartEdit}
+          onFinishEdit={finishTextEdit}
           onExitDraw={() => onTool('pan')}
           vehicles={vehicles}
           vehiclePosRef={vehiclePosRef}
@@ -1378,40 +1451,6 @@ export default function MapView({
         </div>
       )}
 
-      {editing && (
-        <div
-          ref={textEditorRef}
-          className="text-editor"
-          onPointerDown={(event) => event.stopPropagation()}
-          onMouseDown={(event) => event.stopPropagation()}
-          onTouchStart={(event) => event.stopPropagation()}
-          onClick={(event) => event.stopPropagation()}
-          onDoubleClick={(event) => event.stopPropagation()}
-          onContextMenu={(event) => event.stopPropagation()}
-          // 第十三轮：编辑器跟随文字标注位置显示（容器坐标），不再固定在顶部被横幅遮挡。
-          // 地图容器尺寸取窗口估算，向右/向下超出边缘时向内收，避免溢出视口。
-          style={textEditorPosition
-            ? { top: textEditorPosition.top, left: textEditorPosition.left, transform: 'none' }
-            : { visibility: 'hidden' }}
-        >
-          <input
-            autoFocus
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commitEdit()
-              if (e.key === 'Escape') cancelEdit()
-            }}
-            placeholder="输入标注文字，回车确认"
-          />
-          <button className="btn primary" onClick={commitEdit}>
-            确定
-          </button>
-          <button className="btn" onClick={cancelEdit}>
-            取消
-          </button>
-        </div>
-      )}
     </div>
   )
 }

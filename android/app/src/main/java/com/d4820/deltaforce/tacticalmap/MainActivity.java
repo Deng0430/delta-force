@@ -13,7 +13,6 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.graphics.Insets;
-import androidx.core.splashscreen.SplashScreen;
 
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.WebViewListener;
@@ -32,9 +31,6 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        // Resolve the launch theme before touching the Window. Otherwise the splash theme's
-        // ActionBar decor can be created and survive into the Capacitor content view.
-        SplashScreen.installSplashScreen(this);
         // Configure the Activity window before Capacitor creates and attaches the WebView.
         // This avoids changing cutout/edge-to-edge geometry during the first WebView frame.
         configureWindowBeforeContent();

@@ -32,7 +32,7 @@ import { makeWinnerSpawnUid } from '../config/attackDefenseSpawns'
 export const MODE_CONFIG_STORAGE_KEY = 'deltaforce-mode-configs-v1'
 export const MODE_CONFIG_SYNC_CHANNEL = 'deltaforce-mode-config-sync-v1'
 export const MODE_CONFIG_SYNC_MESSAGE = 'deltaforce-mode-config-sync'
-const MODE_STORAGE_VERSION = 32 as const
+const MODE_STORAGE_VERSION = 34 as const
 
 const SIDES: Side[] = ['attack', 'defense']
 const VERIFICATIONS: ModeConfigVerification[] = ['draft', 'confirmed']
@@ -1112,6 +1112,26 @@ export function normalizeModeConfigStore(value: unknown): ModeConfigStore | null
     // v32 固化 2026-08-27“烬区·胜者为王·PE端”独立官方数据。
     // 完整替换该单图，包括胜者模式专属的载具刷新点与刷新规则。
     if (sourceVersion < 32) {
+      const official = mobileWinnerTakesAllOfficial.maps.ember as unknown as OfficialModeMapData
+      const mobileMaps = winner.platformMaps?.mobile ?? structuredClone(winner.maps)
+      mobileMaps.ember = modeMapFromOfficial('ember', official)
+      winner.platformMaps = { ...winner.platformMaps, mobile: mobileMaps }
+      winner.maps = winner.platformMaps.pc ?? winner.maps
+      winner.updatedAt = Date.now()
+    }
+    // v33 固化 2026-08-27“烬区·胜者为王·PC端”完整官方数据。
+    // 只替换 PC 端烬区；移动端和其他地图继续保留各自独立数据。
+    if (sourceVersion < 33) {
+      const official = winnerTakesAllOfficial.maps.ember as unknown as OfficialModeMapData
+      const pcMaps = winner.platformMaps?.pc ?? winner.maps
+      pcMaps.ember = modeMapFromOfficial('ember', official)
+      winner.platformMaps = { ...winner.platformMaps, pc: pcMaps }
+      winner.maps = pcMaps
+      winner.updatedAt = Date.now()
+    }
+    // v34 固化 2026-08-27“烬区·胜者为王·PE端”完整官方数据。
+    // 只替换移动端烬区；PC 端和其他地图继续保留各自独立数据。
+    if (sourceVersion < 34) {
       const official = mobileWinnerTakesAllOfficial.maps.ember as unknown as OfficialModeMapData
       const mobileMaps = winner.platformMaps?.mobile ?? structuredClone(winner.maps)
       mobileMaps.ember = modeMapFromOfficial('ember', official)

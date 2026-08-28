@@ -288,7 +288,7 @@ export interface GameModeProfile {
 }
 
 export interface ModeConfigStore {
-  version: 32
+  version: 34
   activeModeId: string
   profiles: GameModeProfile[]
 }
@@ -377,14 +377,22 @@ export interface TextAnnotation {
   lng: number
 }
 
-/** 进行中的文字标注编辑会话（由地图图层发起，UI 面板消费） */
+/** 进行中的文字标注编辑会话（由地图图层发起，原位编辑器消费） */
 export interface ActiveTextEdit {
+  /** 唯一编辑会话编号；所有异步回调必须校验该编号，避免旧会话清理新会话。 */
+  sessionId: number
   uid: string
   lat: number
   lng: number
   initialText: string
   commit: (text: string) => void
   cancel: () => void
+  /** 幂等释放原位编辑器拥有的 DOM、事件监听及地图状态。 */
+  dispose: () => void
+  /** 重复请求编辑同一文本时只恢复焦点，不创建第二套编辑器。 */
+  focus?: () => void
+  /** 原位编辑器读取当前文本，避免使用独立浮层输入框。 */
+  getText?: () => string
   /** 地图容器内的像素坐标（第十三轮：文字编辑器跟随标注位置显示） */
   containerPoint?: { x: number; y: number }
 }
@@ -720,8 +728,6 @@ export interface MapStateSnapshot {
   routes: Record<Side, TacticalRoute[]>
   fieldSupports?: Record<Side, FieldSupportInstance[]>
   skillActions?: OperatorSkillAction[]
-  /** 仅跨阶段共享配置变更需要保存，用于完整撤回/恢复所有阶段桶。 */
-  tacticalBuckets?: TacticalBucketStore
 }
 
 /** 撤回/恢复历史条目 */

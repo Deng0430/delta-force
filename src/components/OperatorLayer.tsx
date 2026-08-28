@@ -92,7 +92,7 @@ function buildOperatorIcon(op: OperatorUnit, view: Side, connectMode: boolean, p
   return L.divIcon({
     className: 'op-marker-wrap',
     html: `
-      <div class="${classes}" tabindex="0" style="--op-team:${team.color};--op-cls:${clsConf.color};--op-side:${sc.bright};--op-side-deep:${sc.deep};--op-team-dark:${darken(team.color)}" title="${profile.name} · ${clsConf.name} · ${status.label} · ${interactionHint}">
+      <div class="${classes}" data-op-uid="${op.uid}" tabindex="0" style="--op-team:${team.color};--op-cls:${clsConf.color};--op-side:${sc.bright};--op-side-deep:${sc.deep};--op-team-dark:${darken(team.color)}" title="${profile.name} · ${clsConf.name} · ${status.label} · ${interactionHint}">
         <span class="op-side-ring"></span>
         <span class="op-team-bg"></span>
         <img class="op-cls-main" src="${clsConf.iconUrl}" alt="${clsConf.name}" draggable="false" />
@@ -185,36 +185,24 @@ function OperatorMarker({
     }
   }, [op.uid, expanded])
 
+  // Leaflet 的 Marker 事件类型不包含 wheel。监听稳定的地图容器并按 UID
+  // 过滤目标，避免撤回/恢复导致 Marker DOM 替换后丢失旋转监听。
   useEffect(() => {
-    let element: HTMLElement | null = null
-    let timer: number | undefined
-    let disposed = false
-    const handleWheel = (event: WheelEvent) => {
-      if ((event.target as HTMLElement | null)?.closest?.('.op-fireline')) return
+    const onWheel = (event: WheelEvent) => {
+      const target = (event.target as HTMLElement | null)?.closest?.<HTMLElement>(`.op-marker[data-op-uid="${op.uid}"]`)
+      if (!target || (event.target as HTMLElement | null)?.closest?.('.op-fireline')) return
       event.preventDefault()
       event.stopPropagation()
       const next = (rotationRef.current + (event.deltaY > 0 ? 15 : -15) + 360) % 360
       rotationRef.current = next
       onRotate(op.uid, next)
     }
-
-    const tryBind = () => {
-      if (disposed) return
-      element = ref.current?.getElement() ?? null
-      if (!element) {
-        timer = window.setTimeout(tryBind, 40)
-        return
-      }
-      element.addEventListener('wheel', handleWheel, { passive: false })
-    }
-
-    tryBind()
+    const container = map.getContainer()
+    container.addEventListener('wheel', onWheel, { capture: true, passive: false })
     return () => {
-      disposed = true
-      if (timer) window.clearTimeout(timer)
-      element?.removeEventListener('wheel', handleWheel)
+      container.removeEventListener('wheel', onWheel, true)
     }
-  }, [op.uid, onRotate, expanded])
+  }, [map, op.uid, onRotate])
 
   useEffect(() => {
     if (platform.kind !== 'android') return

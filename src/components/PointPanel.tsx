@@ -20,6 +20,7 @@ interface PointPanelProps {
   capturedStageIndex: number
   view: Side
   selectedName: string | null
+  selectedStageId: string | null
   open: boolean
   onToggle: () => void
   onSelectStage: (stageId: string) => void
@@ -33,6 +34,7 @@ export default function PointPanel({
   stages,
   capturedStageIndex,
   selectedName,
+  selectedStageId,
   open,
   onToggle,
   onSelectStage,
@@ -106,7 +108,7 @@ export default function PointPanel({
                 <span className={`stage-status ${status}`}>{STATUS_TEXT[status]}</span>
               </div>
               {stage.points.map((point) => {
-                const selected = selectedName === point.name
+                const selected = selectedStageId === stage.id && selectedName === point.name
                 // 未激活据点始终属于守方，不能被旧的手动状态覆盖。
                 const objectiveState = status === 'locked'
                   ? { owner: 'defense' as const, capturingSide: null, progress: 100 }

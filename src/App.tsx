@@ -94,6 +94,7 @@ function normalizeObjectivesForStageChange(
 ): MapState {
   const currentWargame = wargameOf(state)
   const objectiveStates = { ...currentWargame.battleContext.objectiveStates }
+  const activeObjectiveNames = new Set((stageList[toIndex]?.points ?? []).map((point) => point.name))
   if (toIndex > fromIndex) {
     for (let stageIndex = Math.max(0, fromIndex); stageIndex < toIndex; stageIndex += 1) {
       for (const point of stageList[stageIndex]?.points ?? []) {
@@ -106,6 +107,8 @@ function normalizeObjectivesForStageChange(
   }
   for (let stageIndex = toIndex + 1; stageIndex < stageList.length; stageIndex += 1) {
     for (const point of stageList[stageIndex]?.points ?? []) {
+      // 相邻阶段可能沿用同名据点；当前阶段状态必须优先，不能被后续阶段覆盖。
+      if (activeObjectiveNames.has(point.name)) continue
       objectiveStates[point.name] = { owner: 'defense', capturingSide: null, progress: 100 }
     }
   }
@@ -119,9 +122,8 @@ function normalizeObjectivesForStageChange(
 }
 
 /**
- * 阶段切换的名单兜底：名单（干员选择/昵称/职业）是配置，应跨阶段共享；
- * 只有部署位置（lat/lng）等状态按“阶段×回合”桶隔离。目标桶缺失时用当前
- * 名单克隆（lat/lng 置 null）构建；桶内某侧名单为空时同样用当前名单补齐。
+ * 阶段切换的名单兜底：目标桶缺失时使用当前桶名单作为初始副本；
+ * 之后名单、部署位置、状态和枪线均按“阶段×回合”桶独立编辑。
  * A 进图初始化 / B 模式阶段切换 / C 地图点据点 / D 点位面板 四处共用。
  */
 function buildStageTargetRoster(state: MapState): Record<Side, OperatorUnit[]> {
@@ -161,7 +163,7 @@ function resolveStageTargetBucket(
   }
 }
 
-/** 经典攻防（非模式）切阶段：保存当前阶段桶、加载目标阶段桶（含名单兜底）、同步据点归属。C 地图点据点 / D 点位面板 共用。 */
+/** 经典攻防（非模式）切阶段：保存当前阶段桶、加载目标阶段桶（含名单初始兜底）、同步据点归属。 */
 function switchClassicStage(state: MapState, stageList: Array<{ id: string; points: CapturePoint[] }>, fromIndex: number, toIndex: number): MapState {
   const fromStage = stageList[fromIndex]?.id ?? 'S1'
   const toStage = stageList[toIndex]?.id ?? fromStage
@@ -171,35 +173,6 @@ function switchClassicStage(state: MapState, stageList: Array<{ id: string; poin
   buckets[target.key] = target
   const staged = normalizeObjectivesForStageChange({ ...state, tacticalBuckets: { activeKey: source.key, buckets } }, stageList, fromIndex, toIndex)
   return applyTacticalBucket({ ...staged, tacticalBuckets: { activeKey: target.key, buckets } }, target)
-}
-
-/**
- * 名单身份传播：干员的 name/operatorId/cls 属于配置（跨阶段共享），改名/换干员
- * 时按 uid 同步写回当前地图上下文的所有阶段桶；lat/lng/status 等部署状态不动。
- * 旧存档中各桶名单已分歧的不强制合并，以最后一次编辑为准随编辑自然收敛。
- */
-function propagateOperatorIdentity(map: MapState, side: Side, nextOperators: OperatorUnit[], changedOperatorUids: Set<string>): MapState {
-  const store = map.tacticalBuckets
-  if (!store) return map
-  const identityByUid = new Map(nextOperators.map((operator) => [operator.uid, { name: operator.name, operatorId: operator.operatorId, cls: operator.cls }]))
-  let changed = false
-  const buckets = Object.fromEntries(Object.entries(store.buckets).map(([key, bucket]) => {
-    const sideOperators = bucket.operators?.[side]
-    if (!Array.isArray(sideOperators) || !sideOperators.some((operator) => identityByUid.has(operator.uid))) return [key, bucket]
-    changed = true
-    return [key, {
-      ...bucket,
-      operators: {
-        ...bucket.operators,
-        [side]: sideOperators.map((operator) => {
-          const identity = identityByUid.get(operator.uid)
-          return identity ? { ...operator, name: identity.name, operatorId: identity.operatorId, cls: identity.cls } : operator
-        }),
-      },
-      skillActions: (bucket.skillActions ?? []).filter((action) => !changedOperatorUids.has(action.sourceOperatorUid)),
-    }]
-  }))
-  return changed ? { ...map, tacticalBuckets: { ...store, buckets } } : map
 }
 
 /** 将分支路线首点递归吸附到父路线节点；父节点删除时自动夹取到仍存在的最近节点。 */
@@ -312,6 +285,11 @@ export default function App() {
   )
   const [view, setView] = useState<Side>(isCinematicObjectiveStates ? 'attack' : persisted?.lastView ?? 'attack')
   const [tool, setTool] = useState<ToolMode>('pan')
+  const [textEditing, setTextEditing] = useState(false)
+  const handleToolChange = useCallback((next: ToolMode) => {
+    if (textEditing) return
+    setTool(next)
+  }, [textEditing])
   const [maps, setMaps] = useState<MapsData>(() => {
     const base: MapsData = {}
     if (persisted?.maps) {
@@ -1723,7 +1701,7 @@ export default function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey) return
       const target = event.target as HTMLElement | null
-      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+      if (target?.closest('input, textarea, select, [contenteditable="true"], .text-marker-editing')) return
       const key = event.key.toLowerCase()
       if (key === 'z') {
         event.preventDefault()
@@ -1747,15 +1725,24 @@ export default function App() {
   useEffect(() => {
     const onBackspace = (event: KeyboardEvent) => {
       if (event.key !== 'Backspace') return
+      // 原位文字编辑期间，Backspace 始终只允许编辑文字，
+      // 不进入绘图对象删除快捷键；不能只依赖事件 target，Leaflet 可能替换节点。
+      if (textEditing) return
       const target = event.target as HTMLElement | null
-      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+      const active = document.activeElement as HTMLElement | null
+      const inEditablePath = event.composedPath().some((node) =>
+        node instanceof HTMLElement && (node.isContentEditable || node.classList.contains('text-marker-editing')),
+      )
+      if (target?.closest('input, textarea, select, [contenteditable="true"], .text-marker-editing')
+        || active?.closest('input, textarea, select, [contenteditable="true"], .text-marker-editing')
+        || inEditablePath) return
       if (deleteSelCount <= 0) return
       event.preventDefault()
       handleDeleteSelected()
     }
     document.addEventListener('keydown', onBackspace)
     return () => document.removeEventListener('keydown', onBackspace)
-  }, [deleteSelCount, handleDeleteSelected])
+  }, [deleteSelCount, handleDeleteSelected, textEditing])
 
   // 自动持久化（v14：载具队伍 + 行动指令 V2 + 干员独立任务；旧版本由 storage 统一迁移）
   useEffect(() => {
@@ -2900,15 +2887,6 @@ export default function App() {
       const current = operatorsBucketOf(cur)[view] ?? []
       const currentByUid = new Map(current.map((operator) => [operator.uid, operator]))
       const nextOperators = mutator(current)
-      // 名单身份字段（name/operatorId/cls）是否变化：变化时需传播到所有阶段桶
-      const identityChanged = nextOperators.some((operator) => {
-        const previous = currentByUid.get(operator.uid)
-        return Boolean(previous) && (previous!.name !== operator.name || previous!.operatorId !== operator.operatorId || previous!.cls !== operator.cls)
-      })
-      const identityChangedUids = new Set(nextOperators.filter((operator) => {
-        const previous = currentByUid.get(operator.uid)
-        return Boolean(previous) && (previous!.operatorId !== operator.operatorId || previous!.cls !== operator.cls)
-      }).map((operator) => operator.uid))
       const undeployed = new Set(nextOperators.filter((operator) => operator.lat == null || operator.lng == null).map((operator) => operator.uid))
       const changedOperator = new Set(nextOperators.filter((operator) => {
         const previous = currentByUid.get(operator.uid)
@@ -2937,26 +2915,38 @@ export default function App() {
         nextRoutes = syncRouteTargetPosition(nextRoutes, 'operator', operator.uid, point)
       }
       updateMap(mapId, (s) => {
-        const next: MapState = {
+        const nextState: MapState = {
           ...s,
           operators: { ...operatorsBucketOf(s), [view]: nextOperators },
           routes: { ...routesBucketOf(s), [view]: nextRoutes },
           skillActions: nextSkillActions,
         }
-        // 名单身份（name/operatorId/cls）是跨阶段共享的配置：同步写回所有阶段桶，
-        // 避免切回旧阶段时名字/干员选择回退。部署状态（lat/lng/status）不动。
-        return identityChanged ? propagateOperatorIdentity(next, view, nextOperators, identityChangedUids) : next
+        // 单兵的自定义名称是 UID 级别的编组标识，应跨阶段/回合保持；
+        // 干员身份字段（operatorId/cls）仍只属于当前桶，不能在这里传播。
+        const namesByUid = new Map(nextOperators.map((operator) => [operator.uid, operator.name]))
+        const store = s.tacticalBuckets
+        if (store) {
+          nextState.tacticalBuckets = {
+            ...store,
+            buckets: Object.fromEntries(Object.entries(store.buckets).map(([key, bucket]) => [key, {
+              ...bucket,
+              operators: {
+                ...bucket.operators,
+                [view]: (bucket.operators?.[view] ?? []).map((operator) => {
+                  const name = namesByUid.get(operator.uid)
+                  return name == null || name === operator.name ? operator : { ...operator, name }
+                }),
+              },
+            }])),
+          }
+        }
+        return nextState
       })
       const after: MapStateSnapshot = {
         ...before,
         operators: { ...before.operators, [view]: nextOperators },
         routes: { ...before.routes, [view]: nextRoutes },
         skillActions: nextSkillActions,
-      }
-      if (identityChanged) {
-        const propagated = propagateOperatorIdentity(cur, view, nextOperators, identityChangedUids)
-        before.tacticalBuckets = cur.tacticalBuckets ? structuredClone(cur.tacticalBuckets) : undefined
-        after.tacticalBuckets = propagated.tacticalBuckets ? structuredClone(propagated.tacticalBuckets) : undefined
       }
       pushEntry(before, after)
     },
@@ -3865,9 +3855,28 @@ export default function App() {
       const before = cloneState(cur)
       updateMap(mapId, (s) => {
         const bucket = teamsBucketOf(s)
+        const nextTeams = mutator(bucket[view] ?? [])
+        const namesByUid = new Map(nextTeams.map((team) => [team.uid, team.name]))
+        const store = s.tacticalBuckets
+        const tacticalBuckets = store
+          ? {
+            ...store,
+            buckets: Object.fromEntries(Object.entries(store.buckets).map(([key, tacticalBucket]) => [key, {
+              ...tacticalBucket,
+              teams: {
+                ...tacticalBucket.teams,
+                [view]: (tacticalBucket.teams?.[view] ?? []).map((team) => {
+                  const name = namesByUid.get(team.uid)
+                  return name == null || name === team.name ? team : { ...team, name }
+                }),
+              },
+            }])),
+          }
+          : undefined
         return {
           ...s,
-          teams: { ...bucket, [view]: mutator(bucket[view] ?? []) },
+          teams: { ...bucket, [view]: nextTeams },
+          ...(tacticalBuckets ? { tacticalBuckets } : {}),
         }
       })
       const after: MapStateSnapshot = {
@@ -4108,7 +4117,7 @@ export default function App() {
         view={view}
         onView={setView}
         tool={tool}
-        onTool={setTool}
+        onTool={handleToolChange}
         draw={ui.draw}
         onDrawChange={(draw) => setUi((u) => ({ ...u, draw }))}
         dirty={tool !== 'pan'}
@@ -4202,7 +4211,8 @@ export default function App() {
           modeStageId={activeModeStageId}
           view={view}
           tool={tool}
-          onTool={setTool}
+          onTool={handleToolChange}
+          onTextEditingChange={setTextEditing}
           state={state}
           fieldSupports={fieldSupports}
           onMoveFieldSupport={handleMoveFieldSupport}
@@ -4302,6 +4312,7 @@ export default function App() {
           capturedStageIndex={pointPanelStageIndex}
           view={view}
           selectedName={selectedPoint?.point.name ?? null}
+          selectedStageId={selectedPoint?.stageId ?? null}
           open={ui.panelOpen}
           onToggle={() => setUi((u) => ({ ...u, panelOpen: !u.panelOpen }))}
           onSelectStage={handleSelectPointPanelStage}

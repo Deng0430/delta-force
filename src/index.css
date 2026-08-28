@@ -6333,59 +6333,60 @@ input[type='range']:focus-visible {
   outline-offset: 2px;
 }
 
+/* PPT 式原位文字编辑：文字节点本身就是输入区域。 */
+.text-marker-editing {
+  user-select: text;
+  cursor: text;
+  outline: 2px solid rgba(63, 140, 255, 0.95);
+  outline-offset: 2px;
+  caret-color: currentColor;
+}
+
+.text-marker-edit-confirm {
+  position: absolute;
+  z-index: 2200;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #01ff84;
+  border-radius: 50%;
+  background: rgba(14, 17, 18, 0.94);
+  color: #01ff84;
+  box-shadow: 0 2px 9px rgba(0, 0, 0, 0.55), 0 0 7px rgba(1, 255, 132, 0.3);
+  cursor: pointer;
+}
+
+.text-marker-edit-confirm:hover,
+.text-marker-edit-confirm:focus-visible {
+  background: #01ff84;
+  color: #0e1112;
+  outline: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.55), 0 0 10px rgba(1, 255, 132, 0.75);
+}
+
+/* Android WebView 的原生选择弹层继承页面深色主题；显式指定 option
+   前景色，避免弹层出现深色背景配黑色文字。仅作用于 Android 平台。 */
+.platform-android select,
+.platform-android select option,
+.platform-android select optgroup {
+  color: #f4f7f8;
+  background-color: #182126;
+  color-scheme: dark;
+}
+
+.platform-android .text-marker-edit-confirm {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  touch-action: none;
+}
+
 /* 清除旧气泡三角形遗留属性。 */
 .text-marker-wrap::after {
   content: none;
-}
-
-/* ---------- 文字编辑器浮层 ---------- */
-.text-editor {
-  position: absolute;
-  box-sizing: border-box;
-  /* 默认居中（无 containerPoint 时兜底）；有内联样式时会被 top/left/transform 覆盖 */
-  top: 56px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 600;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(14, 17, 18, 0.97);
-  border: 1px solid var(--gold);
-  border-radius: 0;
-  padding: 8px;
-  max-width: calc(100% - 16px);
-
-  pointer-events: auto;
-}
-
-.text-editor input {
-  width: 220px;
-  min-width: 80px;
-  max-width: 100%;
-  flex: 1 1 220px;
-  box-sizing: border-box;
-  background: var(--bg-0);
-  color: var(--tx-0);
-  border: 1px solid var(--line-0);
-  border-radius: 2px;
-  padding: 6px 8px;
-  font-size: 13px;
-  outline: none;
-}
-
-.text-editor input:focus {
-  border-color: var(--gold);
-}
-
-.text-editor .btn {
-  padding: 5px 10px;
-}
-
-.text-editor .btn.primary {
-  background: var(--gold);
-  border-color: var(--gold);
-  color: #fff;
 }
 
 /* ---------- 编辑工具（第十五轮：选中框/手柄/角度标签/文字样式面板） ---------- */

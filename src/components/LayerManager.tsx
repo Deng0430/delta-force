@@ -24,11 +24,13 @@ const DRAW_PANE = 'drawPane'
 const DRAW_MARKER_PANE = 'drawMarkerPane'
 /** Leaflet 会把 pane 名转换成对应的 leaflet-* DOM 类名。 */
 const DRAW_PANE_SELECTOR = '.leaflet-draw-pane, .leaflet-draw-marker-pane'
+const TEXT_EDITOR_SELECTOR = '[contenteditable="true"], .text-marker-editing'
 /** 防线三角带始终使用完全不透明的实心填充。 */
 const DEFENSE_FILL_OPACITY = 1
 /** 图形命中区向路径两侧各扩展 10px；5px 内的位移仍按单击处理。 */
 const HIT_PADDING_PX = 10
 const CLICK_DRAG_THRESHOLD_PX = 5
+const TEXT_DOUBLE_TAP_SLOP_PX = 14
 const LOCKED_TOAST_MSG = '该图样已经锁定，请解锁后再删除'
 const LOCKED_MOVE_TOAST_MSG = '存在图形处于锁定状态，请先解锁'
 const LOCK_BODY_PATH = 'M758.5 931h-497c-50.453 0-91.5-41.047-91.5-91.5v-335c0-50.453 41.047-91.5 91.5-91.5h497c50.453 0 91.5 41.047 91.5 91.5v335c0 50.453-41.047 91.5-91.5 91.5z m-497-454c-15.164 0-27.5 12.336-27.5 27.5v335c0 15.163 12.336 27.5 27.5 27.5h497c15.163 0 27.5-12.337 27.5-27.5v-335c0-15.164-12.337-27.5-27.5-27.5h-497z'
@@ -50,6 +52,27 @@ function setDrawingGestureActive(map: L.Map, active: boolean) {
   map.getContainer().classList.toggle('drawing-gesture-active', active)
 }
 
+/**
+ * Leaflet may replace a marker DOM node while its React-side edit session is
+ * still active. Check the event path, focus and the live editor marker so every
+ * document-level shortcut agrees that Backspace/Delete belongs to text input.
+ */
+function isTextEditingEvent(event?: KeyboardEvent): boolean {
+  const matchesEditor = (node: EventTarget | null | undefined) =>
+    node instanceof Element && Boolean(node.closest(TEXT_EDITOR_SELECTOR))
+  if (matchesEditor(event?.target) || matchesEditor(document.activeElement)) return true
+  if (event?.composedPath().some((node) => matchesEditor(node))) return true
+  return document.querySelector('.text-marker-editing') != null
+}
+
+/**
+ * contenteditable 按 Enter 后通常生成 div/br。textContent 不包含这些元素所表达的
+ * 视觉换行，因此必须读取 innerText，再统一为应用存储使用的 LF。
+ */
+function readEditablePlainText(element: HTMLElement): string {
+  return element.innerText.replace(/\r\n?/g, '\n')
+}
+
 type MarkerWithFeature = L.Marker & { feature?: Feature }
 type PathWithFeature = L.Path & { feature?: Feature }
 type AnyWithFeature = MarkerWithFeature | PathWithFeature
@@ -69,6 +92,7 @@ interface LayerManagerProps {
   onDeleteSelCount: (n: number) => void
   onDrawSaved: (side: Side, geoJson: string) => void
   onStartEdit: (edit: ActiveTextEdit) => void
+  onFinishEdit: (mode?: 'commit' | 'cancel', sessionId?: number) => void
   /** Android 绘制模式下双击地图空白处切回普通鼠标。 */
   onExitDraw: () => void
   // ---- 套索支持载具（第十四轮：框选载具部署图标，整体移动/删除） ----
@@ -557,6 +581,7 @@ export default function LayerManager({
   onDeleteSelCount,
   onDrawSaved,
   onStartEdit,
+  onFinishEdit,
   onExitDraw,
   vehicles,
   vehiclePosRef,
@@ -574,6 +599,11 @@ export default function LayerManager({
   const map = useMap()
   const fgRef = useRef<L.FeatureGroup | null>(null)
   const hlRef = useRef<L.FeatureGroup | null>(null)
+  // React/Leaflet may briefly replace the editable DOM node while an edit
+  // session is active, so deletion guards must not rely on the node alone.
+  const textEditingRef = useRef(false)
+  const textEditSessionRef = useRef<ActiveTextEdit | null>(null)
+  const nextTextEditSessionIdRef = useRef(0)
   const refreshTextHitRef = useRef<(marker: MarkerWithFeature) => void>(() => {})
   const [fg, setFg] = useState<L.FeatureGroup | null>(null)
   const [hl, setHl] = useState<L.FeatureGroup | null>(null)
@@ -584,8 +614,21 @@ export default function LayerManager({
   onExitDrawRef.current = onExitDraw
   // 回调 ref（供 restoreLayer 等早期定义的闭包在 render 后读取最新回调，第十一轮）
   const onFeatureClickRef = useRef<(e: L.LeafletMouseEvent) => void>(() => {})
-  const openEditorRef = useRef<(m: MarkerWithFeature) => void>(() => {})
+  const requestTextEditRef = useRef<(m: MarkerWithFeature) => void>(() => {})
+  const openAndroidTextEditorByKeyRef = useRef<(key: string) => boolean>(() => false)
+  const isAndroidTextKeyRef = useRef<(key: string) => boolean>(() => false)
+  const androidHandleAtPointRef = useRef<(point: L.Point) => string>(() => '')
+  const androidGizmoActionAtPointRef = useRef<(point: L.Point) => {
+    button: HTMLElement
+    action: 'style' | 'delete' | 'lock'
+    key?: string
+    locked?: boolean
+  } | null>(() => null)
   const clearEditSelectionRef = useRef<(commitPanel: boolean) => void>(() => {})
+
+  useEffect(() => () => {
+    textEditSessionRef.current?.dispose()
+  }, [])
 
   // 当前选中的图形 uid 集合（套索/整体移动，问题4）
   const selectedRef = useRef<Set<string>>(new Set())
@@ -727,12 +770,13 @@ export default function LayerManager({
     const container = map.getContainer()
     type AndroidGesture =
       | { kind: 'idle' }
-      | { kind: 'ui'; pointerId: number; button: HTMLElement; action: 'delete' | 'lock'; locked?: boolean; key?: string; lasso?: boolean }
-      | { kind: 'selection-pending'; pointerId: number; startEvent: PointerEvent; startPoint: L.Point }
+      | { kind: 'ui'; pointerId: number; button: HTMLElement; action: 'style' | 'delete' | 'lock'; locked?: boolean; key?: string; lasso?: boolean; coordinateClaimed: boolean; startPoint: L.Point }
+      | { kind: 'selection-pending'; pointerId: number; startEvent: PointerEvent; startPoint: L.Point; targetKey: string }
       | { kind: 'selection-drag'; pointerId: number }
       | { kind: 'selection-pinch'; pointerIds: Set<number>; committed: boolean }
+      | { kind: 'text-double-tap'; pointerId: number; startPoint: L.Point; targetKey: string; cancelled: boolean }
       | { kind: 'handle-drag'; pointerId: number }
-      | { kind: 'shape'; pointerId: number }
+      | { kind: 'shape'; pointerId: number; startPoint: L.Point; targetKey: string; tapEligible: boolean }
       | { kind: 'draw'; pointerId: number }
       | { kind: 'tool-drag'; pointerId: number; startPoint: L.Point; tapEligible: boolean }
       | { kind: 'tool-tap'; pointerId: number; startPoint: L.Point; cancelled: boolean }
@@ -755,6 +799,31 @@ export default function LayerManager({
       commit?: () => void
       timer: number
     } | null = null
+    let pendingTextTap: { at: number; point: L.Point; key: string } | null = null
+
+    const cancelPendingTextTap = () => {
+      pendingTextTap = null
+    }
+
+    const registerTextTap = (key: string, event: PointerEvent) => {
+      if (!key) {
+        cancelPendingTextTap()
+        return
+      }
+      const at = performance.now()
+      const point = pointerPoint(event)
+      const previous = pendingTextTap
+      if (previous
+        && previous.key === key
+        && at - previous.at <= DOUBLE_TAP_MS
+        && previous.point.distanceTo(point) <= DOUBLE_TAP_DISTANCE_PX) {
+        pendingTextTap = null
+        // 先让 pointerup 完成所有权清理，再让原位编辑器取得焦点及软键盘。
+        window.setTimeout(() => openAndroidTextEditorByKeyRef.current(key), 0)
+        return
+      }
+      pendingTextTap = { at, point, key }
+    }
 
     const flushPendingBlankTap = () => {
       const pending = pendingBlankTap
@@ -892,14 +961,19 @@ export default function LayerManager({
       if (event.pointerType === 'mouse') return
       const target = event.target as HTMLElement | null
       if (target?.closest('.leaflet-control-container')) return
+      // The inline text editor owns its DOM interactions. In particular, the external confirm
+      // button must receive the matching pointerup instead of being promoted to a map gesture.
+      if (target?.closest('.text-marker-edit-confirm, ' + TEXT_EDITOR_SELECTOR)) return
 
       if (nativeMapPointers.size > 0) {
+        cancelPendingTextTap()
         nativeMapPointers.add(event.pointerId)
         return
       }
 
       if (gesture.kind !== 'idle') {
         if (gesture.kind === 'selection-pending' && activePointers.size === 1) {
+          cancelPendingTextTap()
           activePointers.set(event.pointerId, event)
           capturePointer(event)
           ownEvent(event)
@@ -921,29 +995,44 @@ export default function LayerManager({
         return
       }
 
+      const downPoint = pointerPoint(event)
+      const styleButton = target?.closest<HTMLElement>('.edit-style-trigger')
       const deleteButton = target?.closest<HTMLElement>('.edit-delete-trigger')
       const lockButton = target?.closest<HTMLElement>('.edit-lock-trigger, .edit-unlock-trigger')
-      if (deleteButton || lockButton) {
+      const coordinateAction = androidGizmoActionAtPointRef.current(downPoint)
+      const directButton = styleButton || deleteButton || lockButton
+      const uiAction = directButton
+        ? {
+            button: directButton,
+            action: styleButton ? 'style' as const : deleteButton ? 'delete' as const : 'lock' as const,
+            key: styleButton?.dataset.editActionKey || lockButton?.dataset.editLockKey,
+            locked: lockButton ? lockButton.dataset.editLockValue === 'true' : undefined,
+          }
+        : coordinateAction
+      if (uiAction) {
         claimMapGestures()
         capturePointer(event)
         activePointers.set(event.pointerId, event)
-        gesture = deleteButton
-          ? { kind: 'ui', pointerId: event.pointerId, button: deleteButton, action: 'delete' }
-          : {
-              kind: 'ui',
-              pointerId: event.pointerId,
-              button: lockButton!,
-              action: 'lock',
-              locked: lockButton!.dataset.editLockValue === 'true',
-              key: lockButton!.dataset.editLockKey,
-              lasso: lockButton!.dataset.editLassoLock === 'true',
-            }
+        gesture = {
+          kind: 'ui',
+          pointerId: event.pointerId,
+          button: uiAction.button,
+          action: uiAction.action,
+          locked: uiAction.locked,
+          key: uiAction.key,
+          lasso: uiAction.button.dataset.editLassoLock === 'true',
+          coordinateClaimed: !directButton,
+          startPoint: downPoint,
+        }
+        if (uiAction.action === 'style' && uiAction.key) {
+          if (stylePanelRef.current?.uid !== uiAction.key) openSelPanelRef.current(uiAction.key)
+        }
         ownEvent(event)
         return
       }
 
       const handle = target?.closest<HTMLElement>('[data-edit-handle-kind]')
-      const handleKind = handle?.dataset.editHandleKind ?? ''
+      const handleKind = handle?.dataset.editHandleKind ?? androidHandleAtPointRef.current(downPoint)
       const hit = target?.closest<HTMLElement>('[data-draw-hit-key]')
       const hitKey = hit?.dataset.drawHitKey ?? ''
       const source = target?.closest<HTMLElement>('[data-draw-source-key]')
@@ -954,6 +1043,36 @@ export default function LayerManager({
         && (selectedHit || !!target?.closest('.edit-selection-box'))
         && !target?.closest('.edit-style-trigger, .edit-delete-trigger, .edit-lock-trigger, .edit-unlock-trigger, .edit-handle-wrap')
       const onDrawLayer = !!target?.closest(DRAW_PANE_SELECTOR)
+      // 第一次轻触未选中文本后会立即生成选中框。某些 WebView 的第二次命中目标
+      // 可能是该选中框而不是下方文字命中层；单选时沿用唯一选中键，保证无需预选。
+      const targetKey = hitKey || sourceKey || (insideSelection && selectedRef.current.size === 1
+        ? [...selectedRef.current][0]
+        : '')
+
+      if (!hitKey && !sourceKey && !insideSelection) cancelPendingTextTap()
+
+      const secondTapPoint = downPoint
+      const pendingText = pendingTextTap
+      if (pendingText
+        && targetKey === pendingText.key
+        && isAndroidTextKeyRef.current(targetKey)
+        && performance.now() - pendingText.at <= DOUBLE_TAP_MS
+        && pendingText.point.distanceTo(secondTapPoint) <= DOUBLE_TAP_DISTANCE_PX) {
+        pendingTextTap = null
+        claimMapGestures()
+        capturePointer(event)
+        activePointers.set(event.pointerId, event)
+        lastValidPointerEvent = event
+        gesture = {
+          kind: 'text-double-tap',
+          pointerId: event.pointerId,
+          startPoint: secondTapPoint,
+          targetKey,
+          cancelled: false,
+        }
+        ownEvent(event)
+        return
+      }
 
       if (handleKind) {
         claimMapGestures()
@@ -981,6 +1100,7 @@ export default function LayerManager({
           pointerId: event.pointerId,
           startEvent: event,
           startPoint: pointerPoint(event),
+          targetKey,
         }
         ownEvent(event)
         return
@@ -989,6 +1109,7 @@ export default function LayerManager({
       // Empty-map gestures in pan mode are 100% native Leaflet gestures. The arbiter does not
       // capture, prevent or synthesize any event, so ordinary map pinch remains fully native.
       if (tool === 'pan' && !onDrawLayer && event.isTrusted) {
+        cancelPendingTextTap()
         nativeMapPointers.add(event.pointerId)
         lastTouchPointerAt = Number.NEGATIVE_INFINITY
         return
@@ -1001,7 +1122,9 @@ export default function LayerManager({
       if (onDrawLayer) {
         editPointerActiveRef.current = true
         fireDrawLayerMouseDown(event)
-        gesture = { kind: hitKey ? 'shape' : 'draw', pointerId: event.pointerId }
+        gesture = targetKey
+          ? { kind: 'shape', pointerId: event.pointerId, startPoint: pointerPoint(event), targetKey, tapEligible: true }
+          : { kind: 'draw', pointerId: event.pointerId }
       } else {
         // Clearing selection is an orthogonal pre-action, never the owner of the gesture. The
         // same first contact must continue into the active tool without requiring a second tap.
@@ -1027,6 +1150,13 @@ export default function LayerManager({
       ownEvent(event)
 
       if (gesture.kind === 'ui') return
+      if (gesture.kind === 'text-double-tap') {
+        if (gesture.pointerId === event.pointerId
+          && gesture.startPoint.distanceTo(pointerPoint(event)) > TEXT_DOUBLE_TAP_SLOP_PX) {
+          gesture.cancelled = true
+        }
+        return
+      }
       if (gesture.kind === 'selection-pinch') {
         if (!gesture.committed && activePointers.size >= 2) {
           const [first, second] = [...activePointers.values()]
@@ -1036,10 +1166,16 @@ export default function LayerManager({
       }
       if (gesture.kind === 'selection-pending' && gesture.pointerId === event.pointerId) {
         if (gesture.startPoint.distanceTo(pointerPoint(event)) <= CLICK_DRAG_THRESHOLD_PX) return
+        cancelPendingTextTap()
         if (!androidSelectionDragStartRef.current(leafletEventOf(gesture.startEvent))) return
         gesture = { kind: 'selection-drag', pointerId: event.pointerId }
         androidSelectionDragMoveRef.current(leafletEventOf(event))
         return
+      }
+      if (gesture.kind === 'shape' && gesture.pointerId === event.pointerId
+        && gesture.tapEligible && gesture.startPoint.distanceTo(pointerPoint(event)) > TEXT_DOUBLE_TAP_SLOP_PX) {
+        gesture.tapEligible = false
+        cancelPendingTextTap()
       }
       if (gesture.kind === 'tool-drag' && gesture.pointerId === event.pointerId
         && gesture.tapEligible && gesture.startPoint.distanceTo(pointerPoint(event)) > CLICK_DRAG_THRESHOLD_PX) {
@@ -1070,6 +1206,7 @@ export default function LayerManager({
       ownEvent(event)
 
       if (owner.kind === 'selection-pinch') {
+        cancelPendingTextTap()
         activePointers.delete(event.pointerId)
         releasePointer(event.pointerId)
         if (!owner.committed) {
@@ -1088,16 +1225,28 @@ export default function LayerManager({
       if (owner.kind === 'ui' && owner.pointerId === event.pointerId) {
         const hit = document.elementFromPoint(event.clientX, event.clientY)
         const button = hit instanceof Element
-          ? hit.closest<HTMLElement>('.edit-delete-trigger, .edit-lock-trigger, .edit-unlock-trigger')
+          ? hit.closest<HTMLElement>('.edit-style-trigger, .edit-delete-trigger, .edit-lock-trigger, .edit-unlock-trigger')
           : null
-        if (button === owner.button && owner.button.isConnected) {
+        const releasedOnButton = owner.coordinateClaimed
+          ? owner.startPoint.distanceTo(pointerPoint(event)) <= TEXT_DOUBLE_TAP_SLOP_PX
+          : button === owner.button
+        if (releasedOnButton && owner.button.isConnected && owner.action !== 'style') {
           if (owner.action === 'delete') deleteSelected()
           else if (owner.lasso) setLassoLockedRef.current(Boolean(owner.locked))
           else if (owner.key) setKeyLockedRef.current(owner.key, Boolean(owner.locked))
         }
+      } else if (owner.kind === 'text-double-tap' && owner.pointerId === event.pointerId) {
+        if (!owner.cancelled) {
+          window.setTimeout(() => openAndroidTextEditorByKeyRef.current(owner.targetKey), 0)
+        }
+      } else if (owner.kind === 'selection-pending') {
+        registerTextTap(owner.targetKey, event)
       } else if (owner.kind === 'selection-drag' || owner.kind === 'handle-drag') {
         androidSelectionDragEndRef.current()
-      } else if (owner.kind === 'shape' || owner.kind === 'draw') {
+      } else if (owner.kind === 'shape') {
+        fireLeafletPointer('mouseup', event)
+        if (owner.tapEligible) registerTextTap(owner.targetKey, event)
+      } else if (owner.kind === 'draw') {
         fireLeafletPointer('mouseup', event)
       } else if (owner.kind === 'tool-drag') {
         fireLeafletPointer('mouseup', event)
@@ -1118,6 +1267,7 @@ export default function LayerManager({
       if (!activePointers.has(event.pointerId)) return
       const owner = gesture
       ownEvent(event)
+      cancelPendingTextTap()
       if (owner.kind === 'selection-pinch') {
         activePointers.delete(event.pointerId)
         releasePointer(event.pointerId)
@@ -1130,6 +1280,7 @@ export default function LayerManager({
         return
       }
       if (owner.kind === 'selection-drag' || owner.kind === 'handle-drag') {
+        cancelPendingTextTap()
         androidSelectionDragEndRef.current()
       } else if ((owner.kind === 'shape' || owner.kind === 'draw' || owner.kind === 'tool-drag') && tool !== 'text' && lastValidPointerEvent) {
         // Some WebViews report (0,0) on cancel. Finalize from the last valid sample only.
@@ -1180,6 +1331,7 @@ export default function LayerManager({
     container.addEventListener('mousemove', suppressCompatibilityMouse, true)
     container.addEventListener('mouseup', suppressCompatibilityMouse, true)
     container.addEventListener('click', suppressCompatibilityMouse, true)
+    container.addEventListener('dblclick', suppressCompatibilityMouse, true)
     return () => {
       container.removeEventListener('pointerdown', onArbitratedPointerDown, true)
       container.removeEventListener('pointermove', onArbitratedPointerMove, true)
@@ -1193,6 +1345,7 @@ export default function LayerManager({
       container.removeEventListener('mousemove', suppressCompatibilityMouse, true)
       container.removeEventListener('mouseup', suppressCompatibilityMouse, true)
       container.removeEventListener('click', suppressCompatibilityMouse, true)
+      container.removeEventListener('dblclick', suppressCompatibilityMouse, true)
       if (androidPinchActiveRef.current) {
         androidPinchEndRef.current()
         androidPinchActiveRef.current = false
@@ -1201,6 +1354,7 @@ export default function LayerManager({
         window.clearTimeout(pendingBlankTap.timer)
         pendingBlankTap = null
       }
+      pendingTextTap = null
       resetGesture()
     }
   }, [map, tool])
@@ -1285,24 +1439,73 @@ export default function LayerManager({
     return found
   }, [])
 
-  // 打开文字标注编辑会话
-  const openEditor = useCallback(
+  // 所有文字编辑入口最终都必须经过这里。它负责去重、切换和唯一会话所有权，
+  // 具体平台只负责识别“何时请求编辑”，不得自行创建编辑器。
+  const requestTextEdit = useCallback(
     (marker: MarkerWithFeature) => {
       const props = (marker.feature?.properties ?? {}) as Record<string, unknown>
       if (lockedKeysRef.current().has(featureKeyOf(props))) return
       const latlng = marker.getLatLng()
       const uid = String(props.uid ?? genUid('text'))
       if (props.uid !== uid) props.uid = uid
+      const activeSession = textEditSessionRef.current
+      if (activeSession?.uid === uid) {
+        activeSession.focus?.()
+        return
+      }
+      // 请求另一文本前先完整提交旧会话。commit/dispose 均为幂等操作，
+      // 即使 MapView 随后收到新会话也不会留下旧按钮或旧监听器。
+      if (activeSession) {
+        activeSession.commit(activeSession.getText?.() ?? activeSession.initialText)
+      }
+      // 防御性清理旧版本或异常中断遗留的孤立按钮。正常流程只会有零个。
+      map.getContainer().querySelectorAll('.text-marker-edit-confirm').forEach((element) => element.remove())
+      // 透明文字命中层位于真实 Marker 上方。编辑期间必须移除对应命中层，
+      // 否则触摸实际落在透明层上，contenteditable 无法移动插入光标。
+      const hitGroup = hitRef.current
+      if (hitGroup) {
+        const staleHits: L.Layer[] = []
+        hitGroup.eachLayer((candidate) => {
+          const candidateProps = (candidate as AnyWithFeature).feature?.properties as Record<string, unknown> | undefined
+          if (String(candidateProps?.uid ?? '') === uid) staleHits.push(candidate)
+        })
+        staleHits.forEach((candidate) => hitGroup.removeLayer(candidate))
+      }
       // 第十三轮：记录文字标注在容器内的像素坐标，编辑器浮层跟随其位置显示，
       // 避免固定在顶部时被绘制模式横幅遮挡
       const cp = map.latLngToContainerPoint(latlng)
-      onStartEdit({
+      const initialText = String(props.text ?? '')
+      let editingText = initialText
+      let editingElement: HTMLElement | null = null
+      let confirmButton: HTMLButtonElement | null = null
+      let cleanupEditingElement = () => {}
+      let finished = false
+      let disposed = false
+      const sessionId = ++nextTextEditSessionIdRef.current
+      textEditingRef.current = true
+      map.getContainer().classList.add('text-editing-active')
+      let edit: ActiveTextEdit
+      const dispose = () => {
+        if (disposed) return
+        disposed = true
+        cleanupEditingElement()
+        if (textEditSessionRef.current?.sessionId === sessionId) {
+          textEditSessionRef.current = null
+          textEditingRef.current = false
+          map.getContainer().classList.remove('text-editing-active')
+        }
+      }
+      edit = {
+        sessionId,
         uid,
         lat: latlng.lat,
         lng: latlng.lng,
-        initialText: String(props.text ?? ''),
+        initialText: editingText,
         containerPoint: { x: cp.x, y: cp.y },
         commit: (text: string) => {
+          if (finished) return
+          finished = true
+          dispose()
           // 问题：放置后 marker 可能已被 geoJson 还原重建，必须按 uid 找到当前对象再更新，
           // 否则输入的文字写入旧对象，文本永远无法显示/保存
           const target = findByUid(uid)
@@ -1315,9 +1518,18 @@ export default function LayerManager({
           save()
         },
         cancel: () => {
+          if (finished) return
+          finished = true
+          dispose()
           clearEditSelectionRef.current(false)
           const target = findByUid(uid)
-          if (target && !String((target.feature?.properties as Record<string, unknown>)?.text ?? '')) {
+          const targetProps = (target?.feature?.properties ?? {}) as Record<string, unknown>
+          targetProps.text = initialText
+          if (target instanceof L.Marker) {
+            target.setIcon(textIcon(initialText, textStyleFromProps(targetProps)))
+            window.requestAnimationFrame(() => refreshTextHitRef.current(target as MarkerWithFeature))
+          }
+          if (target && !initialText) {
             const removeByUid = (group: L.FeatureGroup | null) => {
               if (!group) return
               const stale: L.Layer[] = []
@@ -1333,12 +1545,206 @@ export default function LayerManager({
             save()
           }
         },
+        dispose,
+        focus: () => {
+          if (disposed) return
+          editingElement?.focus()
+        },
+        // 提交时直接读取当前 DOM，避免确认按钮紧接最后一次输入时仍拿到旧缓存。
+        getText: () => editingElement ? readEditablePlainText(editingElement) : editingText,
+      }
+      textEditSessionRef.current = edit
+      onStartEdit(edit)
+      // 原位编辑：直接将地图上的文本节点设为 contenteditable，避免浮层输入框
+      // 与文本对象位置、尺寸和选中框出现脱节。
+      window.requestAnimationFrame(() => {
+        if (disposed || textEditSessionRef.current?.sessionId !== sessionId) return
+        const target = findByUid(uid)
+        const textEl = target instanceof L.Marker
+          ? target.getElement()?.querySelector<HTMLElement>('.text-marker')
+          : null
+        if (!textEl) {
+          // DOM 重建失败也必须结束 React 与 Leaflet 两侧的同一会话，不能留下
+          // “状态仍在编辑、实际没有编辑器”的半会话。
+          onFinishEdit('cancel', sessionId)
+          return
+        }
+        editingElement = textEl
+        textEl.contentEditable = 'true'
+        textEl.tabIndex = 0
+        textEl.setAttribute('role', 'textbox')
+        textEl.setAttribute('aria-label', '编辑文字标注')
+        textEl.classList.add('text-marker-editing')
+        textEl.spellcheck = false
+        if (!initialText) textEl.textContent = ''
+        textEl.focus()
+        const selection = window.getSelection()
+        const range = document.createRange()
+        range.selectNodeContents(textEl)
+        range.collapse(false)
+        selection?.removeAllRanges()
+        selection?.addRange(range)
+        const positionConfirmButton = () => {
+          if (!confirmButton) return
+          const textRect = textEl.getBoundingClientRect()
+          const mapRect = map.getContainer().getBoundingClientRect()
+          const buttonSize = platform.kind === 'android' ? 44 : 30
+          const gap = 9
+          const viewport = window.visualViewport
+          const visibleLeft = Math.max(mapRect.left, viewport?.offsetLeft ?? 0)
+          const visibleTop = Math.max(mapRect.top, viewport?.offsetTop ?? 0)
+          const visibleRight = Math.min(mapRect.right, (viewport?.offsetLeft ?? 0) + (viewport?.width ?? window.innerWidth))
+          const visibleBottom = Math.min(mapRect.bottom, (viewport?.offsetTop ?? 0) + (viewport?.height ?? window.innerHeight))
+          const minX = Math.max(4, visibleLeft - mapRect.left + 4)
+          const maxX = Math.max(minX, visibleRight - mapRect.left - buttonSize - 4)
+          const minY = Math.max(4, visibleTop - mapRect.top + 4)
+          const maxY = Math.max(minY, visibleBottom - mapRect.top - buttonSize - 4)
+          const rightX = textRect.right - mapRect.left + gap
+          const leftX = textRect.left - mapRect.left - buttonSize - gap
+          const preferredX = rightX <= maxX ? rightX : leftX
+          const x = Math.min(maxX, Math.max(minX, preferredX))
+          const y = Math.min(maxY, Math.max(minY, textRect.top - mapRect.top - 3))
+          confirmButton.style.left = `${Math.round(x)}px`
+          confirmButton.style.top = `${Math.round(y)}px`
+        }
+        confirmButton = document.createElement('button')
+        confirmButton.type = 'button'
+        confirmButton.className = 'text-marker-edit-confirm'
+        confirmButton.title = '完成文字编辑'
+        confirmButton.setAttribute('aria-label', '完成文字编辑')
+        confirmButton.innerHTML = '<i class="fa-solid fa-check" aria-hidden="true"></i>'
+        const stopConfirmPointer = (event: Event) => {
+          event.preventDefault()
+          event.stopPropagation()
+        }
+        let confirmPointerId: number | null = null
+        const confirmOnPointerDown = (event: PointerEvent) => {
+          stopConfirmPointer(event)
+          confirmPointerId = event.pointerId
+          try { confirmButton?.setPointerCapture(event.pointerId) } catch { /* WebView may reject capture */ }
+        }
+        const confirmOnPointerUp = (event: PointerEvent) => {
+          stopConfirmPointer(event)
+          if (confirmPointerId !== event.pointerId) return
+          confirmPointerId = null
+          try { confirmButton?.releasePointerCapture(event.pointerId) } catch { /* capture may already be released */ }
+          editingElement?.blur()
+          onFinishEdit('commit', sessionId)
+        }
+        const cancelConfirmPointer = (event: PointerEvent) => {
+          if (confirmPointerId === event.pointerId) confirmPointerId = null
+          stopConfirmPointer(event)
+        }
+        const confirmEdit = (event: MouseEvent) => {
+          stopConfirmPointer(event)
+          // PC keeps its normal click contract. Android commits on pointerup so the synthetic
+          // compatibility click cannot submit the edit twice.
+          if (platform.kind === 'android') return
+          editingElement?.blur()
+          onFinishEdit('commit', sessionId)
+        }
+        confirmButton.addEventListener('pointerdown', confirmOnPointerDown)
+        confirmButton.addEventListener('pointerup', confirmOnPointerUp)
+        confirmButton.addEventListener('pointercancel', cancelConfirmPointer)
+        confirmButton.addEventListener('click', confirmEdit)
+        map.getContainer().appendChild(confirmButton)
+        positionConfirmButton()
+        window.addEventListener('resize', positionConfirmButton)
+        window.visualViewport?.addEventListener('resize', positionConfirmButton)
+        window.visualViewport?.addEventListener('scroll', positionConfirmButton)
+        map.on('zoom move rotate resize viewreset', positionConfirmButton)
+        const onInput = () => {
+          editingText = readEditablePlainText(textEl)
+          const currentProps = (target?.feature?.properties ?? {}) as Record<string, unknown>
+          currentProps.text = editingText
+          const currentStyle = textStyleFromProps(currentProps)
+          const canvas = document.createElement('canvas')
+          const context = canvas.getContext('2d')
+          if (context) {
+            context.font = `${currentStyle.fontStyle ?? 'normal'} ${currentStyle.fontWeight ?? 'normal'} ${Number(currentStyle.fontSize ?? 16)}px ${currentStyle.fontFamily || 'sans-serif'}`
+            const longestLine = editingText.split(/\r?\n/).reduce((width, line) => Math.max(width, context.measureText(line).width), 0)
+            const requiredWidth = Math.min(800, Math.max(48, Math.ceil(longestLine + 20)))
+            const currentWidth = Number(currentStyle.width ?? 160)
+            if (requiredWidth > currentWidth) {
+              const nextStyle = { ...currentStyle, width: requiredWidth }
+              textStyleToProps(currentProps, nextStyle)
+              textEl.style.width = `${requiredWidth}px`
+            }
+          }
+          window.requestAnimationFrame(() => {
+            refreshTextHitRef.current(target as MarkerWithFeature)
+            buildGizmoRef.current()
+            positionConfirmButton()
+          })
+        }
+        const onKeyDown = (event: KeyboardEvent) => {
+          // Backspace/Delete 只编辑文本，不得冒泡到 App 的绘图对象删除快捷键。
+          // 不调用 preventDefault，保留 contenteditable 的默认删字行为。
+          if (event.key === 'Backspace' || event.key === 'Delete') {
+            event.stopImmediatePropagation()
+            event.stopPropagation()
+            return
+          }
+          if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+            event.preventDefault()
+            onFinishEdit('commit', sessionId)
+          } else if (event.key === 'Escape') {
+            event.preventDefault()
+            onFinishEdit('cancel', sessionId)
+          }
+        }
+        // 不阻止默认行为：点击定位光标、拖动系统选区手柄和软键盘输入仍由 WebView
+        // 原生 contenteditable 处理；只阻止事件继续冒泡给 Leaflet 地图。
+        const stopEditorPropagation = (event: Event) => event.stopPropagation()
+        const editorPointerEvents = [
+          'pointerdown', 'pointermove', 'pointerup', 'pointercancel',
+          'touchstart', 'touchmove', 'touchend', 'touchcancel',
+          'mousedown', 'mousemove', 'mouseup', 'click', 'dblclick',
+        ] as const
+        editorPointerEvents.forEach((type) => textEl.addEventListener(type, stopEditorPropagation))
+        textEl.addEventListener('input', onInput)
+        textEl.addEventListener('keydown', onKeyDown)
+        cleanupEditingElement = () => {
+          editorPointerEvents.forEach((type) => textEl.removeEventListener(type, stopEditorPropagation))
+          textEl.removeEventListener('input', onInput)
+          textEl.removeEventListener('keydown', onKeyDown)
+          textEl.contentEditable = 'false'
+          textEl.removeAttribute('tabindex')
+          textEl.removeAttribute('role')
+          textEl.removeAttribute('aria-label')
+          textEl.classList.remove('text-marker-editing')
+          if (editingElement === textEl) editingElement = null
+          window.removeEventListener('resize', positionConfirmButton)
+          window.visualViewport?.removeEventListener('resize', positionConfirmButton)
+          window.visualViewport?.removeEventListener('scroll', positionConfirmButton)
+          map.off('zoom move rotate resize viewreset', positionConfirmButton)
+          if (confirmButton) {
+            confirmButton.removeEventListener('pointerdown', confirmOnPointerDown)
+            confirmButton.removeEventListener('pointerup', confirmOnPointerUp)
+            confirmButton.removeEventListener('pointercancel', cancelConfirmPointer)
+            confirmButton.removeEventListener('click', confirmEdit)
+            confirmButton.remove()
+            confirmButton = null
+          }
+        }
       })
     },
-    [onStartEdit, save, findByUid, map],
+    [onStartEdit, onFinishEdit, save, findByUid, map],
   )
   // 同步最新回调到 ref（供 restoreLayer 在闭包外读取，第十一轮）
-  openEditorRef.current = openEditor
+  requestTextEditRef.current = requestTextEdit
+  isAndroidTextKeyRef.current = (key) => {
+    const layer = findByUid(key)
+    return layer instanceof L.Marker
+      && (layer.feature?.properties as Record<string, unknown> | undefined)?.type === 'text'
+  }
+  openAndroidTextEditorByKeyRef.current = (key) => {
+    const layer = findByUid(key)
+    const props = (layer?.feature?.properties ?? {}) as Record<string, unknown>
+    if (!(layer instanceof L.Marker) || props.type !== 'text') return false
+    requestTextEditRef.current(layer as MarkerWithFeature)
+    return true
+  }
 
   /** 高亮图层管理（框选选中图形，问题4） */
   const highlight = useCallback((uid: string, on: boolean) => {
@@ -1751,6 +2157,9 @@ export default function LayerManager({
 
   /** 删除选中的图形组 + 载具 + 干员 + 队标（第十一轮套索 Delete/删除按钮；重构：上报 App 入历史栈） */
   const deleteSelected = useCallback(() => {
+    // 删除选中有工具栏、App 信号和多套键盘监听等多个入口。保护必须放在
+    // 最终动作处，不能只依赖某一个 keydown 监听的 event.target。
+    if (textEditingRef.current || document.querySelector('.text-marker-editing')) return
     const g = fgRef.current
     const hasDraw = g && selectedRef.current.size > 0
     const hasVeh = selVehiclesRef.current.size > 0
@@ -1959,7 +2368,9 @@ export default function LayerManager({
         pane: DRAW_MARKER_PANE,
       }) as MarkerWithFeature
       marker.feature = feature
-      marker.on('dblclick', () => openEditor(marker))
+      // PC 使用 Leaflet 原生双击；Android 只允许触控仲裁器识别双击，
+      // 避免 WebView 兼容 dblclick 与自定义双击重复创建编辑会话。
+      if (platform.kind !== 'android') marker.on('dblclick', () => requestTextEdit(marker))
       marker.on('click', onFeatureClick)
       bindDrag(marker)
       window.requestAnimationFrame(() => refreshTextHitRef.current(marker))
@@ -1995,7 +2406,7 @@ export default function LayerManager({
   // 第十五轮：重建后更新包围矩形（图层对象已替换，矩形位置按新图层重算）
   updateLassoBoxRef.current()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [fg, hl, geoJson, view, tool, onFeatureClick, openEditor, bindDrag, highlight])
+}, [fg, hl, geoJson, view, tool, onFeatureClick, requestTextEdit, bindDrag, highlight])
 
   // ---- 拖拽式绘制：点击起点 → 拖动预览 → 释放成稿（问题4；第二十二轮：+防线/曲线） ----
   // 线条工具（line/arrow/defense）在手绘模式下不进入此 effect（由下方自由绘制 effect 处理）
@@ -2102,7 +2513,9 @@ export default function LayerManager({
         const any = layer as AnyWithFeature
         any.feature = f
         if (layer instanceof L.Marker) {
-          ;(layer as MarkerWithFeature).on('dblclick', () => openEditor(layer as MarkerWithFeature))
+          if (platform.kind !== 'android') {
+            ;(layer as MarkerWithFeature).on('dblclick', () => requestTextEdit(layer as MarkerWithFeature))
+          }
         }
         layer.on('click', onFeatureClick as never)
         if (tool === 'lasso') layer.on('mousedown', (ev: L.LeafletMouseEvent) => L.DomEvent.stopPropagation(ev))
@@ -2306,6 +2719,7 @@ export default function LayerManager({
     }
 
     const onKey = (ev: KeyboardEvent) => {
+      if (isTextEditingEvent(ev)) return
       if (ev.key === 'Escape') {
         if (st.phase === 'drawing' || st.phase === 'adjusting') {
           setDrawingGestureActive(map, false)
@@ -2345,7 +2759,7 @@ export default function LayerManager({
       setDrawingGestureActive(map, false)
       editPointerActiveRef.current = false
     }
-  }, [map, fg, tool, draw, view, onFeatureClick, openEditor, commitDraw, snapshotNow, bindDrag])
+  }, [map, fg, tool, draw, view, onFeatureClick, requestTextEdit, commitDraw, snapshotNow, bindDrag])
 
   // ---- 套索选择（第十一轮：独立绘制工具，tool === 'lasso'）：
   // 拖拽空白区域画自由形状套索 → 选中内部图形（黄色高亮）+ 载具部署图标；
@@ -2468,6 +2882,7 @@ export default function LayerManager({
     }
 
     const onKey = (ev: KeyboardEvent) => {
+      if (isTextEditingEvent(ev)) return
       if (ev.key === 'Escape') {
         clearSelection()
         if (st.lasso) {
@@ -3143,19 +3558,19 @@ export default function LayerManager({
       const marker = L.marker(e.latlng, { icon: textIcon('', DEFAULT_TEXT_STYLE), pane: DRAW_MARKER_PANE }) as MarkerWithFeature
       marker.feature = feature
       fg.addLayer(marker)
-      marker.on('dblclick', () => openEditor(marker))
+      if (platform.kind !== 'android') marker.on('dblclick', () => requestTextEdit(marker))
       marker.on('click', onFeatureClick)
       bindDrag(marker)
       // 重构：绘制操作上报 App 统一入历史栈
       commitDraw(before)
-      openEditor(marker)
+      requestTextEdit(marker)
       // 问题2：文字放置后同样保持工具激活，可连续标注
     }
     map.on('click', onClick)
     return () => {
       map.off('click', onClick)
     }
-  }, [map, fg, tool, view, save, openEditor, onFeatureClick, commitDraw, snapshotNow, bindDrag])
+  }, [map, fg, tool, view, save, requestTextEdit, onFeatureClick, commitDraw, snapshotNow, bindDrag])
 
   // ================= 第十五轮：编辑工具（选中/移动/缩放/旋转/端点/曲线/拉伸 + 文字样式） =================
   // 透明命中层（悬停高亮 + 放大点击区域）与选中手柄组（选中框/缩放手柄/旋转手柄/端点/曲线控制点）
@@ -3562,13 +3977,15 @@ export default function LayerManager({
       hl.on('mouseup', () => finishShapePointerRef.current())
       // click 只负责阻止冒泡；真正的 click 语义已由 mousedown/mouseup + 5px 阈值完成。
       hl.on('click', (e: L.LeafletMouseEvent) => L.DomEvent.stopPropagation(e))
-      hl.on('dblclick', () => {
-        const p = (any.feature?.properties ?? {}) as Record<string, unknown>
-        if (p.type === 'text') {
-          const m = findByUid(String(p.uid ?? ''))
-          if (m instanceof L.Marker) openEditorRef.current(m)
-        }
-      })
+      if (platform.kind !== 'android') {
+        hl.on('dblclick', () => {
+          const p = (any.feature?.properties ?? {}) as Record<string, unknown>
+          if (p.type === 'text') {
+            const m = findByUid(String(p.uid ?? ''))
+            if (m instanceof L.Marker) requestTextEditRef.current(m)
+          }
+        })
+      }
       h.addLayer(hl)
       const hitElement = typeof (hl as L.Path).getElement === 'function'
         ? (hl as L.Path).getElement()
@@ -3905,6 +4322,7 @@ export default function LayerManager({
       styleButton.addTo(gz)
       const styleButtonElement = styleButton.getElement()?.querySelector<HTMLElement>('.edit-style-trigger')
       if (styleButtonElement) {
+        styleButtonElement.dataset.editActionKey = keys[0]
         L.DomEvent.on(styleButtonElement, 'pointerdown', (event: Event) => {
           L.DomEvent.stop(event)
           if (stylePanelRef.current?.uid !== keys[0]) openSelPanelRef.current(keys[0])
@@ -4063,6 +4481,67 @@ export default function LayerManager({
   }, [map, selectedKeys, layersOfKeys])
   const buildGizmoRef = useRef(buildGizmo)
   buildGizmoRef.current = buildGizmo
+  androidHandleAtPointRef.current = (point) => {
+    const gizmo = gizmoRef.current
+    if (!gizmo) return ''
+    let nearestKind = ''
+    let nearestDistance = Number.POSITIVE_INFINITY
+    gizmo.eachLayer((layer) => {
+      if (!(layer instanceof L.Marker)) return
+      const meta = (layer as L.Marker & { handleMeta?: { kind: string; keys: string[] } }).handleMeta
+      if (!meta) return
+      const distance = map.latLngToContainerPoint(layer.getLatLng()).distanceTo(point)
+      if (distance <= 22 && distance < nearestDistance) {
+        nearestDistance = distance
+        nearestKind = meta.kind
+      }
+    })
+    return nearestKind
+  }
+  androidGizmoActionAtPointRef.current = (point) => {
+    const gizmo = gizmoRef.current
+    if (!gizmo) return null
+    let nearest: {
+      button: HTMLElement
+      action: 'style' | 'delete' | 'lock'
+      key?: string
+      locked?: boolean
+      distance: number
+    } | null = null
+    gizmo.eachLayer((layer) => {
+      if (!(layer instanceof L.Marker)) return
+      const element = layer.getElement()
+      const button = element?.querySelector<HTMLElement>(
+        '.edit-style-trigger, .edit-delete-trigger, .edit-lock-trigger, .edit-unlock-trigger',
+      )
+      if (!button) return
+      const distance = map.latLngToContainerPoint(layer.getLatLng()).distanceTo(point)
+      if (distance > 24 || (nearest && distance >= nearest.distance)) return
+      const isStyle = button.classList.contains('edit-style-trigger')
+      const isDelete = button.classList.contains('edit-delete-trigger')
+      nearest = {
+        button,
+        action: isStyle ? 'style' : isDelete ? 'delete' : 'lock',
+        key: button.dataset.editActionKey || button.dataset.editLockKey,
+        locked: button.dataset.editLockValue === 'true',
+        distance,
+      }
+    })
+    const result = nearest as {
+      button: HTMLElement
+      action: 'style' | 'delete' | 'lock'
+      key?: string
+      locked?: boolean
+      distance: number
+    } | null
+    if (!result) return null
+    return {
+      button: result.button,
+      action: result.action,
+      key: result.key,
+      locked: result.locked,
+    }
+  }
 
   const scheduleGizmoRefresh = useCallback(() => {
     if (gizmoRefreshFrameRef.current != null) return
@@ -4443,6 +4922,7 @@ export default function LayerManager({
             textStyleToProps(props, style)
             ;(layer as L.Marker).setIcon(textIcon(String(props.text ?? ''), style))
             showEditLabelRef.current(cur, `${Math.round(((rotation % 360) + 360) % 360)}°`)
+            window.requestAnimationFrame(() => buildGizmoRef.current())
           }
           return
         }
@@ -4485,6 +4965,7 @@ export default function LayerManager({
             textStyleToProps(props, style)
             ;(layer as L.Marker).setIcon(textIcon(String(props.text ?? ''), style))
             showEditLabelRef.current(cur, `${width}px · ${size}px`)
+            window.requestAnimationFrame(() => buildGizmoRef.current())
           }
           return
         }
@@ -4533,6 +5014,7 @@ export default function LayerManager({
           textStyleToProps(props, style)
           ;(layer as L.Marker).setIcon(textIcon(String(props.text ?? ''), style))
           showEditLabelRef.current(cur, `宽度 ${width}px`)
+          window.requestAnimationFrame(() => buildGizmoRef.current())
           return
         }
         if (!it.circle) return
@@ -4745,9 +5227,9 @@ export default function LayerManager({
     }
     container.addEventListener('contextmenu', onCtx, true)
     const onKey = (ev: KeyboardEvent) => {
-      // 输入框内按键不拦截（文字编辑等）
+      // 输入控件和原位文字编辑期间，快捷键只交给编辑器自身处理。
       const t = ev.target as HTMLElement | null
-      if (t && t.closest('input, textarea, select')) return
+      if (t?.closest('input, textarea, select') || isTextEditingEvent(ev)) return
       if (ev.key === 'Escape') {
         finishShapePointer()
         clearEditSelectionRef.current(true)
