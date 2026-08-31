@@ -177,10 +177,31 @@ function MapRotationControl({ initiallyCollapsed = false }: { initiallyCollapsed
         })
         return button
       }
-      const rotateLeft = makeButton('↶', '地图逆时针旋转 15°', () => map.setBearing(map.getBearing() - 15))
+      // 平滑旋转动画：步进按钮/正北复位走 rAF 缓动插值（最短路径），拖动与输入保持即时
+      let rotateAnimId = 0
+      let rotateAnimRaf = 0
+      const animateBearing = (target: number, duration = 320) => {
+        rotateAnimId++
+        window.cancelAnimationFrame(rotateAnimRaf)
+        const animId = rotateAnimId
+        const from = map.getBearing()
+        // 最短路径差值（归一到 [-180, 180)）
+        let delta = ((target - from) % 360 + 540) % 360 - 180
+        if (Math.abs(delta) < 0.01) return
+        const start = performance.now()
+        const tick = (now: number) => {
+          if (animId !== rotateAnimId) return
+          const t = Math.min(1, (now - start) / duration)
+          const eased = 1 - Math.pow(1 - t, 3)
+          map.setBearing(from + delta * eased)
+          if (t < 1) rotateAnimRaf = window.requestAnimationFrame(tick)
+        }
+        rotateAnimRaf = window.requestAnimationFrame(tick)
+      }
+      const rotateLeft = makeButton('↶', '地图逆时针旋转 15°', () => animateBearing(map.getBearing() - 15))
       rotateLeft.className = 'map-rotation-step'
       const compassColumn = L.DomUtil.create('div', 'map-bearing-column', container)
-      const reset = makeButton('N', '恢复正北朝上', () => map.setBearing(0), compassColumn)
+      const reset = makeButton('N', '恢复正北朝上', () => animateBearing(0), compassColumn)
       reset.className = 'map-bearing-reset'
       const compass = L.DomUtil.create('button', 'map-bearing-compass', compassColumn) as HTMLButtonElement
       compass.type = 'button'
@@ -197,7 +218,7 @@ function MapRotationControl({ initiallyCollapsed = false }: { initiallyCollapsed
       input.setAttribute('aria-label', '地图旋转角度')
       const degree = L.DomUtil.create('span', '', inputWrap)
       degree.textContent = '°'
-      const rotateRight = makeButton('↷', '地图顺时针旋转 15°', () => map.setBearing(map.getBearing() + 15))
+      const rotateRight = makeButton('↷', '地图顺时针旋转 15°', () => animateBearing(map.getBearing() + 15))
       rotateRight.className = 'map-rotation-step'
       const collapse = makeButton('', '收起地图旋转控件', () => {
         const collapsed = container.classList.toggle('collapsed')
@@ -233,6 +254,9 @@ function MapRotationControl({ initiallyCollapsed = false }: { initiallyCollapsed
       compass.addEventListener('pointerdown', (event) => {
         event.preventDefault()
         event.stopPropagation()
+        // 拖动接管旋转：取消进行中的动画，避免与手指抢控制权
+        rotateAnimId++
+        window.cancelAnimationFrame(rotateAnimRaf)
         dragging = true
         setBearingFromPointer(event)
         document.addEventListener('pointermove', onPointerMove, { passive: false })
@@ -256,6 +280,8 @@ function MapRotationControl({ initiallyCollapsed = false }: { initiallyCollapsed
       }
       map.on('rotate', onRotate)
       ;(container as HTMLElement & { _rotationCleanup?: () => void })._rotationCleanup = () => {
+        rotateAnimId++
+        window.cancelAnimationFrame(rotateAnimRaf)
         finishPointer()
         map.off('rotate', onRotate)
       }
