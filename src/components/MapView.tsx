@@ -242,14 +242,21 @@ function MapRotationControl({ initiallyCollapsed = false }: { initiallyCollapsed
       input.addEventListener('input', () => {
         const value = Number(input.value)
         if (Number.isFinite(value)) map.setBearing(value)
+        fitInputWidth()
       })
       input.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') input.blur()
       })
 
+      // 度数输入框按内容自动伸缩（等宽字体按 ch 计），最大 6ch 防止过度撑开
+      function fitInputWidth() {
+        input.style.width = `${Math.min(Math.max(input.value.length + 1, 4), 6)}ch`
+      }
+
       const onRotate = () => {
         const bearing = ((map.getBearing() % 360) + 360) % 360
         if (document.activeElement !== input) input.value = bearing.toFixed(1).replace(/\.0$/, '')
+        fitInputWidth()
         const needle = compass.querySelector<HTMLElement>('.map-bearing-needle')
         if (needle) needle.style.transform = `rotate(${bearing}deg)`
         compass.setAttribute('aria-label', `地图当前旋转 ${bearing.toFixed(1)} 度`)

@@ -531,7 +531,18 @@ body {
   color: var(--gold);
   font: 700 10px/1.2 Consolas, monospace;
   text-align: right;
+  /* 隐藏 number 输入框自带的步进箭头（遮挡数字，步进已由 ↶/↷ 按钮提供） */
+  appearance: textfield;
+  -moz-appearance: textfield;
 }
+
+.map-bearing-input input::-webkit-outer-spin-button,
+.map-bearing-input input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+
 
 .map-bearing-input input:focus { border-color: var(--green); }
 .map-bearing-input span { margin-left: 2px; font-size: 10px; }
