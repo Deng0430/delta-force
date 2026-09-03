@@ -177,10 +177,45 @@ function MapRotationControl({ initiallyCollapsed = false }: { initiallyCollapsed
         })
         return button
       }
-      const rotateLeft = makeButton('↶', '地图逆时针旋转 15°', () => map.setBearing(map.getBearing() - 15))
+      // 平滑旋转动画：步进按钮/正北复位走 rAF 缓动插值（最短路径），拖动与输入保持即时
+      let rotateAnimId = 0
+      let rotateAnimRaf = 0
+      let requestedBearing = map.getBearing()
+      const cancelBearingAnimation = (syncRequestedBearing = true) => {
+        rotateAnimId += 1
+        window.cancelAnimationFrame(rotateAnimRaf)
+        rotateAnimRaf = 0
+        if (syncRequestedBearing) requestedBearing = map.getBearing()
+      }
+      const animateBearing = (target: number, duration = 320, shortestPath = true) => {
+        cancelBearingAnimation(false)
+        const animId = rotateAnimId
+        const from = map.getBearing()
+        const delta = shortestPath
+          ? ((target - from) % 360 + 540) % 360 - 180
+          : target - from
+        requestedBearing = from + delta
+        if (Math.abs(delta) < 0.01) return
+        const start = performance.now()
+        const tick = (now: number) => {
+          if (animId !== rotateAnimId) return
+          const progress = Math.min(1, (now - start) / duration)
+          const eased = 1 - Math.pow(1 - progress, 3)
+          map.setBearing(from + delta * eased)
+          if (progress < 1) rotateAnimRaf = window.requestAnimationFrame(tick)
+          else rotateAnimRaf = 0
+        }
+        rotateAnimRaf = window.requestAnimationFrame(tick)
+      }
+      const stepBearing = (step: number) => {
+        const current = map.getBearing()
+        const pendingDelta = rotateAnimRaf ? requestedBearing - current : 0
+        animateBearing(current + pendingDelta + step, 320, false)
+      }
+      const rotateLeft = makeButton('↶', '地图逆时针旋转 15°', () => stepBearing(-15))
       rotateLeft.className = 'map-rotation-step'
       const compassColumn = L.DomUtil.create('div', 'map-bearing-column', container)
-      const reset = makeButton('N', '恢复正北朝上', () => map.setBearing(0), compassColumn)
+      const reset = makeButton('N', '恢复正北朝上', () => animateBearing(0), compassColumn)
       reset.className = 'map-bearing-reset'
       const compass = L.DomUtil.create('button', 'map-bearing-compass', compassColumn) as HTMLButtonElement
       compass.type = 'button'
@@ -197,7 +232,7 @@ function MapRotationControl({ initiallyCollapsed = false }: { initiallyCollapsed
       input.setAttribute('aria-label', '地图旋转角度')
       const degree = L.DomUtil.create('span', '', inputWrap)
       degree.textContent = '°'
-      const rotateRight = makeButton('↷', '地图顺时针旋转 15°', () => map.setBearing(map.getBearing() + 15))
+      const rotateRight = makeButton('↷', '地图顺时针旋转 15°', () => stepBearing(15))
       rotateRight.className = 'map-rotation-step'
       const collapse = makeButton('', '收起地图旋转控件', () => {
         const collapsed = container.classList.toggle('collapsed')
@@ -233,6 +268,7 @@ function MapRotationControl({ initiallyCollapsed = false }: { initiallyCollapsed
       compass.addEventListener('pointerdown', (event) => {
         event.preventDefault()
         event.stopPropagation()
+        cancelBearingAnimation()
         dragging = true
         setBearingFromPointer(event)
         document.addEventListener('pointermove', onPointerMove, { passive: false })
@@ -240,6 +276,7 @@ function MapRotationControl({ initiallyCollapsed = false }: { initiallyCollapsed
         document.addEventListener('pointercancel', finishPointer)
       })
       input.addEventListener('input', () => {
+        cancelBearingAnimation()
         const value = Number(input.value)
         if (Number.isFinite(value)) map.setBearing(value)
         fitInputWidth()
@@ -263,6 +300,7 @@ function MapRotationControl({ initiallyCollapsed = false }: { initiallyCollapsed
       }
       map.on('rotate', onRotate)
       ;(container as HTMLElement & { _rotationCleanup?: () => void })._rotationCleanup = () => {
+        cancelBearingAnimation()
         finishPointer()
         map.off('rotate', onRotate)
       }
