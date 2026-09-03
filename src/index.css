@@ -323,6 +323,12 @@ body {
   box-shadow: none !important;
 }
 
+/* 罗盘逐帧旋转时禁用图层自己的 transform 过渡，避免跨越 0°/360° 被插值成整圈。 */
+.leaflet-container.map-bearing-animating .leaflet-rotate-pane,
+.leaflet-container.map-bearing-animating .leaflet-rotate-pane * {
+  transition: none !important;
+}
+
 .map-rotation-control button {
   width: auto;
   height: 40px;

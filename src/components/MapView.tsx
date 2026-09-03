@@ -181,10 +181,12 @@ function MapRotationControl({ initiallyCollapsed = false }: { initiallyCollapsed
       let rotateAnimId = 0
       let rotateAnimRaf = 0
       let requestedBearing = map.getBearing()
+      const nearestBearingDelta = (delta: number) => ((delta % 360) + 540) % 360 - 180
       const cancelBearingAnimation = (syncRequestedBearing = true) => {
         rotateAnimId += 1
         window.cancelAnimationFrame(rotateAnimRaf)
         rotateAnimRaf = 0
+        map.getContainer().classList.remove('map-bearing-animating')
         if (syncRequestedBearing) requestedBearing = map.getBearing()
       }
       const animateBearing = (target: number, duration = 320, shortestPath = true) => {
@@ -192,10 +194,11 @@ function MapRotationControl({ initiallyCollapsed = false }: { initiallyCollapsed
         const animId = rotateAnimId
         const from = map.getBearing()
         const delta = shortestPath
-          ? ((target - from) % 360 + 540) % 360 - 180
+          ? nearestBearingDelta(target - from)
           : target - from
         requestedBearing = from + delta
         if (Math.abs(delta) < 0.01) return
+        map.getContainer().classList.add('map-bearing-animating')
         const start = performance.now()
         const tick = (now: number) => {
           if (animId !== rotateAnimId) return
@@ -203,13 +206,16 @@ function MapRotationControl({ initiallyCollapsed = false }: { initiallyCollapsed
           const eased = 1 - Math.pow(1 - progress, 3)
           map.setBearing(from + delta * eased)
           if (progress < 1) rotateAnimRaf = window.requestAnimationFrame(tick)
-          else rotateAnimRaf = 0
+          else {
+            rotateAnimRaf = 0
+            map.getContainer().classList.remove('map-bearing-animating')
+          }
         }
         rotateAnimRaf = window.requestAnimationFrame(tick)
       }
       const stepBearing = (step: number) => {
         const current = map.getBearing()
-        const pendingDelta = rotateAnimRaf ? requestedBearing - current : 0
+        const pendingDelta = rotateAnimRaf ? nearestBearingDelta(requestedBearing - current) : 0
         animateBearing(current + pendingDelta + step, 320, false)
       }
       const rotateLeft = makeButton('↶', '地图逆时针旋转 15°', () => stepBearing(-15))
